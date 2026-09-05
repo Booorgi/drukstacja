@@ -86,8 +86,8 @@ def extract_support_segments(gcode_path: str) -> list[float]:
         gx2, gy2, gz2 = raw_segments[i+3], raw_segments[i+4], raw_segments[i+5]
 
         formatted.extend([
-            round(gx1 - center_x, 2), round(gz1, 2), round(gy1 - center_y, 2),
-            round(gx2 - center_x, 2), round(gz2, 2), round(gy2 - center_y, 2)
+            round(gx1 - center_x, 2), round(gz1, 2), round(-(gy1 - center_y), 2),
+            round(gx2 - center_x, 2), round(gz2, 2), round(-(gy2 - center_y), 2)
         ])
 
     return formatted
