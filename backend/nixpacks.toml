@@ -1,2 +1,2 @@
 [phases.setup]
-nixPkgs = ["prusa-slicer"]
+nixPkgs = ["prusa-slicer", "xvfb-run"]
