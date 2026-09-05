@@ -65,9 +65,9 @@ def get_materials():
 @app.post("/vectorize-ai")
 async def vectorize_image_ai(file: UploadFile = File(...)):
     """
-    Wektoryzuje przesłany plik graficzny (PNG/JPG) do dwuwarstwowego SVG pod wytłoczenie 3D:
-    - layer_mid: główna sylwetka (baza reliefu)
-    - layer_top: detale i akcenty (nos, oczy, wyższy poziom wytłoczenia)
+    Kwantyzacja i wektoryzacja a'la MakerWorld:
+    Gemini dzieli obraz na maksymalnie 4 ściśle wyodrębnione klastry kolorów (Filament Color 1-4)
+    i zwraca precyzyjne ścieżki SVG dla każdego koloru.
     """
     if not gemini_client:
         raise HTTPException(
@@ -79,30 +79,27 @@ async def vectorize_image_ai(file: UploadFile = File(...)):
     mime_type = file.content_type or "image/png"
 
     prompt = """
-    Jesteś ekspertem CAD i inżynierem druku 3D Multi-Color FDM.
-    Twoim zadaniem jest zamiana przesłanej grafiki na perfekcyjny, wielowarstwowy kod SVG reliefu 3D.
-    
-    Zignoruj tło zdjęcia. Przeanalizuj postać/obiekt i bezwzględnie zachowaj drobne detale wewnętrzne (np. źrenice, czubek nosa, pyszczek, usta, brwi, linie podziału).
+    Jesteś silnikiem wektoryzacji CAD pod wielokolorowy druk 3D FDM (odpowiednik MakerWorld Image-to-Keychain).
+    Twoim zadaniem jest zamiana DOWOLNEGO przesłanego obrazu (logo, napis, postać, grafika, rysunek, symbol, zwierzę, pojazd) na czysty, wielowarstwowy SVG przygotowany do ekstruzji 3D.
 
-    Wygeneruj kod SVG o wymiarach viewBox="0 0 100 100" podzielony na grupy głębokości (od najniższej do najwyższej):
-    1. <g id="layer_1"> -> baza / główna sylwetka tła (np. cała głowa z uszami, tułów) [fill="#111111"]
-    2. <g id="layer_2"> -> elementy drugoplanowe (np. pyszczek, plamy, wnętrza uszu, krawat) [fill="#222222"]
-    3. <g id="layer_3"> -> kluczowe akcenty i detale (np. białka oczu, łuki brwiowe) [fill="#333333"]
-    4. <g id="layer_4"> -> detale mikro na samym wierzchu (np. czubek nosa, źrenice oczu, nozdrza, uśmiech) [fill="#444444"]
+    Zignoruj tło zdjęcia oraz szum otoczenia. Wyodrębnij główny motyw i dokonaj kwantyzacji koloru do DOKŁADNIE 4 uniwersalnych warstw filamentu:
+
+    Hierarchia warstw SVG:
+    1. <g id="color_1" fill="#111111">: KONTURY I CIEMNE DETALE — czarne linie, obrysy obiektów, napisy, najciemniejsze krawędzie i kluczowe linie podziału.
+    2. <g id="color_2" fill="#222222">: GŁÓWNA BRYŁA / CIEMNIEJSZE WYPEŁNIENIE — dominujące ciemne i nasycone płaszczyzny obiektu.
+    3. <g id="color_3" fill="#333333">: TONY ŚREDNIE / DRUGOPLANOWE — średnie barwy, przejścia, detale wewnątrz głównej bryły.
+    4. <g id="color_4" fill="#444444">: NAJJAŚNIEJSZE DETALE I AKCENTY — białe lub jasne wypełnienia, refleksy, kontrastowe elementy wierzchnie.
 
     Wymagania techniczne:
-    - Wszystkie elementy to ZAMKNIĘTE ścieżki <path d="..." /> (z komendą Z na końcu).
-    - Detale wewnętrzne (np. nos na pysku) NIE MOGĄ być zlane w jedną plamę – pysk musi być w layer_2, a czubek nosa i usta w layer_4!
-    - Zero obrysów (stroke="none"), zero cieni, zero elementów <rect>.
-    - Zwróć WYŁĄCZNIE czysty kod SVG (od <svg> do </svg>), bez znaczników markdown ```xml czy ```svg.
+    - Wszystkie elementy MUSZĄ być ZAMKNIĘTYMI ścieżkami <path d="..." /> z komendą Z na końcu.
+    - Współrzędne muszą mieścić się w viewBox="0 0 100 100" i być wyśrodkowane.
+    - Zero obramowań (stroke="none"), zero gradientów, zero zbędnych elementów <rect> w tle.
+    - Zwróć WYŁĄCZNIE czysty kod SVG (od <svg> do </svg>), bez znaczników markdown (nie dodawaj ```xml ani ```svg).
     """
 
     try:
-        # Najnowszy i najbardziej wydajny model multimodalny Gemini Flash
-        model_name = "gemini-3.6-flash"
-        
         response = gemini_client.models.generate_content(
-            model=model_name,
+            model="gemini-2.5-flash",
             contents=[
                 types.Part.from_bytes(data=contents, mime_type=mime_type),
                 prompt,
@@ -110,8 +107,6 @@ async def vectorize_image_ai(file: UploadFile = File(...)):
         )
 
         svg_text = response.text.strip()
-
-        # Oczyszczenie z ewentualnych znaczników markdown
         svg_clean = re.sub(r"^```(?:svg|xml)?", "", svg_text, flags=re.IGNORECASE)
         svg_clean = re.sub(r"```$", "", svg_clean).strip()
 
@@ -120,7 +115,7 @@ async def vectorize_image_ai(file: UploadFile = File(...)):
         if start_idx != -1 and end_idx != -1:
             svg_clean = svg_clean[start_idx : end_idx + 6]
         else:
-            raise ValueError("Model nie zwrócił poprawnego znacznika SVG.")
+            raise ValueError("Model nie zwrócił poprawnego kodu SVG.")
 
         return {"svg": svg_clean}
 
