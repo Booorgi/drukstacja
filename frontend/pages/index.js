@@ -38,6 +38,7 @@ export default function Home() {
   const [quantity, setQuantity] = useState(1);
   const [showSupports, setShowSupports] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [addingToCart, setAddingToCart] = useState(false);
   const [error, setError] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
@@ -132,6 +133,40 @@ export default function Home() {
   const insertCost = brassInserts ? 15.0 : 0.0;
   const finalPrice = ((basePrice + insertCost) * quantity).toFixed(2);
 
+  // Obsługa zapisu zamówienia do Supabase
+  async function handleAddToCart() {
+    if (!user) {
+      setIsAuthOpen(true);
+      return;
+    }
+
+    setAddingToCart(true);
+    try {
+      const { error } = await supabase.from("orders").insert({
+        user_id: user.id,
+        file_name: file?.name || "Model demonstracyjny",
+        material: material,
+        technology: technology,
+        layer_height: layerHeight,
+        infill: infill,
+        clean_supports: cleanSupports,
+        brass_inserts: brassInserts,
+        quantity: quantity,
+        total_price: parseFloat(finalPrice),
+        dimensions_mm: analysis?.bbox_mm || [62, 62, 48],
+        status: "in_cart",
+      });
+
+      if (error) throw error;
+      alert("Element został pomyślnie dodany do Twojego koszyka!");
+    } catch (err) {
+      console.error("Błąd zapisu do koszyka:", err);
+      alert("Nie udało się dodać do koszyka: " + err.message);
+    } finally {
+      setAddingToCart(false);
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0B0F17] text-[#F8FAFC] overflow-x-hidden font-sans">
       <Head>
@@ -177,7 +212,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => supabase.auth.signOut()}
-                  className="px-2.5 py-1 text-xs font-mono border border-[#24324A] hover:border-red-500 hover:text-red-400 rounded-lg transition"
+                  className="px-2.5 py-1 text-xs font-mono border border-[#24324A] hover:border-red-500 hover:text-red-400 rounded-lg transition cursor-pointer"
                 >
                   Wyloguj
                 </button>
@@ -186,7 +221,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setIsAuthOpen(true)}
-                className="px-3.5 py-1.5 text-xs font-mono font-bold bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30 hover:bg-[#00E5FF]/20 rounded-lg transition"
+                className="px-3.5 py-1.5 text-xs font-mono font-bold bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30 hover:bg-[#00E5FF]/20 rounded-lg transition cursor-pointer"
               >
                 Zaloguj się
               </button>
@@ -207,7 +242,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setShowSupports(!showSupports)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-mono border backdrop-blur-md transition ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono border backdrop-blur-md transition cursor-pointer ${
                   showSupports
                     ? "bg-red-500/20 border-red-500 text-red-400"
                     : "bg-[#161F30]/90 text-[#94A3B8] border-[#24324A] hover:text-[#00E5FF] hover:border-[#00E5FF]"
@@ -294,7 +329,7 @@ export default function Home() {
             </div>
             <button
               type="button"
-              className="px-3 py-1.5 bg-[#161F30] border border-[#24324A] rounded-lg text-white hover:border-[#00E5FF] transition"
+              className="px-3 py-1.5 bg-[#161F30] border border-[#24324A] rounded-lg text-white hover:border-[#00E5FF] transition cursor-pointer"
             >
               {loading ? "Analizuję..." : "Wybierz plik"}
             </button>
@@ -324,7 +359,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => setTechnology("FDM")}
-                    className={`py-2.5 px-3 rounded-lg border font-bold flex items-center justify-center gap-2 transition ${
+                    className={`py-2.5 px-3 rounded-lg border font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
                       technology === "FDM"
                         ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
                         : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8] hover:border-[#94A3B8]"
@@ -335,7 +370,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => setTechnology("SLA")}
-                    className={`py-2.5 px-3 rounded-lg border font-bold flex items-center justify-center gap-2 transition ${
+                    className={`py-2.5 px-3 rounded-lg border font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
                       technology === "SLA"
                         ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
                         : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8] hover:border-[#94A3B8]"
@@ -374,7 +409,7 @@ export default function Home() {
                       key={layer.val}
                       type="button"
                       onClick={() => setLayerHeight(layer.val)}
-                      className={`py-2 border rounded-lg transition ${
+                      className={`py-2 border rounded-lg transition cursor-pointer ${
                         layerHeight === layer.val
                           ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white font-bold"
                           : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8] hover:border-[#94A3B8]"
@@ -417,7 +452,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => handleOptionChange(material, infill, Math.max(1, quantity - 1))}
-                    className="w-9 h-9 rounded-lg bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono text-base flex items-center justify-center transition"
+                    className="w-9 h-9 rounded-lg bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono text-base flex items-center justify-center transition cursor-pointer"
                   >
                     -
                   </button>
@@ -425,7 +460,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => handleOptionChange(material, infill, quantity + 1)}
-                    className="w-9 h-9 rounded-lg bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono text-base flex items-center justify-center transition"
+                    className="w-9 h-9 rounded-lg bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono text-base flex items-center justify-center transition cursor-pointer"
                   >
                     +
                   </button>
@@ -481,13 +516,14 @@ export default function Home() {
 
               <button
                 type="button"
-                onClick={() => alert(`Zamówienie przyjęte na kwotę: ${finalPrice} PLN`)}
-                className="w-full py-3.5 px-4 bg-gradient-to-r from-[#00E5FF] to-[#2563EB] hover:opacity-95 text-[#0B0F17] font-bold text-sm uppercase tracking-wider rounded-xl shadow-[0_0_25px_rgba(0,229,255,0.25)] transition flex items-center justify-center gap-2 cursor-pointer"
+                disabled={addingToCart}
+                onClick={handleAddToCart}
+                className="w-full py-3.5 px-4 bg-gradient-to-r from-[#00E5FF] to-[#2563EB] hover:opacity-95 text-[#0B0F17] font-bold text-sm uppercase tracking-wider rounded-xl shadow-[0_0_25px_rgba(0,229,255,0.25)] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
                 </svg>
-                Dodaj wydruk do koszyka
+                {addingToCart ? "Zapisuję w koszyku..." : "Dodaj wydruk do koszyka"}
               </button>
             </div>
 
