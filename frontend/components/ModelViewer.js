@@ -19,7 +19,7 @@ export default function ModelViewer({
     if (meshRef.current) {
       meshRef.current.material.color.set(color);
       meshRef.current.material.transparent = showSupports;
-      meshRef.current.material.opacity = showSupports ? 0.8 : 1.0;
+      meshRef.current.material.opacity = showSupports ? 0.75 : 1.0;
     }
   }, [color, showSupports]);
 
@@ -61,8 +61,8 @@ export default function ModelViewer({
 
     let animationFrameId;
 
-   const buildScene = (geometry) => {
-      // 1. Czyścimy poprzednie obiekty, jeśli były wczytane z lokalnego pliku
+    const buildSceneWithGeometry = (geometry) => {
+      // 1. Czyścimy poprzednie obiekty, jeśli były wczytane
       if (meshRef.current) scene.remove(meshRef.current);
       if (supportsGroupRef.current) scene.remove(supportsGroupRef.current);
 
@@ -82,7 +82,7 @@ export default function ModelViewer({
       // Ponowne przeliczenie po przesunięciu
       geometry.computeBoundingBox();
       const finalBbox = geometry.boundingBox;
-      const height = finalBbox.max.y - finalBbox.min.y;
+      const modelHeight = finalBbox.max.y - finalBbox.min.y;
 
       const material = new THREE.MeshStandardMaterial({
         color: new THREE.Color(color),
@@ -121,8 +121,6 @@ export default function ModelViewer({
         });
 
         const supportMesh = new THREE.LineSegments(lineGeo, lineMat);
-        
-        // Jeśli podpory są obrócone w poprzek o 90 stopni, odwracamy oś Z
         supportMesh.position.set(0, -sMinY, 0);
         supportMesh.visible = showSupports;
         supportsGroupRef.current = supportMesh;
@@ -131,9 +129,17 @@ export default function ModelViewer({
 
       // Kamera
       camera.position.set(radius * 2.2, radius * 1.8, radius * 2.4);
-      controls.target.set(0, height * 0.4, 0);
+      controls.target.set(0, modelHeight * 0.4, 0);
       controls.update();
+
+      const animate = () => {
+        animationFrameId = requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      };
+      animate();
     };
+
     const loader = new STLLoader();
 
     if (url) {
