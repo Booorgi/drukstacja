@@ -189,14 +189,14 @@ export default function Home() {
                         padding: "2px 8px",
                         borderRadius: "6px",
                         border: "1px solid #cbd5e1",
-                        background: showSupports ? "#10b981" : "#ffffff",
+                        background: showSupports ? "#ef4444" : "#ffffff",
                         color: showSupports ? "#ffffff" : "#0f172a",
                         cursor: "pointer",
                         fontWeight: 600,
                         transition: "all 0.2s ease"
                       }}
                     >
-                      {showSupports ? "Ukryj" : "Pokaż 3D"}
+                      {showSupports ? "Ukryj zwisy" : "Podgląd zwisów"}
                     </button>
                   )}
                 </div>
@@ -245,8 +245,7 @@ export default function Home() {
                 file={file}
                 previewUrl={analysis?.preview_stl_url}
                 color={selectedColor.hex}
-                supportLines={analysis?.support_lines || []}
-                showSupports={showSupports}
+                showOverhangs={showSupports}
               />
             </div>
 
