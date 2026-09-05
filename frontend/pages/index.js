@@ -26,6 +26,8 @@ export default function Home() {
   // Stany logowania / użytkownika Supabase
   const [user, setUser] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
 
   // Stany koszyka
   const [cartItems, setCartItems] = useState([]);
@@ -74,6 +76,17 @@ export default function Home() {
       setCartItems((prev) => prev.filter((item) => item.id !== orderId));
     }
   }
+
+  // Zamykanie dropdownu po kliknięciu poza niego
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setIsUserMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Nasłuchiwanie sesji z Supabase
   useEffect(() => {
@@ -242,10 +255,6 @@ export default function Home() {
           </nav>
 
           <div className="flex items-center gap-3">
-            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Farm Status: 12/16 Wolne
-            </span>
-
             {/* PRZYCISK KOSZYKA */}
             <button
               type="button"
@@ -261,31 +270,89 @@ export default function Home() {
               </span>
             </button>
 
-            {/* SEKCJA LOGOWANIA I ZLECEŃ SUPABASE */}
+            {/* SEKCJA UŻYTKOWNIKA / DROPDOWN PANEL KLIENTA */}
             {user ? (
-              <div className="flex items-center gap-2">
-                <Link
-                  href="/orders"
-                  className="px-2.5 py-1.5 text-xs font-mono bg-[#161F30] border border-[#24324A] hover:border-[#00E5FF] text-[#00E5FF] rounded-lg transition"
-                >
-                  Moje zlecenia
-                </Link>
-                <span className="text-xs font-mono text-[#94A3B8] max-w-[110px] truncate hidden md:inline">
-                  {user.email}
-                </span>
+              <div className="relative" ref={userMenuRef}>
                 <button
                   type="button"
-                  onClick={() => supabase.auth.signOut()}
-                  className="px-2.5 py-1.5 text-xs font-mono border border-[#24324A] hover:border-red-500 hover:text-red-400 rounded-lg transition cursor-pointer"
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="px-3 py-1.5 text-xs font-mono bg-[#161F30] border border-[#24324A] hover:border-[#00E5FF] text-white rounded-lg transition flex items-center gap-2 cursor-pointer"
                 >
-                  Wyloguj
+                  <span className="w-2 h-2 rounded-full bg-[#00E5FF]" />
+                  <span>Panel klienta</span>
+                  <svg
+                    className={`w-3.5 h-3.5 text-[#94A3B8] transition-transform duration-200 ${
+                      isUserMenuOpen ? "rotate-180 text-[#00E5FF]" : ""
+                    }`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                  </svg>
                 </button>
+
+                {/* ROZWIJANE MENU */}
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 bg-[#0E1524] border border-[#24324A] rounded-xl shadow-2xl py-2 z-50 backdrop-blur-md">
+                    <div className="px-4 py-2 border-b border-[#24324A] mb-1">
+                      <span className="text-[10px] uppercase font-mono text-[#94A3B8] block">Zalogowano jako</span>
+                      <span className="text-xs font-mono text-[#00E5FF] truncate block font-bold" title={user.email}>
+                        {user.email}
+                      </span>
+                    </div>
+
+                    <Link
+                      href="/orders"
+                      onClick={() => setIsUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-4 py-2 text-xs font-mono text-slate-200 hover:bg-[#161F30] hover:text-[#00E5FF] transition"
+                    >
+                      <svg className="w-4 h-4 text-[#94A3B8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                      Zlecenia
+                    </Link>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        alert("Moduł wiadomości z obsługą farmy będzie dostępny wkrótce!");
+                      }}
+                      className="w-full flex items-center justify-between px-4 py-2 text-xs font-mono text-slate-200 hover:bg-[#161F30] hover:text-[#00E5FF] transition text-left cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <svg className="w-4 h-4 text-[#94A3B8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                        Wiadomości
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#24324A] text-[#94A3B8]">0</span>
+                    </button>
+
+                    <div className="border-t border-[#24324A] my-1" />
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        supabase.auth.signOut();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-mono text-red-400 hover:bg-red-500/10 transition text-left cursor-pointer"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      Wyloguj
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <button
                 type="button"
                 onClick={() => setIsAuthOpen(true)}
-                className="px-3 py-1.5 text-xs font-mono font-bold bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30 hover:bg-[#00E5FF]/20 rounded-lg transition cursor-pointer"
+                className="px-3.5 py-1.5 text-xs font-mono font-bold bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30 hover:bg-[#00E5FF]/20 rounded-lg transition cursor-pointer"
               >
                 Zaloguj
               </button>
