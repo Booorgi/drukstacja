@@ -8,8 +8,19 @@ import CartDrawer from "../components/CartDrawer";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+// Domyślny wielowarstwowy SVG (piesek z podziałem na sylwetkę i detale)
 const DEFAULT_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-  <path d="M50 15 L62 38 L87 42 L68 60 L73 85 L50 72 L27 85 L32 60 L13 42 L38 38 Z" fill="black" />
+  <g id="layer_mid">
+    <path d="M22 25 C10 35 10 65 24 72 C28 65 30 50 30 38 Z" fill="#111111" />
+    <path d="M78 25 C90 35 90 65 76 72 C72 65 70 50 70 38 Z" fill="#111111" />
+    <path d="M32 30 C32 20 68 20 68 30 C72 45 70 65 50 70 C30 65 28 45 32 30 Z" fill="#111111" />
+  </g>
+  <g id="layer_top">
+    <path d="M44 48 C44 44 56 44 56 48 C56 54 44 54 44 48 Z" fill="#222222" />
+    <path d="M38 38 C38 34 44 34 44 38 C44 41 38 41 38 38 Z" fill="#222222" />
+    <path d="M56 38 C56 34 62 34 62 38 C62 41 56 41 56 38 Z" fill="#222222" />
+    <path d="M46 55 C46 58 54 58 54 55 Z" fill="#222222" />
+  </g>
 </svg>`;
 
 const COLORS = [
@@ -20,9 +31,10 @@ const COLORS = [
   { id: "#DC2626", name: "Czerwień Ostra" },
   { id: "#F59E0B", name: "Bursztyn / Złoty" },
   { id: "#10B981", name: "Szmaragdowa Zieleń" },
+  { id: "#EC4899", name: "Neonowy Róż" },
 ];
 
-// Dynamiczny import komponentu Three.js (wyłączony SSR)
+// Komponent 3D Three.js z wyłączonym SSR
 const KeychainViewer3D = dynamic(
   () =>
     Promise.all([
@@ -30,39 +42,82 @@ const KeychainViewer3D = dynamic(
       import("@react-three/drei"),
       import("three-stdlib"),
     ]).then(([{ Canvas }, { OrbitControls, Center, RoundedBox }, { SVGLoader }]) => {
-      function SvgExtrusion({ svgString, depth, color }) {
-        const shapes = useMemo(() => {
-          if (!svgString) return [];
+      function SvgExtrusionMultiLayer({ svgString, midDepth, midColor, topDepth, topColor }) {
+        const { midShapes, topShapes } = useMemo(() => {
+          if (!svgString) return { midShapes: [], topShapes: [] };
           try {
             const loader = new SVGLoader();
             const svgData = loader.parse(svgString);
-            return svgData.paths.flatMap((path) => path.toShapes(true));
+
+            const mid = [];
+            const top = [];
+
+            svgData.paths.forEach((path) => {
+              const hex = path.color?.getHexString()?.toLowerCase();
+              const parentId = path.userData?.node?.parentElement?.id;
+
+              // Rozpoznawanie warstwy po id grupy lub kolorze heksadecymalnym z Gemini
+              const isTopLayer = parentId === "layer_top" || hex === "222222";
+              const shapes = path.toShapes(true);
+
+              if (isTopLayer) {
+                top.push(...shapes);
+              } else {
+                mid.push(...shapes);
+              }
+            });
+
+            // Awaryjnie, jeśli model AI nie nadał grup ani kolorów
+            if (mid.length === 0 && top.length === 0) {
+              const allShapes = svgData.paths.flatMap((p) => p.toShapes(true));
+              mid.push(...allShapes);
+            }
+
+            return { midShapes: mid, topShapes: top };
           } catch (err) {
             console.error("Błąd parsowania SVG:", err);
-            return [];
+            return { midShapes: [], topShapes: [] };
           }
         }, [svgString]);
 
-        if (!shapes.length) return null;
-
         return (
           <Center position={[0, 0, 0]}>
-            <group scale={[0.35, -0.35, 1]}>
-              {shapes.map((shape, idx) => (
-                <mesh key={idx}>
+            <group scale={[0.38, -0.38, 1]}>
+              {/* Warstwa 1: Główna sylwetka */}
+              {midShapes.map((shape, idx) => (
+                <mesh key={`mid-${idx}`}>
                   <extrudeGeometry
                     args={[
                       shape,
                       {
-                        depth: depth,
+                        depth: midDepth,
                         bevelEnabled: true,
                         bevelThickness: 0.2,
-                        bevelSize: 0.2,
+                        bevelSize: 0.15,
                         bevelSegments: 2,
                       },
                     ]}
                   />
-                  <meshStandardMaterial color={color} roughness={0.3} metalness={0.1} />
+                  <meshStandardMaterial color={midColor} roughness={0.35} metalness={0.05} />
+                </mesh>
+              ))}
+
+              {/* Warstwa 2: Detale i akcenty wysunięte wyżej */}
+              {topShapes.map((shape, idx) => (
+                <mesh key={`top-${idx}`} position={[0, 0, midDepth]}>
+                  <extrudeGeometry
+                    args={[
+                      shape,
+                      {
+                        depth: topDepth,
+                        bevelEnabled: true,
+                        bevelThickness: 0.15,
+                        bevelSize: 0.1,
+                        bevelSegments: 2,
+                      },
+                    ]}
+                  />
+                  <meshStandardMaterial color={topColor} roughness={0.25} metalness={0.1} />
                 </mesh>
               ))}
             </group>
@@ -70,55 +125,66 @@ const KeychainViewer3D = dynamic(
         );
       }
 
-      function KeychainMesh({ shapeType, baseColor, reliefSvg, reliefDepth, reliefColor }) {
+      function KeychainMesh({
+        shapeType,
+        baseColor,
+        reliefSvg,
+        midDepth,
+        midColor,
+        topDepth,
+        topColor,
+      }) {
         return (
           <group>
+            {/* Baza: Prostokąt */}
             {shapeType === "rect" && (
               <group>
-                <RoundedBox args={[65, 45, 4]} radius={4} smoothness={4} position={[0, 0, 0]}>
+                <RoundedBox args={[66, 48, 4]} radius={4} smoothness={4} position={[0, 0, 0]}>
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </RoundedBox>
-                <mesh position={[-36, 0, 0]}>
-                  <torusGeometry args={[6, 2, 16, 32]} />
+                <mesh position={[-37, 0, 0]}>
+                  <torusGeometry args={[6.5, 2, 16, 32]} />
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
               </group>
             )}
 
+            {/* Baza: Okrąg */}
             {shapeType === "circle" && (
               <group>
                 <mesh rotation={[Math.PI / 2, 0, 0]}>
-                  <cylinderGeometry args={[26, 26, 4, 48]} />
+                  <cylinderGeometry args={[27, 27, 4, 48]} />
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
-                <mesh position={[0, 30, 0]}>
-                  <torusGeometry args={[6, 2, 16, 32]} />
+                <mesh position={[0, 31, 0]}>
+                  <torusGeometry args={[6.5, 2, 16, 32]} />
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
               </group>
             )}
 
+            {/* Wytłoczenia leżące na powierzchni bazy (Z = +2.01) */}
             <group position={[0, 0, 2.01]}>
-              <SvgExtrusion svgString={reliefSvg} depth={reliefDepth} color={reliefColor} />
+              <SvgExtrusionMultiLayer
+                svgString={reliefSvg}
+                midDepth={midDepth}
+                midColor={midColor}
+                topDepth={topDepth}
+                topColor={topColor}
+              />
             </group>
           </group>
         );
       }
 
-      return function Viewer({ shapeType, baseColor, reliefSvg, reliefDepth, reliefColor }) {
+      return function Viewer(props) {
         return (
           <Canvas camera={{ position: [0, 45, 90], fov: 45 }}>
-            <ambientLight intensity={0.7} />
-            <directionalLight position={[20, 50, 30]} intensity={1.5} />
-            <directionalLight position={[-20, 20, -20]} intensity={0.6} />
-            <KeychainMesh
-              shapeType={shapeType}
-              baseColor={baseColor}
-              reliefSvg={reliefSvg}
-              reliefDepth={reliefDepth}
-              reliefColor={reliefColor}
-            />
-            <OrbitControls makeDefault minDistance={30} maxDistance={180} />
+            <ambientLight intensity={0.75} />
+            <directionalLight position={[25, 50, 35]} intensity={1.5} />
+            <directionalLight position={[-25, 20, -25]} intensity={0.5} />
+            <KeychainMesh {...props} />
+            <OrbitControls makeDefault minDistance={30} maxDistance={170} />
           </Canvas>
         );
       };
@@ -136,20 +202,24 @@ export default function KeychainGenerator() {
   const genMenuRef = useRef(null);
   const userMenuRef = useRef(null);
 
-  // Konfiguracja Breloka
+  // Konfiguracja geometrii i 3 warstw kolorystycznych
   const [shapeType, setShapeType] = useState("rect");
-  const [baseColor, setBaseColor] = useState("#0B0F17");
-  const [reliefColor, setReliefColor] = useState("#00E5FF");
-  const [reliefDepth, setReliefDepth] = useState(1.6);
+  const [baseColor, setBaseColor] = useState("#0B0F17"); // Warstwa 0: Płytka bazy
+  const [midColor, setMidColor] = useState("#00E5FF");   // Warstwa 1: Główna sylwetka
+  const [topColor, setTopColor] = useState("#FFFFFF");   // Warstwa 2: Detale / Akcenty
+
+  const [midDepth, setMidDepth] = useState(1.2); // mm
+  const [topDepth, setTopDepth] = useState(1.0); // mm
+
   const [uploadedSvg, setUploadedSvg] = useState(DEFAULT_SVG);
-  const [imageFileName, setImageFileName] = useState("Domyślna Gwiazda");
+  const [imageFileName, setImageFileName] = useState("Domyślny Piesek 3D");
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
   const [useAI, setUseAI] = useState(true);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
   const fileInputRef = useRef(null);
 
-  const unitPrice = 18.0;
+  const unitPrice = 21.0; // Wycena za zaawansowany druk 3-kolorowy
   const totalPrice = (unitPrice * quantity).toFixed(2);
 
   async function handleImageUpload(e) {
@@ -158,7 +228,6 @@ export default function KeychainGenerator() {
 
     setImageFileName(selectedFile.name);
 
-    // Jeśli to bezpośredni SVG, nie musimy pytać Gemini
     if (selectedFile.type === "image/svg+xml") {
       const reader = new FileReader();
       reader.onload = (ev) => setUploadedSvg(ev.target.result);
@@ -166,7 +235,6 @@ export default function KeychainGenerator() {
       return;
     }
 
-    // Wektoryzacja przez Gemini AI w backendzie
     if (useAI) {
       setIsProcessingImg(true);
       try {
@@ -187,7 +255,7 @@ export default function KeychainGenerator() {
         setUploadedSvg(data.svg);
       } catch (err) {
         console.error("Błąd AI:", err);
-        alert("Błąd Gemini AI: " + err.message + ". Używam awaryjnej wektoryzacji lokalnej.");
+        alert("Błąd Gemini AI: " + err.message + ". Używam wektoryzacji awaryjnej.");
         fallbackCanvasVectorize(selectedFile);
       } finally {
         setIsProcessingImg(false);
@@ -197,7 +265,6 @@ export default function KeychainGenerator() {
     }
   }
 
-  // Awaryjne proste progowanie canvas
   function fallbackCanvasVectorize(file) {
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -210,19 +277,29 @@ export default function KeychainGenerator() {
         ctx.drawImage(img, 0, 0, 100, 100);
         const data = ctx.getImageData(0, 0, 100, 100).data;
 
-        let pathPoints = "";
+        let midPoints = "";
+        let topPoints = "";
         for (let y = 0; y < 100; y += 4) {
           for (let x = 0; x < 100; x += 4) {
             const i = (y * 100 + x) * 4;
             const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-            if (brightness < 128 && data[i + 3] > 50) {
-              pathPoints += `M${x},${y} h3 v3 h-3 z `;
+            if (data[i + 3] > 50) {
+              if (brightness < 60) {
+                topPoints += `M${x},${y} h3 v3 h-3 z `;
+              } else if (brightness < 160) {
+                midPoints += `M${x},${y} h3 v3 h-3 z `;
+              }
             }
           }
         }
 
-        if (!pathPoints) pathPoints = "M20,20 h60 v60 h-60 z";
-        setUploadedSvg(`<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="${pathPoints}" fill="black" /></svg>`);
+        if (!midPoints && !topPoints) midPoints = "M20,20 h60 v60 h-60 z";
+        setUploadedSvg(
+          `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <g id="layer_mid"><path d="${midPoints}" fill="#111111" /></g>
+            <g id="layer_top"><path d="${topPoints}" fill="#222222" /></g>
+          </svg>`
+        );
       };
       img.src = ev.target.result;
     };
@@ -275,16 +352,20 @@ export default function KeychainGenerator() {
     try {
       const { error } = await supabase.from("orders").insert({
         user_id: user.id,
-        file_name: `Brelok AI Relief: [${imageFileName}]`,
-        material: "PLA / PETG Multi-Color",
-        technology: "FDM Dual-Color Relief",
+        file_name: `Brelok AI Tri-Color: [${imageFileName}]`,
+        material: "PLA Multi-Color (3 barwy)",
+        technology: "FDM Multi-Color 3-Layers",
         layer_height: "0.20 mm",
         infill: 100,
         clean_supports: false,
         brass_inserts: false,
         quantity: quantity,
         total_price: parseFloat(totalPrice),
-        dimensions_mm: [shapeType === "rect" ? 65 : 52, 45, 4 + Number(reliefDepth)],
+        dimensions_mm: [
+          shapeType === "rect" ? 66 : 54,
+          48,
+          4 + Number(midDepth) + Number(topDepth),
+        ],
         status: "in_cart",
       });
 
@@ -301,7 +382,7 @@ export default function KeychainGenerator() {
   return (
     <div className="min-h-screen flex flex-col bg-[#0B0F17] text-[#F8FAFC] font-sans">
       <Head>
-        <title>Generator Breloków ze Zdjęcia AI 3D — Drukstacja</title>
+        <title>Generator Breloków 3D Multi-Color — Drukstacja</title>
       </Head>
 
       {/* NAVBAR */}
@@ -439,36 +520,42 @@ export default function KeychainGenerator() {
 
       {/* PANEL ROBOCZY */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* LEWA STRONA: VIEWPORT 3D */}
         <section className="lg:col-span-7 flex flex-col gap-4">
-          <div className="relative w-full h-[540px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
-            <div className="absolute top-4 left-4 z-10 font-mono text-xs text-[#94A3B8] bg-[#0B0F17]/80 px-3 py-1.5 rounded-lg border border-[#24324A] backdrop-blur-md">
-              Podgląd 3D na żywo • Obracaj lewym przyciskiem myszy
+          <div className="relative w-full h-[580px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
+            <div className="absolute top-4 left-4 z-10 font-mono text-xs text-[#94A3B8] bg-[#0B0F17]/80 px-3 py-1.5 rounded-lg border border-[#24324A] backdrop-blur-md flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#00E5FF] animate-pulse" />
+              Podgląd 3D Multi-Color (3 poziomy Z) • Obracaj myszką
             </div>
 
             <KeychainViewer3D
               shapeType={shapeType}
               baseColor={baseColor}
               reliefSvg={uploadedSvg}
-              reliefDepth={reliefDepth}
-              reliefColor={reliefColor}
+              midDepth={midDepth}
+              midColor={midColor}
+              topDepth={topDepth}
+              topColor={topColor}
             />
           </div>
         </section>
 
+        {/* PRAWA STRONA: KONTROLKI 3 POZIOMÓW */}
         <section className="lg:col-span-5 flex flex-col gap-4">
-          <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-6 shadow-xl space-y-5">
+          <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-6 shadow-xl space-y-4">
             <div className="border-b border-[#24324A] pb-3">
-              <h1 className="text-lg font-bold text-white tracking-wide">BRELOK ZE ZDJĘCIA / LOGO</h1>
-              <p className="text-xs font-mono text-[#94A3B8] mt-1">
-                Wektoryzacja 2D do płaskorzeźby 3D (FDM Dual-Color)
+              <h1 className="text-lg font-bold text-white tracking-wide">BRELOK ZE ZDJĘCIA MULTI-COLOR</h1>
+              <p className="text-xs font-mono text-[#94A3B8] mt-0.5">
+                Kaskadowy relief 3D (3 niezależne kolory i wysokości filamentu)
               </p>
             </div>
 
-            {/* Upload grafiki z AI */}
+            {/* 1. Upload grafiki */}
             <div>
-              <div className="flex justify-between items-center mb-2">
+              <div className="flex justify-between items-center mb-1.5">
                 <label className="text-xs font-medium text-[#94A3B8] uppercase tracking-wider">
-                  1. Wgraj grafikę (PNG, JPG, SVG)
+                  1. Obraz / Grafika (PNG, JPG, SVG)
                 </label>
                 <label className="flex items-center gap-1.5 text-xs font-mono cursor-pointer">
                   <input
@@ -478,7 +565,7 @@ export default function KeychainGenerator() {
                     className="w-3.5 h-3.5 accent-[#00E5FF] rounded cursor-pointer"
                   />
                   <span className={useAI ? "text-[#00E5FF] font-bold" : "text-[#94A3B8]"}>
-                    ✨ Gemini AI Wektoryzacja
+                    ✨ Gemini AI (2 Warstwy)
                   </span>
                 </label>
               </div>
@@ -503,18 +590,18 @@ export default function KeychainGenerator() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <span className="font-mono text-white truncate max-w-[200px]">
-                    {isProcessingImg ? "Gemini przetwarza obraz na wektory 3D..." : imageFileName}
+                    {isProcessingImg ? "AI rozdziela sylwetkę od detali..." : imageFileName}
                   </span>
                 </div>
                 <span className="px-2.5 py-1 rounded bg-[#161F30] text-[#00E5FF] border border-[#24324A] text-xs font-mono">
-                  {isProcessingImg ? "Generuję..." : "Wybierz"}
+                  {isProcessingImg ? "Przetwarzanie..." : "Wybierz"}
                 </span>
               </div>
             </div>
 
-            {/* Kształt bazy */}
+            {/* 2. Kształt bazy */}
             <div>
-              <label className="block text-xs font-medium text-[#94A3B8] mb-2 uppercase tracking-wider">
+              <label className="block text-xs font-medium text-[#94A3B8] mb-1.5 uppercase tracking-wider">
                 2. Kształt bazy breloka
               </label>
               <div className="grid grid-cols-2 gap-2 text-xs font-mono">
@@ -543,93 +630,116 @@ export default function KeychainGenerator() {
               </div>
             </div>
 
-            {/* Suwak wypukłości */}
-            <div>
-              <div className="flex justify-between text-xs font-mono mb-1">
-                <span className="text-[#94A3B8] uppercase">Wysokość wypukłości</span>
-                <span className="text-[#00E5FF] font-bold">{reliefDepth} mm</span>
+            {/* 3. WARSTWA 0: BAZA PŁYTKI */}
+            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-2">
+              <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
+                Warstwa 0: Płytka bazy breloka (grubość 4 mm)
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {COLORS.map((col) => (
+                  <button
+                    key={`base-${col.id}`}
+                    type="button"
+                    onClick={() => setBaseColor(col.id)}
+                    className={`w-6 h-6 rounded border transition cursor-pointer ${
+                      baseColor === col.id ? "border-[#00E5FF] scale-110 shadow-[0_0_8px_#00E5FF]" : "border-[#24324A]"
+                    }`}
+                    style={{ backgroundColor: col.id }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* 4. WARSTWA 1: GŁÓWNA SYLWETKA */}
+            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-2">
+              <div className="flex justify-between items-center text-xs font-mono">
+                <span className="text-[#00E5FF] uppercase font-bold">Warstwa 1: Główny motyw</span>
+                <span className="text-white">+{midDepth} mm</span>
               </div>
               <input
                 type="range"
                 min="0.6"
-                max="3.5"
+                max="2.4"
                 step="0.2"
-                value={reliefDepth}
-                onChange={(e) => setReliefDepth(Number(e.target.value))}
-                className="w-full h-1.5 bg-[#0B0F17] rounded-lg appearance-none cursor-pointer accent-[#00E5FF]"
+                value={midDepth}
+                onChange={(e) => setMidDepth(Number(e.target.value))}
+                className="w-full h-1.5 bg-[#161F30] rounded-lg appearance-none cursor-pointer accent-[#00E5FF]"
               />
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {COLORS.map((col) => (
+                  <button
+                    key={`mid-${col.id}`}
+                    type="button"
+                    onClick={() => setMidColor(col.id)}
+                    className={`w-6 h-6 rounded border transition cursor-pointer ${
+                      midColor === col.id ? "border-[#00E5FF] scale-110 shadow-[0_0_8px_#00E5FF]" : "border-[#24324A]"
+                    }`}
+                    style={{ backgroundColor: col.id }}
+                  />
+                ))}
+              </div>
             </div>
 
-            {/* Kolory */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-[#94A3B8] mb-1 uppercase">Kolor bazy</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {COLORS.map((col) => (
-                    <button
-                      key={col.id}
-                      type="button"
-                      onClick={() => setBaseColor(col.id)}
-                      className={`w-6 h-6 rounded-md border transition cursor-pointer ${
-                        baseColor === col.id ? "border-[#00E5FF] scale-110" : "border-[#24324A]"
-                      }`}
-                      style={{ backgroundColor: col.id }}
-                    />
-                  ))}
+            {/* 5. WARSTWA 2: DETALE I AKCENTY */}
+            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-2">
+              <div className="flex justify-between items-center text-xs font-mono">
+                <span className="text-pink-400 uppercase font-bold">Warstwa 2: Detale (Oczy, nos, akcenty)</span>
+                <span className="text-white">+{topDepth} mm</span>
+              </div>
+              <input
+                type="range"
+                min="0.4"
+                max="2.0"
+                step="0.2"
+                value={topDepth}
+                onChange={(e) => setTopDepth(Number(e.target.value))}
+                className="w-full h-1.5 bg-[#161F30] rounded-lg appearance-none cursor-pointer accent-pink-500"
+              />
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {COLORS.map((col) => (
+                  <button
+                    key={`top-${col.id}`}
+                    type="button"
+                    onClick={() => setTopColor(col.id)}
+                    className={`w-6 h-6 rounded border transition cursor-pointer ${
+                      topColor === col.id ? "border-pink-400 scale-110 shadow-[0_0_8px_#ec4899]" : "border-[#24324A]"
+                    }`}
+                    style={{ backgroundColor: col.id }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Liczba sztuk & Koszyk */}
+            <div className="pt-2 border-t border-[#24324A] space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-[#94A3B8] uppercase font-mono">Liczba sztuk:</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    className="w-8 h-8 bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono rounded-lg transition cursor-pointer"
+                  >
+                    -
+                  </button>
+                  <span className="font-mono text-white text-sm font-bold w-8 text-center">{quantity}</span>
+                  <button
+                    type="button"
+                    onClick={() => setQuantity(quantity + 1)}
+                    className="w-8 h-8 bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono rounded-lg transition cursor-pointer"
+                  >
+                    +
+                  </button>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-[#94A3B8] mb-1 uppercase">Kolor wypukłości</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {COLORS.map((col) => (
-                    <button
-                      key={col.id}
-                      type="button"
-                      onClick={() => setReliefColor(col.id)}
-                      className={`w-6 h-6 rounded-md border transition cursor-pointer ${
-                        reliefColor === col.id ? "border-[#00E5FF] scale-110" : "border-[#24324A]"
-                      }`}
-                      style={{ backgroundColor: col.id }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Liczba sztuk */}
-            <div>
-              <label className="block text-xs font-medium text-[#94A3B8] mb-1 uppercase tracking-wider">
-                Liczba sztuk
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="w-8 h-8 bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono rounded-lg transition cursor-pointer"
-                >
-                  -
-                </button>
-                <span className="font-mono text-white text-sm font-bold w-8 text-center">{quantity}</span>
-                <button
-                  type="button"
-                  onClick={() => setQuantity(quantity + 1)}
-                  className="w-8 h-8 bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono rounded-lg transition cursor-pointer"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            {/* Podsumowanie i Koszyk */}
-            <div className="pt-4 border-t border-[#24324A] space-y-4">
-              <div className="flex items-baseline justify-between font-mono">
+              <div className="flex items-baseline justify-between font-mono pt-1">
                 <div>
-                  <span className="text-xs text-[#94A3B8] block uppercase">Cena całkowita brutto</span>
+                  <span className="text-[10px] text-[#94A3B8] block uppercase">Cena całkowita brutto</span>
                   <span className="text-3xl font-bold text-[#00E5FF]">{totalPrice}</span>
                   <span className="text-xs text-[#94A3B8] ml-1">PLN</span>
                 </div>
-                <span className="text-xs text-emerald-400 font-mono">Druk FDM Multi-Color</span>
+                <span className="text-xs text-emerald-400 font-mono">Druk FDM Tri-Color</span>
               </div>
 
               <button
@@ -641,7 +751,7 @@ export default function KeychainGenerator() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
                 </svg>
-                {addingToCart ? "Zapisuję..." : "Dodaj spersonalizowany brelok do koszyka"}
+                {addingToCart ? "Zapisuję..." : "Dodaj brelok Multi-Color do koszyka"}
               </button>
             </div>
           </div>

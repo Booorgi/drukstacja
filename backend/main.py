@@ -1,7 +1,7 @@
 """
 Drukstacja - backend API
 Obsluguje: upload pliku CAD (STL/STEP/OBJ) -> konwersja STEP -> cięcie slicerem -> zapis w R2 -> wycena druku 3D
-oraz wektoryzację obrazów na SVG za pomocą Gemini AI pod generator breloków.
+oraz zaawansowaną wektoryzację wielowarstwową (Multi-Color Relief) za pomocą Gemini AI pod generator breloków.
 """
 import os
 import re
@@ -25,7 +25,7 @@ from slicer import convert_step_to_stl, run_slicer
 from orientation import auto_orient_mesh
 
 # Inicjalizacja aplikacji FastAPI
-app = FastAPI(title="Drukstacja API", version="0.2.0")
+app = FastAPI(title="Drukstacja API", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -64,7 +64,11 @@ def get_materials():
 
 @app.post("/vectorize-ai")
 async def vectorize_image_ai(file: UploadFile = File(...)):
-    """Wektoryzuje przesłany plik graficzny (PNG/JPG) do czystego formatu SVG pod wytłoczenie 3D."""
+    """
+    Wektoryzuje przesłany plik graficzny (PNG/JPG) do dwuwarstwowego SVG pod wytłoczenie 3D:
+    - layer_mid: główna sylwetka (baza reliefu)
+    - layer_top: detale i akcenty (nos, oczy, wyższy poziom wytłoczenia)
+    """
     if not gemini_client:
         raise HTTPException(
             status_code=500,
@@ -75,21 +79,26 @@ async def vectorize_image_ai(file: UploadFile = File(...)):
     mime_type = file.content_type or "image/png"
 
     prompt = """
-    Jesteś inżynierem CAD i projektantem grafiki pod druk 3D FDM.
-    Przeanalizuj przesłany obraz i wyodrębnij główny motyw/logo/rysunek/kontur.
+    Jesteś inżynierem CAD i projektantem płaskorzeźb do druku 3D Multi-Color FDM.
+    Przeanalizuj przesłany obraz i wyodrębnij główny motyw/obiekt (np. pies, postać, logo, symbol).
     Zignoruj tło zdjęcia, cienie i szum otoczenia.
-    
-    Wygeneruj wyłącznie poprawny, uproszczony kod SVG o wymiarach viewBox="0 0 100 100".
-    Wymagania techniczne SVG:
-    1. Tylko zamknięte ścieżki <path d="..." fill="black" /> bez obramowań (stroke="none").
-    2. Zero zbędnych elementów typu <rect> tła, ramki, cienie czy gradienty.
-    3. Współrzędne muszą mieścić się w przedziale 0-100 i być wyśrodkowane.
-    4. Odpowiedz TYLKO czystym kodem SVG (od <svg> do </svg>), bez znaczników markdown (```xml / ```svg).
+
+    Podziel grafikę na 2 poziomy wypukłości i wygeneruj poprawny kod SVG:
+    1. Znacznik główny: <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">.
+    2. Kod MUSI zawierać dokładnie dwie grupy <g>:
+       - <g id="layer_mid">: ścieżki <path d="..." fill="#111111" /> dla GŁÓWNYCH KSZTAŁTÓW (np. uszy, kontur głowy, tułów, duże elementy).
+       - <g id="layer_top">: ścieżki <path d="..." fill="#222222" /> dla DETALI / AKCENTÓW (np. oczy, nos, pyszczek, brwi, kropki, małe elementy wewnątrz).
+    3. Wszystkie ścieżki <path> muszą być ZAMKNIĘTE (litera 'Z' lub 'z' na końcu ścieżki) i wyśrodkowane w kadrze 0-100.
+    4. NIE dodawaj ramek, obramowań (stroke="none"), cieni, gradientów ani tła <rect>.
+    5. Zwróć WYŁĄCZNIE czysty kod SVG (od <svg> do </svg>), bez znaczników markdown (nie pisz ```xml ani ```svg).
     """
 
     try:
+        # Najnowszy i najbardziej wydajny model multimodalny Gemini Flash
+        model_name = "gemini-2.5-flash"
+        
         response = gemini_client.models.generate_content(
-            model="gemini-3.6-flash",
+            model=model_name,
             contents=[
                 types.Part.from_bytes(data=contents, mime_type=mime_type),
                 prompt,
@@ -98,7 +107,7 @@ async def vectorize_image_ai(file: UploadFile = File(...)):
 
         svg_text = response.text.strip()
 
-        # Oczyszczenie z ewentualnych znaczników markdown ```svg ... ```
+        # Oczyszczenie z ewentualnych znaczników markdown
         svg_clean = re.sub(r"^```(?:svg|xml)?", "", svg_text, flags=re.IGNORECASE)
         svg_clean = re.sub(r"```$", "", svg_clean).strip()
 
