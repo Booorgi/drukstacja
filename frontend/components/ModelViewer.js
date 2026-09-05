@@ -7,36 +7,36 @@ export default function ModelViewer({
   previewUrl = null,
   file = null,
   color = "#64748B",
-  showOverhangs = false, // Zamiast showSupports – podświetlanie krytycznych ścianek
+  showOverhangs = false,
 }) {
   const containerRef = useRef(null);
   const meshRef = useRef(null);
-  const originalGeomRef = useRef(null);
 
-  // Aktualizacja koloru i trybu analizy zwisów
+  // Aktualizacja koloru i wykrywanie wyłącznie krytycznych zwisów
   useEffect(() => {
     if (!meshRef.current) return;
 
     if (showOverhangs) {
-      // Podświetlenie zwisów > 45 stopni
       const geom = meshRef.current.geometry;
       const normals = geom.attributes.normal;
       const colors = [];
       const normal = new THREE.Vector3();
+      // W Three.js stół jest w płaszczyźnie XZ, wektor grawitacji patrzy w dół (0, -1, 0)
       const downVector = new THREE.Vector3(0, -1, 0);
+
+      // Kąt krytyczny: dot > 0.65 oznacza zwis powyżej ~50 stopni (bezwzględnie wymaga podpory)
+      const baseCol = new THREE.Color(color);
 
       for (let i = 0; i < normals.count; i++) {
         normal.fromBufferAttribute(normals, i);
-        // Kąt względem wektora w dół (stół)
         const dot = normal.dot(downVector);
-        
-        // Jeśli ścianka patrzy w dół pod kątem większym niż 45°
-        if (dot > 0.5) {
-          colors.push(0.95, 0.2, 0.2); // Czerwony: krytyczny zwis
-        } else if (dot > 0.1) {
-          colors.push(0.98, 0.6, 0.1); // Pomarańczowy: łagodny zwis
+
+        if (dot > 0.65) {
+          // Tylko strefy krytyczne: jaskrawy czerwony
+          colors.push(0.93, 0.27, 0.27);
         } else {
-          colors.push(0.4, 0.45, 0.5); // Baza: neutralny szary
+          // Bezpieczna geometria zachowuje kolor wybrany przez użytkownika
+          colors.push(baseCol.r, baseCol.g, baseCol.b);
         }
       }
 
@@ -45,7 +45,6 @@ export default function ModelViewer({
       meshRef.current.material.color.set(0xffffff);
       meshRef.current.material.needsUpdate = true;
     } else {
-      // Przywrócenie jednolitego koloru klienta
       meshRef.current.material.vertexColors = false;
       meshRef.current.material.color.set(color);
       meshRef.current.material.needsUpdate = true;
@@ -86,18 +85,18 @@ export default function ModelViewer({
     const buildSceneWithGeometry = (geometry) => {
       if (meshRef.current) scene.remove(meshRef.current);
 
-      // 1. Standaryzacja orientacji STL (Z-up na Y-up)
-      geometry.rotateX(-Math.PI / 2);
       geometry.computeVertexNormals();
 
-      // 2. Centrowanie modelu i postawienie na stole Y = 0
+      // 1. Centrowanie modelu w poziomie (X, Z) i oparcie spodu bezpośrednio na stole (Y = 0)
       geometry.computeBoundingBox();
-      const bbox = geometry.boundingBox;
-      const centerX = (bbox.max.x + bbox.min.x) / 2;
-      const centerZ = (bbox.max.z + bbox.min.z) / 2;
-      const minY = bbox.min.y;
+      let bbox = geometry.boundingBox;
+      let centerX = (bbox.max.x + bbox.min.x) / 2;
+      let centerZ = (bbox.max.z + bbox.min.z) / 2;
+      let minY = bbox.min.y;
+
       geometry.translate(-centerX, -minY, -centerZ);
 
+      // Aktualizacja po przesunięciu
       geometry.computeBoundingBox();
       const finalBbox = geometry.boundingBox;
       const modelHeight = finalBbox.max.y - finalBbox.min.y;
@@ -110,17 +109,16 @@ export default function ModelViewer({
 
       const mesh = new THREE.Mesh(geometry, material);
       meshRef.current = mesh;
-      originalGeomRef.current = geometry;
       scene.add(mesh);
 
-      // 3. Siatka stołu roboczego
+      // 2. Siatka stołu roboczego dopasowana do gabarytów
       geometry.computeBoundingSphere();
       const radius = geometry.boundingSphere.radius || 60;
       const grid = new THREE.GridHelper(Math.max(radius * 3.5, 140), 20, 0x94a3b8, 0xe2e8f0);
       grid.position.y = 0;
       scene.add(grid);
 
-      // Kamera
+      // 3. Pozycja kamery
       camera.position.set(radius * 2.2, radius * 1.8, radius * 2.4);
       controls.target.set(0, modelHeight * 0.4, 0);
       controls.update();
