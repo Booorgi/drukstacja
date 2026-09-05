@@ -183,13 +183,13 @@ export default function KeychainGenerator() {
 
   const [layersConfig, setLayersConfig] = useState([
     { id: 1, name: "Filament 1: Kontury / Detale", color: "#0B0F17", thickness: 2.0 },
-    { id: 2, name: "Filament 2: Główna bryła", color: "#00E5FF", thickness: 1.4 },
-    { id: 3, name: "Filament 3: Tony średnie", color: "#2563EB", thickness: 1.0 },
+    { id: 2, name: "Filament 2: Główna bryła", color: "#8B4513", thickness: 1.4 },
+    { id: 3, name: "Filament 3: Tony średnie", color: "#E5E7EB", thickness: 1.0 },
     { id: 4, name: "Filament 4: Jasne akcenty", color: "#FFFFFF", thickness: 0.8 },
   ]);
 
-  // STANY DLA OKNA MODALNEGO PREPROCESSINGU
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // ETAP 1: PREPROCESSING MODAL
+  const [isPreprocessingOpen, setIsPreprocessingOpen] = useState(false);
   const [modalImageSrc, setModalImageSrc] = useState(null);
   const [exposure, setExposure] = useState(1.0);
   const [contrast, setContrast] = useState(1.0);
@@ -197,8 +197,12 @@ export default function KeychainGenerator() {
   const [cropRatio, setCropRatio] = useState("1:1");
   const [keepBg, setKeepBg] = useState(false);
 
+  // ETAP 2: CONVERSION PREVIEW MODAL
+  const [isConversionPreviewOpen, setIsConversionPreviewOpen] = useState(false);
+  const [generatedSvgPreview, setGeneratedSvgPreview] = useState(null);
+
   const [uploadedSvg, setUploadedSvg] = useState(DEFAULT_SVG);
-  const [imageFileName, setImageFileName] = useState("Wybierz plik z grafiką");
+  const [imageFileName, setImageFileName] = useState("Wybierz plik");
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
@@ -234,14 +238,14 @@ export default function KeychainGenerator() {
       setExposure(1.0);
       setContrast(1.0);
       setSaturation(1.0);
-      setIsModalOpen(true);
+      setIsPreprocessingOpen(true);
     };
     reader.readAsDataURL(file);
   }
 
-  // Po zatwierdzeniu w modalu ("Confirm")
+  // Zakończenie Preprocessingu -> Generowanie Wektora i otwarcie okna Preview
   async function handleConfirmPreprocessing() {
-    setIsModalOpen(false);
+    setIsPreprocessingOpen(false);
     setIsProcessingImg(true);
 
     try {
@@ -253,7 +257,6 @@ export default function KeychainGenerator() {
         canvas.width = img.width;
         canvas.height = img.height;
 
-        // Aplikacja suwaków: jasność (exposure), kontrast i nasycenie
         ctx.filter = `brightness(${exposure}) contrast(${contrast}) saturate(${saturation})`;
         ctx.drawImage(img, 0, 0);
 
@@ -275,7 +278,8 @@ export default function KeychainGenerator() {
             }
 
             const data = await res.json();
-            setUploadedSvg(data.svg);
+            setGeneratedSvgPreview(data.svg);
+            setIsConversionPreviewOpen(true); // Otwieramy okno podglądu konwersji!
           } catch (err) {
             alert("Błąd Gemini AI: " + err.message);
           } finally {
@@ -288,6 +292,20 @@ export default function KeychainGenerator() {
       console.error(e);
       setIsProcessingImg(false);
     }
+  }
+
+  // Kliknięcie "Try Again" w podglądzie konwersji
+  function handleTryAgain() {
+    setIsConversionPreviewOpen(false);
+    setIsPreprocessingOpen(true);
+  }
+
+  // Kliknięcie "Confirm" w oknie konwersji -> Przeniesienie do stołu 3D
+  function handleConfirmConversion() {
+    if (generatedSvgPreview) {
+      setUploadedSvg(generatedSvgPreview);
+    }
+    setIsConversionPreviewOpen(false);
   }
 
   async function fetchCart(userId) {
@@ -363,7 +381,7 @@ export default function KeychainGenerator() {
   return (
     <div className="min-h-screen flex flex-col bg-[#0B0F17] text-[#F8FAFC] font-sans">
       <Head>
-        <title>Generator Breloków 4-Kolorowych — Drukstacja</title>
+        <title>Generator Breloków 4-Kolorowych MakerWorld — Drukstacja</title>
       </Head>
 
       {/* NAVBAR */}
@@ -497,7 +515,6 @@ export default function KeychainGenerator() {
 
       {/* VIEWPORT & FORMULARZ */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* LEWA STRONA: 3D VIEWPORT */}
         <section className="lg:col-span-7 flex flex-col gap-4">
           <div className="relative w-full h-[620px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
             <div className="absolute top-4 left-4 z-10 font-mono text-xs text-[#94A3B8] bg-[#0B0F17]/80 px-3 py-1.5 rounded-lg border border-[#24324A] backdrop-blur-md flex items-center gap-2">
@@ -514,7 +531,6 @@ export default function KeychainGenerator() {
           </div>
         </section>
 
-        {/* PRAWA STRONA: KONTROLKI */}
         <section className="lg:col-span-5 flex flex-col gap-4">
           <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-5 shadow-xl space-y-4 max-h-[620px] overflow-y-auto custom-scrollbar">
             <div className="border-b border-[#24324A] pb-2">
@@ -525,11 +541,11 @@ export default function KeychainGenerator() {
                 </span>
               </div>
               <p className="text-[11px] font-mono text-[#94A3B8] mt-0.5">
-                Kwantyzacja kolorów i niezależna grubość każdego detalu
+                MakerWorld Pipeline: Preprocessing & Weryfikacja wektora
               </p>
             </div>
 
-            {/* Upload otwierający okno Preprocessingu */}
+            {/* Wybór grafiki */}
             <div>
               <span className="text-[11px] font-mono text-[#00E5FF] uppercase font-bold block mb-1.5">
                 1. Wybierz grafikę
@@ -554,7 +570,7 @@ export default function KeychainGenerator() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <span className="font-mono text-xs text-white truncate max-w-[200px]">
-                    {isProcessingImg ? "AI analizuje warstwy..." : imageFileName}
+                    {isProcessingImg ? "AI analizuje klastry obrazu..." : imageFileName}
                   </span>
                 </div>
                 <span className="px-2.5 py-1 rounded bg-[#161F30] text-[#00E5FF] border border-[#24324A] text-xs font-mono">
@@ -696,25 +712,22 @@ export default function KeychainGenerator() {
       </main>
 
       {/* ========================================================= */}
-      {/* OKNO MODALNE: IMAGE PREPROCESSING (A'LA MAKERWORLD)       */}
+      {/* MODAL 1: IMAGE PREPROCESSING                              */}
       {/* ========================================================= */}
-      {isModalOpen && (
+      {isPreprocessingOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-[#0E1524] border border-[#24324A] rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col">
-            {/* Header */}
             <div className="px-6 py-4 border-b border-[#24324A] flex items-center justify-between">
               <h2 className="text-base font-bold text-white tracking-wide">Image Preprocessing</h2>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => setIsPreprocessingOpen(false)}
                 className="text-[#94A3B8] hover:text-white transition cursor-pointer text-sm"
               >
                 ✕
               </button>
             </div>
 
-            {/* Body */}
             <div className="p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
-              {/* Podgląd z siatką przezroczystości */}
               <div className="md:col-span-7 flex items-center justify-center bg-[#070A10] border border-[#24324A] rounded-xl p-4 min-h-[320px] bg-[radial-gradient(#1E293B_1px,transparent_1px)] [background-size:16px_16px] overflow-hidden relative">
                 {modalImageSrc && (
                   <img
@@ -728,10 +741,8 @@ export default function KeychainGenerator() {
                 )}
               </div>
 
-              {/* Pasek narzędziowy (MakerWorld controls) */}
               <div className="md:col-span-5 flex flex-col justify-between space-y-4 font-mono text-xs">
                 <div className="space-y-4">
-                  {/* Crop Ratio */}
                   <div>
                     <label className="text-[#94A3B8] uppercase block mb-1.5 font-bold">Crop Ratio</label>
                     <div className="flex items-center gap-1.5">
@@ -752,7 +763,6 @@ export default function KeychainGenerator() {
                     </div>
                   </div>
 
-                  {/* Keep Background */}
                   <div className="flex items-center justify-between py-1 border-y border-[#24324A]">
                     <span className="text-white">Keep Background</span>
                     <button
@@ -766,10 +776,8 @@ export default function KeychainGenerator() {
                     </button>
                   </div>
 
-                  {/* Suwaki Image Adjustment */}
                   <div className="space-y-3 pt-1">
                     <span className="text-[#00E5FF] uppercase font-bold block text-[11px]">Image Adjustment</span>
-
                     <div>
                       <div className="flex justify-between text-[#94A3B8] mb-1">
                         <span>Exposure (Jasność)</span>
@@ -785,7 +793,6 @@ export default function KeychainGenerator() {
                         className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
                       />
                     </div>
-
                     <div>
                       <div className="flex justify-between text-[#94A3B8] mb-1">
                         <span>Contrast (Kontrast)</span>
@@ -801,7 +808,6 @@ export default function KeychainGenerator() {
                         className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
                       />
                     </div>
-
                     <div>
                       <div className="flex justify-between text-[#94A3B8] mb-1">
                         <span>Saturation (Nasycenie)</span>
@@ -820,11 +826,10 @@ export default function KeychainGenerator() {
                   </div>
                 </div>
 
-                {/* Stopka z przyciskami Cancel i Confirm */}
                 <div className="flex items-center justify-end gap-2 pt-4 border-t border-[#24324A]">
                   <button
                     type="button"
-                    onClick={() => setIsModalOpen(false)}
+                    onClick={() => setIsPreprocessingOpen(false)}
                     className="px-4 py-2 rounded-lg border border-[#24324A] text-[#94A3B8] hover:text-white hover:border-slate-500 transition"
                   >
                     Cancel
@@ -832,12 +837,62 @@ export default function KeychainGenerator() {
                   <button
                     type="button"
                     onClick={handleConfirmPreprocessing}
-                    className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                    className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-[0_0_15px_rgba(16,185,129,0.3)] cursor-pointer"
                   >
                     Confirm
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 2: IMAGE CONVERSION PREVIEW (A'LA MAKERWORLD STEP 2) */}
+      {/* ========================================================= */}
+      {isConversionPreviewOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+          <div className="bg-[#0E1524] border border-[#24324A] rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col">
+            <div className="px-6 py-4 border-b border-[#24324A] flex items-center justify-between">
+              <h2 className="text-base font-bold text-white tracking-wide">Image Conversion Preview</h2>
+              <button
+                onClick={() => setIsConversionPreviewOpen(false)}
+                className="text-[#94A3B8] hover:text-white transition cursor-pointer text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Obszar podglądu z siatką przezroczystości szachownicy */}
+            <div className="p-8 flex items-center justify-center min-h-[380px] bg-[#070A10] bg-[radial-gradient(#1E293B_1.5px,transparent_1.5px)] [background-size:20px_20px] overflow-hidden">
+              {generatedSvgPreview && (
+                <div
+                  className="w-72 h-72 flex items-center justify-center drop-shadow-2xl"
+                  dangerouslySetInnerHTML={{ __html: generatedSvgPreview }}
+                />
+              )}
+            </div>
+
+            {/* Pasek akcji na dole: Try Again & Confirm */}
+            <div className="px-6 py-4 border-t border-[#24324A] bg-[#0B0F17]/60 flex items-center justify-end gap-3 font-mono text-xs">
+              <button
+                type="button"
+                onClick={handleTryAgain}
+                className="px-4 py-2 rounded-lg border border-[#24324A] bg-[#161F30] text-slate-200 hover:text-white hover:border-[#00E5FF] transition flex items-center gap-2 cursor-pointer"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Try Again</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmConversion}
+                className="px-6 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-[0_0_15px_rgba(16,185,129,0.3)] cursor-pointer flex items-center gap-1.5"
+              >
+                <span>Confirm</span>
+              </button>
             </div>
           </div>
         </div>
