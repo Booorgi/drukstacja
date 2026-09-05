@@ -51,27 +51,26 @@ class QuoteRequest(BaseModel):
 def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
     """
     Algorytmiczna kwantyzacja i wektoryzacja konturów (MakerWorld Standard):
-    - Usuwa obramowanie kadru (eliminuje wielki szary kwadrat)
-    - Automatycznie wykrywa i odcina tło
-    - Trasuje wewnętrzne detale metodą RETR_LIST z filtracją powierzchni
+    - Zachowuje oryginalne kolory filamentu z K-Means
+    - Sortuje ścieżki wg powierzchni (największe na spód, detale na wierzch)
+    - Eliminuje zakrywanie detali przez tło/sylwetkę
     """
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
     if img is None:
         raise ValueError("Nie udało się zdekodować przesłanego pliku graficznego.")
 
-    # 1. Sprawdzenie przezroczystości (Alpha channel)
+    # 1. Obsługa przezroczystości (alfa) lub detekcja tła
     has_alpha = False
-    alpha_mask = None
     if len(img.shape) == 3 and img.shape[2] == 4:
         has_alpha = True
-        alpha_mask = img[:, :, 3] > 20
+        alpha_mask = img[:, :, 3] > 25
         bgr = img[:, :, :3]
     else:
         bgr = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
-    # 2. Skalowanie do optymalnej rozdzielczości roboczej
-    target_dim = 350
+    # 2. Skalowanie do stałego rozmiaru roboczego
+    target_dim = 400
     h, w = bgr.shape[:2]
     scale = target_dim / max(h, w)
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
@@ -82,7 +81,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
             alpha_mask.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
         ).astype(bool)
     else:
-        # Automatyczna detekcja tła (np. białe / bardzo jasne tło w rogach)
+        # Automatyczne odcięcie jasnego/białego tła w rogach
         corners = [
             bgr_resized[0, 0],
             bgr_resized[0, -1],
@@ -90,10 +89,9 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
             bgr_resized[-1, -1]
         ]
         avg_corner = np.mean(corners, axis=0)
-        # Jeśli rogi są jasne (>220), uznajemy je za tło do wycięcia
-        if np.all(avg_corner > 215):
+        if np.all(avg_corner > 210):
             diff = np.linalg.norm(bgr_resized.astype(float) - avg_corner, axis=2)
-            alpha_resized = diff > 35
+            alpha_resized = diff > 30
         else:
             alpha_resized = np.ones((new_h, new_w), dtype=bool)
 
@@ -102,63 +100,46 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
         pixels = bgr_resized.reshape(-1, 3)
         alpha_resized = np.ones((new_h, new_w), dtype=bool)
 
-    # 3. Kwantyzacja K-Means
+    # 3. K-Means
     kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=4)
     kmeans.fit(pixels)
 
-    # Sortowanie klastrów wg jasności (luminancji)
-    centers = kmeans.cluster_centers_
-    luminance = 0.299 * centers[:, 2] + 0.587 * centers[:, 1] + 0.114 * centers[:, 0]
-    sorted_indices = np.argsort(luminance)
+    # Pobieramy rzeczywiste kolory klastrów w formacie HEX
+    centers = kmeans.cluster_centers_.astype(int)  # BGR
+    hex_colors = [f"#{c[2]:02x}{c[1]:02x}{c[0]:02x}" for c in centers]
 
     quantized_map = np.full((new_h, new_w), -1, dtype=int)
     quantized_map[alpha_resized] = kmeans.labels_
 
-    # 4. Generowanie wektorów bez obrysu kadru
-    svg_paths_by_layer = {0: [], 1: [], 2: [], 3: []}
-    color_ids = ["color_1", "color_2", "color_3", "color_4"]
     total_area = new_w * new_h
-
-    # Obliczenie marginesów centrowania (zostawiamy 4% marginesu)
     pad = 4.0
     usable_box = 100.0 - (2 * pad)
 
-    for rank, cluster_idx in enumerate(sorted_indices):
+    # 4. Zbieranie wszystkich ścieżek z ich powierzchnią i przynależnością do warstwy
+    collected_paths = []
+    color_ids = ["color_1", "color_2", "color_3", "color_4"]
+
+    for cluster_idx in range(n_colors):
         mask = (quantized_map == cluster_idx).astype(np.uint8) * 255
         if not np.any(mask):
             continue
 
+        # Wygładzamy drobne ząbkowanie pikseli
         mask = cv2.medianBlur(mask, 3)
 
-        # Używamy RETR_TREE do zachowania wycięć wewnątrz (np. dziurka w oku, pyszczek)
-        contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        if hierarchy is None:
-            continue
+        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS)
 
-        for i, cnt in enumerate(contours):
+        for cnt in contours:
             area = cv2.contourArea(cnt)
-            # 1. Ignoruj mikroszumy (< 8px)
-            # 2. KLUCZOWE: Ignoruj kontury obejmujące całe tło / cały kadr (> 85% ekranu)
-            if area < 8 or area > (0.88 * total_area):
+            # Odrzucamy szum (< 6px) oraz obrys całego tła (> 88%)
+            if area < 6 or area > (0.88 * total_area):
                 continue
 
-            # Uproszczenie wielokąta dla gładkich łuków i mniejszego SVG
-            epsilon = 0.002 * cv2.arcLength(cnt, True)
-            approx = cv2.approxPolyDP(cnt, epsilon, True)
-            pts = approx.reshape(-1, 2)
-
+            pts = cnt.reshape(-1, 2)
             if len(pts) < 3:
                 continue
 
-            # Sprawdzenie czy punkty nie leżą na samej krawędzi ekranu
-            on_border_count = np.sum(
-                (pts[:, 0] <= 1) | (pts[:, 0] >= new_w - 2) |
-                (pts[:, 1] <= 1) | (pts[:, 1] >= new_h - 2)
-            )
-            if on_border_count > (len(pts) * 0.7):
-                continue  # To ramka zdjęcia, pomijamy!
-
-            # Przeliczenie współrzędnych do viewBox 0-100 z marginesem
+            # Budowanie ścieżki SVG
             start_x = pad + (pts[0][0] / new_w) * usable_box
             start_y = pad + (pts[0][1] / new_h) * usable_box
             path_d = f"M {start_x:.2f} {start_y:.2f} "
@@ -169,16 +150,26 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
                 path_d += f"L {x:.2f} {y:.2f} "
             path_d += "Z"
 
-            svg_paths_by_layer[rank].append(path_d)
+            collected_paths.append({
+                "area": area,
+                "cluster_idx": cluster_idx,
+                "path_d": path_d
+            })
 
-    hex_colors = ["#111111", "#222222", "#333333", "#444444"]
+    # 5. SORTOWANIE: Największe płaszczyzny idą na spód, a detale na sam wierzch!
+    collected_paths.sort(key=lambda x: x["area"], reverse=True)
+
+    # 6. Generowanie wynikowego SVG
     svg_output = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
 
-    for rank in range(min(n_colors, 4)):
-        c_id = color_ids[rank]
-        c_hex = hex_colors[rank]
-        if svg_paths_by_layer[rank]:
-            paths_str = " ".join([f'<path d="{p}" />' for p in svg_paths_by_layer[rank]])
+    # Grupujemy ścieżki pod kątem 4 kolorów Three.js
+    for cluster_idx in range(n_colors):
+        c_id = color_ids[cluster_idx]
+        c_hex = hex_colors[cluster_idx]
+        group_paths = [p["path_d"] for p in collected_paths if p["cluster_idx"] == cluster_idx]
+        
+        if group_paths:
+            paths_str = " ".join([f'<path d="{p}" />' for p in group_paths])
             svg_output.append(f'<g id="{c_id}" fill="{c_hex}">{paths_str}</g>')
 
     svg_output.append("</svg>")
