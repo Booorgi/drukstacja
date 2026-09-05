@@ -6,29 +6,51 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 export default function ModelViewer({
   previewUrl = null,
   file = null,
-  color = "#9CA3AF",
-  supportLines = [],
-  showSupports = false,
+  color = "#64748B",
+  showOverhangs = false, // Zamiast showSupports – podświetlanie krytycznych ścianek
 }) {
   const containerRef = useRef(null);
   const meshRef = useRef(null);
-  const supportsGroupRef = useRef(null);
+  const originalGeomRef = useRef(null);
 
-  // Dynamiczna zmiana koloru i przezroczystości modelu
+  // Aktualizacja koloru i trybu analizy zwisów
   useEffect(() => {
-    if (meshRef.current) {
+    if (!meshRef.current) return;
+
+    if (showOverhangs) {
+      // Podświetlenie zwisów > 45 stopni
+      const geom = meshRef.current.geometry;
+      const normals = geom.attributes.normal;
+      const colors = [];
+      const normal = new THREE.Vector3();
+      const downVector = new THREE.Vector3(0, -1, 0);
+
+      for (let i = 0; i < normals.count; i++) {
+        normal.fromBufferAttribute(normals, i);
+        // Kąt względem wektora w dół (stół)
+        const dot = normal.dot(downVector);
+        
+        // Jeśli ścianka patrzy w dół pod kątem większym niż 45°
+        if (dot > 0.5) {
+          colors.push(0.95, 0.2, 0.2); // Czerwony: krytyczny zwis
+        } else if (dot > 0.1) {
+          colors.push(0.98, 0.6, 0.1); // Pomarańczowy: łagodny zwis
+        } else {
+          colors.push(0.4, 0.45, 0.5); // Baza: neutralny szary
+        }
+      }
+
+      geom.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+      meshRef.current.material.vertexColors = true;
+      meshRef.current.material.color.set(0xffffff);
+      meshRef.current.material.needsUpdate = true;
+    } else {
+      // Przywrócenie jednolitego koloru klienta
+      meshRef.current.material.vertexColors = false;
       meshRef.current.material.color.set(color);
-      meshRef.current.material.transparent = showSupports;
-      meshRef.current.material.opacity = showSupports ? 0.75 : 1.0;
+      meshRef.current.material.needsUpdate = true;
     }
-  }, [color, showSupports]);
-
-  // Włączanie / wyłączanie widoczności podpór
-  useEffect(() => {
-    if (supportsGroupRef.current) {
-      supportsGroupRef.current.visible = showSupports;
-    }
-  }, [showSupports]);
+  }, [color, showOverhangs]);
 
   useEffect(() => {
     if ((!previewUrl && !file) || !containerRef.current) return;
@@ -53,8 +75,8 @@ export default function ModelViewer({
     controls.dampingFactor = 0.06;
     controls.maxPolarAngle = Math.PI / 2 + 0.05;
 
-    // Oświetlenie
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xe2e8f0, 0.95));
+    // Oświetlenie studyjne
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xe2e8f0, 0.9));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(150, 250, 150);
     scene.add(dirLight);
@@ -63,13 +85,12 @@ export default function ModelViewer({
 
     const buildSceneWithGeometry = (geometry) => {
       if (meshRef.current) scene.remove(meshRef.current);
-      if (supportsGroupRef.current) scene.remove(supportsGroupRef.current);
 
-      // 1. Orientacja bryły: STL Z-up -> Three.js Y-up
+      // 1. Standaryzacja orientacji STL (Z-up na Y-up)
       geometry.rotateX(-Math.PI / 2);
       geometry.computeVertexNormals();
 
-      // 2. Centrowanie bryły w płaszczyźnie poziomej (X, Z) i oparcie podstawy na stole (Y = 0)
+      // 2. Centrowanie modelu i postawienie na stole Y = 0
       geometry.computeBoundingBox();
       const bbox = geometry.boundingBox;
       const centerX = (bbox.max.x + bbox.min.x) / 2;
@@ -85,58 +106,21 @@ export default function ModelViewer({
         color: new THREE.Color(color),
         roughness: 0.35,
         metalness: 0.1,
-        transparent: showSupports,
-        opacity: showSupports ? 0.75 : 1.0,
       });
 
       const mesh = new THREE.Mesh(geometry, material);
       meshRef.current = mesh;
+      originalGeomRef.current = geometry;
       scene.add(mesh);
 
-      // 3. Stół roboczy
+      // 3. Siatka stołu roboczego
       geometry.computeBoundingSphere();
       const radius = geometry.boundingSphere.radius || 60;
       const grid = new THREE.GridHelper(Math.max(radius * 3.5, 140), 20, 0x94a3b8, 0xe2e8f0);
       grid.position.y = 0;
       scene.add(grid);
 
- // 4. Podpory organiczne ze slicera
-      if (supportLines && supportLines.length >= 6) {
-        const lineGeo = new THREE.BufferGeometry();
-        lineGeo.setAttribute(
-          "position",
-          new THREE.Float32BufferAttribute(supportLines, 3)
-        );
-
-        // A. Konwersja osi STL Z-up -> Three.js Y-up
-        lineGeo.rotateX(-Math.PI / 2);
-
-        // B. Wyrównanie osi w poziomie
-        lineGeo.rotateY(Math.PI);
-
-        // C. Centrowanie podpór w osiach X, Z i oparcie na stole Y = 0
-        lineGeo.computeBoundingBox();
-        const sBbox = lineGeo.boundingBox;
-        const sCenterX = (sBbox.max.x + sBbox.min.x) / 2;
-        const sCenterZ = (sBbox.max.z + sBbox.min.z) / 2;
-        const sMinY = sBbox.min.y;
-
-        // Przesuwamy podpory dokładnie do środka układu (0, 0, 0)
-        lineGeo.translate(-sCenterX, -sMinY, -sCenterZ);
-
-        const lineMat = new THREE.LineBasicMaterial({
-          color: 0x10b981,
-          linewidth: 2,
-        });
-
-        const supportMesh = new THREE.LineSegments(lineGeo, lineMat);
-        supportMesh.position.set(0, 0, 0);
-        supportMesh.visible = showSupports;
-        supportsGroupRef.current = supportMesh;
-        scene.add(supportMesh);
-      }
-
-      // Pozycja kamery i celowanie w środek bryły
+      // Kamera
       camera.position.set(radius * 2.2, radius * 1.8, radius * 2.4);
       controls.target.set(0, modelHeight * 0.4, 0);
       controls.update();
@@ -152,12 +136,7 @@ export default function ModelViewer({
     const loader = new STLLoader();
 
     if (previewUrl) {
-      loader.load(
-        previewUrl,
-        (geom) => buildSceneWithGeometry(geom),
-        undefined,
-        (err) => console.error("Błąd pobierania pliku STL z R2:", err)
-      );
+      loader.load(previewUrl, (geom) => buildSceneWithGeometry(geom));
     } else if (file) {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -184,7 +163,7 @@ export default function ModelViewer({
       resizeObserver.disconnect();
       renderer.dispose();
     };
-  }, [previewUrl, file, supportLines]);
+  }, [previewUrl, file]);
 
   return (
     <div
