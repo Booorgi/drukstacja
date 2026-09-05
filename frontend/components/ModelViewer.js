@@ -4,17 +4,17 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 export default function ModelViewer({
-  file,          // opcjonalnie: surowy plik z <input> - podglad "od razu", zanim backend skonczy orientacje
-  previewUrl,    // preferowane: URL do JUZ ZORIENTOWANEGO pliku z backendu (spojny z supportLines)
+  url = null,
+  file = null,
   color = "#9CA3AF",
   supportLines = [],
-  showSupports = false
+  showSupports = false,
 }) {
   const containerRef = useRef(null);
   const meshRef = useRef(null);
   const supportsGroupRef = useRef(null);
 
-  // Dynamiczna zmiana koloru i przezroczystości bryły
+  // Dynamiczna zmiana koloru oraz przezroczystości bryły
   useEffect(() => {
     if (meshRef.current) {
       meshRef.current.material.color.set(color);
@@ -23,7 +23,7 @@ export default function ModelViewer({
     }
   }, [color, showSupports]);
 
-  // Włączanie / wyłączanie widoczności podpór
+  // Włączanie / ukrywanie podpór
   useEffect(() => {
     if (supportsGroupRef.current) {
       supportsGroupRef.current.visible = showSupports;
@@ -31,7 +31,7 @@ export default function ModelViewer({
   }, [showSupports]);
 
   useEffect(() => {
-    if ((!file && !previewUrl) || !containerRef.current) return;
+    if ((!url && !file) || !containerRef.current) return;
 
     const container = containerRef.current;
     let width = container.clientWidth || 600;
@@ -53,46 +53,28 @@ export default function ModelViewer({
     controls.dampingFactor = 0.06;
     controls.maxPolarAngle = Math.PI / 2 + 0.05;
 
-    // Oświetlenie studyjne
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xe2e8f0, 0.9));
+    // Oświetlenie
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xe2e8f0, 0.95));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(150, 250, 150);
     scene.add(dirLight);
 
     let animationFrameId;
 
-    const buildScene = (arrayBuffer) => {
-      const loader = new STLLoader();
-      const geometry = loader.parse(arrayBuffer);
-
-      // WAŻNE: backend (slicer.py) generuje linie podpór w konwencji Z-up
-      // (Z = oś wysokości wydruku, tak jak w G-code/PrusaSlicer), a Three.js
-      // jest Y-up. Stosujemy DOKŁADNIE tę samą zamianę osi Y<->Z co przy
-      // generowaniu podpór, żeby model i podpory zawsze się pokrywały -
-      // to był główny powód, dla którego wcześniej się rozjeżdżały.
-      const axisSwapZupToYup = new THREE.Matrix4().set(
-        1, 0, 0, 0,
-        0, 0, 1, 0,
-        0, 1, 0, 0,
-        0, 0, 0, 1
-      );
-      geometry.applyMatrix4(axisSwapZupToYup);
+    const buildSceneWithGeometry = (geometry) => {
+      // 1. Standaryzacja orientacji: STL ma Z do góry, Three.js ma Y do góry
+      geometry.rotateX(-Math.PI / 2);
       geometry.computeVertexNormals();
 
-      // Wyśrodkuj w X/Z i postaw podstawę modelu na Y = 0 (na stole roboczym)
+      // 2. Centrujemy na stole (X=0, Z=0) i stawiamy spód na poziomie Y=0
       geometry.computeBoundingBox();
-      const rawBbox = geometry.boundingBox;
-      const centerX = (rawBbox.max.x + rawBbox.min.x) / 2;
-      const centerZ = (rawBbox.max.z + rawBbox.min.z) / 2;
-      const minY = rawBbox.min.y;
+      const bbox = geometry.boundingBox;
+      const centerX = (bbox.max.x + bbox.min.x) / 2;
+      const centerZ = (bbox.max.z + bbox.min.z) / 2;
+      const minY = bbox.min.y;
       geometry.translate(-centerX, -minY, -centerZ);
 
-      geometry.computeBoundingBox();
-      geometry.computeBoundingSphere();
-      const bbox = geometry.boundingBox;
-      const modelHeight = bbox.max.y - bbox.min.y;
-
-      // Model STL
+      // Model bryły
       const material = new THREE.MeshStandardMaterial({
         color: new THREE.Color(color),
         roughness: 0.35,
@@ -106,12 +88,13 @@ export default function ModelViewer({
       scene.add(mesh);
 
       // Siatka stołu roboczego
+      geometry.computeBoundingSphere();
       const radius = geometry.boundingSphere.radius || 50;
       const grid = new THREE.GridHelper(Math.max(radius * 3.5, 120), 20, 0x94a3b8, 0xe2e8f0);
       grid.position.y = 0;
       scene.add(grid);
 
-      // --- DODANIE PODPÓR I PRECYZYJNE WYRÓWNANIE ---
+      // Siatka podpór wygenerowanych przez slicer
       if (supportLines && supportLines.length >= 6) {
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
@@ -119,27 +102,20 @@ export default function ModelViewer({
           new THREE.Float32BufferAttribute(supportLines, 3)
         );
 
-        // 1. Centrujemy podpory tak samo jak model w osiach X i Z
-        lineGeo.computeBoundingBox();
-        const sBbox = lineGeo.boundingBox;
-        const sCenterX = (sBbox.max.x + sBbox.min.x) / 2;
-        const sCenterZ = (sBbox.max.z + sBbox.min.z) / 2;
-        const sMinY = sBbox.min.y;
-
         const lineMat = new THREE.LineBasicMaterial({
-          color: 0x10b981, // Wyrazista zieleń podpór
-          linewidth: 1.5,
+          color: 0x10b981,
+          linewidth: 1.8,
         });
 
         const supportMesh = new THREE.LineSegments(lineGeo, lineMat);
-        // Dopasowujemy środek podpór do (0, 0) i wyrównujemy podstawę do poziomu stołu (Y = 0)
-        supportMesh.position.set(-sCenterX, -sMinY, -sCenterZ);
+        supportMesh.position.set(0, 0, 0);
         supportMesh.visible = showSupports;
         supportsGroupRef.current = supportMesh;
         scene.add(supportMesh);
       }
 
       // Kamera
+      const modelHeight = bbox.max.y - bbox.min.y;
       camera.position.set(radius * 2.2, radius * 2.0, radius * 2.5);
       controls.target.set(0, modelHeight * 0.5, 0);
       controls.update();
@@ -152,17 +128,21 @@ export default function ModelViewer({
       animate();
     };
 
-    // Preferujemy previewUrl (plik JUZ zorientowany przez backend, spojny
-    // z supportLines). Jesli go jeszcze nie ma (np. trwa analiza), pokazujemy
-    // tymczasowo surowy wgrany plik, zeby user od razu widzial podglad.
-    if (previewUrl) {
-      fetch(previewUrl)
-        .then((res) => res.arrayBuffer())
-        .then(buildScene)
-        .catch((err) => console.error("Nie udalo sie wczytac podgladu z serwera:", err));
+    const loader = new STLLoader();
+
+    if (url) {
+      loader.load(
+        url,
+        (geom) => buildSceneWithGeometry(geom),
+        undefined,
+        (err) => console.error("Błąd pobierania STL z R2:", err)
+      );
     } else if (file) {
       const reader = new FileReader();
-      reader.onload = (e) => buildScene(e.target.result);
+      reader.onload = (e) => {
+        const geom = loader.parse(e.target.result);
+        buildSceneWithGeometry(geom);
+      };
       reader.readAsArrayBuffer(file);
     }
 
@@ -175,7 +155,7 @@ export default function ModelViewer({
       renderer.setSize(width, height);
     };
 
-    const resizeObserver = new ResizeObserver(() => handleResize());
+    const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(container);
 
     return () => {
@@ -183,7 +163,7 @@ export default function ModelViewer({
       resizeObserver.disconnect();
       renderer.dispose();
     };
-  }, [file, previewUrl, supportLines]);
+  }, [url, file, supportLines]);
 
   return (
     <div
