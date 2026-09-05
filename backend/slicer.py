@@ -26,25 +26,16 @@ def get_slicer_binary() -> str:
 def extract_support_segments(gcode_path: str) -> list[float]:
     """
     Parsuje G-Code i wyciąga współrzędne podpór,
-    centrując je względem środka wydruku (bed center).
+    centrując je wstępnie w osiach XY.
     """
     raw_segments = []
     is_support = False
     cur_x, cur_y, cur_z = None, None, None
 
-    # Szukamy środka stołu lub środka obiektu z komentarzy PrusaSlicera
-    bed_x, bed_y = 125.0, 105.0  # Domyślny środek dla profilu MK3/MK4 (250x210)
-    
     with open(gcode_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             line = line.strip()
 
-            if "bed_shape" in line:
-                # np. 0x0,250x0,250x210,0x210
-                nums = [float(n) for n in re.findall(r"([\d\.]+)", line)]
-                if len(nums) >= 4:
-                    bed_x = max(nums) / 2.0
-            
             if line.startswith(";TYPE:Support material"):
                 is_support = True
                 continue
@@ -76,11 +67,16 @@ def extract_support_segments(gcode_path: str) -> list[float]:
     if not raw_segments:
         return []
 
-    # Wyliczamy środek CAŁEGO wydruku z g-code (lub używamy bed_center)
+    # Obliczenie środka podpór z G-Code
     xs = [raw_segments[i] for i in range(0, len(raw_segments), 3)]
     ys = [raw_segments[i+1] for i in range(0, len(raw_segments), 3)]
 
-    # Zwracamy surowe punkty przesunięte o środek stołu
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+
+    center_x = (min_x + max_x) / 2.0
+    center_y = (min_y + max_y) / 2.0
+
     formatted = []
     step = 6 if len(raw_segments) <= 150000 else 12
 
@@ -89,8 +85,8 @@ def extract_support_segments(gcode_path: str) -> list[float]:
         gx2, gy2, gz2 = raw_segments[i+3], raw_segments[i+4], raw_segments[i+5]
 
         formatted.extend([
-            round(gx1 - bed_x, 2), round(gy1 - bed_y, 2), round(gz1, 2),
-            round(gx2 - bed_x, 2), round(gy2 - bed_y, 2), round(gz2, 2)
+            round(gx1 - center_x, 2), round(gy1 - center_y, 2), round(gz1, 2),
+            round(gx2 - center_x, 2), round(gy2 - center_y, 2), round(gz2, 2)
         ])
 
     return formatted
@@ -108,7 +104,7 @@ def run_slicer(stl_path: str, infill: int = 20, layer_height: float = 0.2) -> di
             "--export-gcode",
             "--support-material",
             "--support-material-auto",
-            "--support-material-style=organic",  # Styl drzewiasty / organiczny
+            "--support-material-style=organic",
             f"--fill-density={int(infill)}%",
             f"--layer-height={layer_height}",
             "--output", gcode_path,
