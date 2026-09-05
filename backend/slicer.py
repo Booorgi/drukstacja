@@ -22,12 +22,75 @@ def get_slicer_binary() -> str:
 
 def extract_support_segments(gcode_path: str) -> list[float]:
     """
-    Parsuje G-Code i wyciąga segmenty linii podpór (X1, Y1, Z1, X2, Y2, Z2)
-    przeliczone bezpośrednio na układ współrzędnych Three.js.
+    Parsuje G-Code i wyciąga wyłącznie fizyczne linie ekstruzji podpór,
+    ignorując ruchy dojazdowe (G0/travel) oraz start z (0,0,0).
     """
     raw_segments = []
     is_support = False
-    cur_x, cur_y, cur_z = 0.0, 0.0, 0.0
+    cur_x, cur_y, cur_z = None, None, None
+
+    with open(gcode_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+
+            if line.startswith(";TYPE:Support material"):
+                is_support = True
+                continue
+            elif line.startswith(";TYPE:"):
+                is_support = False
+                continue
+
+            # Interesują nas tylko komendy ruchu G0 i G1
+            if line.startswith("G1") or line.startswith("G0"):
+                x_m = re.search(r"X([\d\.-]+)", line)
+                y_m = re.search(r"Y([\d\.-]+)", line)
+                z_m = re.search(r"Z([\d\.-]+)", line)
+                e_m = re.search(r"E([\d\.-]+)", line)
+
+                new_x = float(x_m.group(1)) if x_m else cur_x
+                new_y = float(y_m.group(1)) if y_m else cur_y
+                new_z = float(z_m.group(1)) if z_m else cur_z
+
+                # Ekstruzja podpory następuje TYLKO wtedy, gdy:
+                # 1. Jesteśmy w sekcji Support material
+                # 2. Mamy już ustaloną pozycję początkową (nie startujemy z pustego 0,0,0)
+                # 3. W linii występuje parametr E (filament jest wytłaczany)
+                # 4. Pozycja XY faktycznie uległa zmianie
+                if (
+                    is_support 
+                    and e_m 
+                    and cur_x is not None 
+                    and cur_y is not None 
+                    and (new_x != cur_x or new_y != cur_y)
+                ):
+                    raw_segments.extend([cur_x, cur_y, cur_z or 0.2, new_x, new_y, new_z or 0.2])
+
+                cur_x, cur_y, cur_z = new_x, new_y, new_z
+
+    if not raw_segments:
+        return []
+
+    # Wyliczamy środek wyłącznie z realnych ścieżek podpór
+    xs = [raw_segments[i] for i in range(0, len(raw_segments), 3)]
+    ys = [raw_segments[i+1] for i in range(0, len(raw_segments), 3)]
+
+    center_x = (min(xs) + max(xs)) / 2.0
+    center_y = (min(ys) + max(ys)) / 2.0
+
+    formatted = []
+    # Przeliczenie osi pod Three.js (X -> X, Z -> Y wysokość, Y -> Z głębokość)
+    step = 6 if len(raw_segments) <= 150000 else 12
+
+    for i in range(0, len(raw_segments), step):
+        gx1, gy1, gz1 = raw_segments[i], raw_segments[i+1], raw_segments[i+2]
+        gx2, gy2, gz2 = raw_segments[i+3], raw_segments[i+4], raw_segments[i+5]
+
+        formatted.extend([
+            round(gx1 - center_x, 2), round(gz1, 2), round(gy1 - center_y, 2),
+            round(gx2 - center_x, 2), round(gz2, 2), round(gy2 - center_y, 2)
+        ])
+
+    return formatted
 
     with open(gcode_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
