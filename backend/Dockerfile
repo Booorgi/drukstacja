@@ -1,9 +1,9 @@
 FROM python:3.10-slim
 
-# Instalacja prusa-slicera i bibliotek systemowych do cięcia bez ekranu
+# Instalacja prusa-slicera i nowoczesnych bibliotek graficznych (libgl1 zamiast libgl1-mesa-glx)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     prusa-slicer \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Kopiowanie reszty kodu backendu
 COPY . .
 
-# Port wystawiany przez aplikację
+# Port aplikacji
 ENV PORT=8080
 EXPOSE 8080
 
