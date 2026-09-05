@@ -1,6 +1,7 @@
 import subprocess
 import re
 import os
+import shutil
 import tempfile
 import cadquery as cq
 
@@ -10,6 +11,21 @@ def convert_step_to_stl(step_path: str, output_stl_path: str) -> str:
     cq.exporters.export(result, output_stl_path, tolerance=0.1, angularTolerance=0.2)
     return output_stl_path
 
+def get_slicer_binary() -> str:
+    """Wyszukuje dostępną w systemie binarkę slicera."""
+    # 1. Szukaj w zmiennej PATH
+    binary = shutil.which("prusa-slicer")
+    if binary:
+        return binary
+
+    # 2. Sprawdź typowe lokalizacje systemowe w Linuxie
+    for fallback in ["/usr/bin/prusa-slicer", "/usr/local/bin/prusa-slicer"]:
+        if os.path.isfile(fallback) and os.access(fallback, os.X_OK):
+            return fallback
+
+    # Domyślny fallback
+    return "prusa-slicer"
+
 def run_slicer(stl_path: str, infill: int = 20, layer_height: float = 0.2) -> dict:
     """
     Tnie plik STL bezpośrednio w CLI PrusaSlicera.
@@ -17,10 +33,11 @@ def run_slicer(stl_path: str, infill: int = 20, layer_height: float = 0.2) -> di
     with tempfile.NamedTemporaryFile(suffix=".gcode", delete=False) as tmp_gcode:
         gcode_path = tmp_gcode.name
 
+    slicer_bin = get_slicer_binary()
+
     try:
-        # Bezpośrednie wywołanie PrusaSlicer w trybie konsolowym
         cmd = [
-            "prusa-slicer",
+            slicer_bin,
             "--export-gcode",
             "--support-material",
             "--support-material-auto",
@@ -62,7 +79,7 @@ def run_slicer(stl_path: str, infill: int = 20, layer_height: float = 0.2) -> di
                 if time_match:
                     print_time_str = time_match.group(1).strip()
 
-                # Parsowanie zużycia w gramach
+                # Parsowanie zużycia filamentu
                 weight_match = re.search(r"; filament used \[g\]\s*=\s*([\d\.]+)", content)
                 if weight_match:
                     filament_g = round(float(weight_match.group(1)), 2)
