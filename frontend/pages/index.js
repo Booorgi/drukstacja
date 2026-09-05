@@ -42,6 +42,7 @@ export default function Home() {
     setAnalysis(null);
     setQuote(null);
     setError(null);
+    setShowSupports(false);
     setLoading(true);
 
     try {
@@ -107,6 +108,7 @@ export default function Home() {
     setAnalysis(null);
     setQuote(null);
     setError(null);
+    setShowSupports(false);
   }
 
   // Obliczenia cenowe
@@ -130,7 +132,7 @@ export default function Home() {
 
           {loading && (
             <div style={{ marginTop: "24px", fontSize: "14px", color: "#2563eb", fontWeight: 600 }}>
-              Trwa analiza geometrii i wysyłka do Cloudflare R2...
+              Trwa analiza geometrii, cięcie slicerem i wysyłka do Cloudflare R2...
             </div>
           )}
 
@@ -163,36 +165,57 @@ export default function Home() {
             </div>
 
             <div className="viewer-analysis">
-  <div style={{ fontWeight: 700, marginBottom: "6px" }}>Analiza geometrii CAD</div>
-  
-  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-    <span>Szczelność bryły:</span>
-    <strong style={{ color: analysis?.watertight === false ? "#d97706" : "#10b981" }}>
-      {analysis?.watertight === false ? "Nie" : "Tak"}
-    </strong>
-  </div>
+              <div style={{ fontWeight: 700, marginBottom: "6px" }}>Analiza geometrii CAD</div>
 
-  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-    <span>Podpory:</span>
-    <strong style={{ color: analysis?.has_supports ? "#f59e0b" : "#10b981" }}>
-      {analysis?.has_supports ? "Wymagane" : "Brak"}
-    </strong>
-  </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+                <span>Szczelność bryły:</span>
+                <strong style={{ color: analysis?.watertight === false ? "#d97706" : "#10b981" }}>
+                  {analysis?.watertight === false ? "Nie" : "Tak"}
+                </strong>
+              </div>
 
-  {analysis?.print_time_exact && analysis.print_time_exact !== "N/A" && (
-    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-      <span>Czas druku:</span>
-      <strong style={{ color: "#2563eb" }}>{analysis.print_time_exact}</strong>
-    </div>
-  )}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                <span>Podpory:</span>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <strong style={{ color: analysis?.has_supports ? "#f59e0b" : "#10b981" }}>
+                    {analysis?.has_supports ? "Wymagane" : "Brak"}
+                  </strong>
+                  {analysis?.has_supports && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSupports(!showSupports)}
+                      style={{
+                        fontSize: "11px",
+                        padding: "2px 8px",
+                        borderRadius: "6px",
+                        border: "1px solid #cbd5e1",
+                        background: showSupports ? "#10b981" : "#ffffff",
+                        color: showSupports ? "#ffffff" : "#0f172a",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                        transition: "all 0.2s ease"
+                      }}
+                    >
+                      {showSupports ? "Ukryj" : "Pokaż 3D"}
+                    </button>
+                  )}
+                </div>
+              </div>
 
-  {analysis?.filament_weight_g_exact ? (
-    <div style={{ display: "flex", justifyContent: "space-between" }}>
-      <span>Waga filamentu:</span>
-      <strong style={{ color: "#0f172a" }}>{analysis.filament_weight_g_exact} g</strong>
-    </div>
-  ) : null}
-</div>
+              {analysis?.print_time_exact && analysis.print_time_exact !== "N/A" && (
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+                  <span>Czas druku:</span>
+                  <strong style={{ color: "#2563eb" }}>{analysis.print_time_exact}</strong>
+                </div>
+              )}
+
+              {analysis?.filament_weight_g_exact ? (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Waga filamentu:</span>
+                  <strong style={{ color: "#0f172a" }}>{analysis.filament_weight_g_exact} g</strong>
+                </div>
+              ) : null}
+            </div>
 
             <div className="color-bar">
               {COLORS.map((col) => (
@@ -207,7 +230,12 @@ export default function Home() {
             </div>
 
             <div style={{ flex: 1, width: "100%", height: "100%" }}>
-              <ModelViewer file={file} color={selectedColor.hex} />
+              <ModelViewer 
+                file={file} 
+                color={selectedColor.hex} 
+                supportLines={analysis?.support_lines || []}
+                showSupports={showSupports}
+              />
             </div>
 
             <div style={{ position: "absolute", bottom: "12px", insetInline: 0, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
