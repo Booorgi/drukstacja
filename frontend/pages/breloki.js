@@ -87,49 +87,53 @@ const KeychainViewer3D = dynamic(
           }
         }, [svgString]);
 
+        // Grupy ułożone od podkładu do najmniejszych detali
         const groups = [
-          { shapes: parsedGroups.c1, cfg: layersConfig[0] },
-          { shapes: parsedGroups.c2, cfg: layersConfig[1] },
-          { shapes: parsedGroups.c3, cfg: layersConfig[2] },
-          { shapes: parsedGroups.c4, cfg: layersConfig[3] },
+          { shapes: parsedGroups.c1, cfg: layersConfig[0], level: 0 },
+          { shapes: parsedGroups.c2, cfg: layersConfig[1], level: 1 },
+          { shapes: parsedGroups.c3, cfg: layersConfig[2], level: 2 },
+          { shapes: parsedGroups.c4, cfg: layersConfig[3], level: 3 },
         ];
 
-        const targetDim =
-          Math.min(baseBounds?.width || 60, baseBounds?.height || 60) *
-          ((graphicScale || 80) / 100);
-        const uniformScale = targetDim / 100;
+        // Wyznaczamy skalę tak, aby 100 jednostek SVG idealnie odpowiadało wymiarom bazy
+        const minBound = Math.min(baseBounds?.width || 60, baseBounds?.height || 60);
+        const uniformScale = (minBound * ((graphicScale || 80) / 100)) / 100;
 
         return (
           <group
             key={svgString}
-            position={[offsetX, offsetY, (baseThickness || 3) / 2 + 0.01]}
+            position={[offsetX, offsetY, (baseThickness || 3) / 2]}
           >
-            {/* Poprawka: obrót wokół osi X (PI) zamiast ujemnego scale, co zapewnia idealne centrowanie */}
-            <Center position={[0, 0, 0]}>
-              <group scale={[uniformScale, uniformScale, 1]} rotation={[Math.PI, 0, 0]}>
-                {groups.map((grp, gIdx) => {
-                  const microZ = gIdx * 0.02;
-                  return grp.shapes.map((shape, sIdx) => (
-                    <mesh key={`g-${gIdx}-s-${sIdx}`} position={[0, 0, microZ]}>
-                      <extrudeGeometry
-                        args={[
-                          shape,
-                          {
-                            depth: grp.cfg.thickness,
-                            bevelEnabled: false,
-                          },
-                        ]}
-                      />
-                      <meshStandardMaterial
-                        color={grp.cfg.color}
-                        roughness={0.4}
-                        metalness={0.05}
-                      />
-                    </mesh>
-                  ));
-                })}
-              </group>
-            </Center>
+            {/* Przesunięcie [-50, 50, 0] przesuwa środek viewBox SVG (50, 50) dokładnie w punkt zerowy (0,0) bazy */}
+            <group scale={[uniformScale, -uniformScale, 1]} position={[-50 * uniformScale, 50 * uniformScale, 0]}>
+              {groups.map((grp, gIdx) => {
+                // Mikro-wysunięcie w Z dla każdej kolejnej warstwy zapobiega zakrywaniu detali przez podkład
+                const stepZ = grp.level * 0.08;
+
+                return grp.shapes.map((shape, sIdx) => (
+                  <mesh
+                    key={`g-${gIdx}-s-${sIdx}`}
+                    position={[0, 0, stepZ]}
+                    renderOrder={grp.level + 1}
+                  >
+                    <extrudeGeometry
+                      args={[
+                        shape,
+                        {
+                          depth: grp.cfg.thickness,
+                          bevelEnabled: false,
+                        },
+                      ]}
+                    />
+                    <meshStandardMaterial
+                      color={grp.cfg.color}
+                      roughness={0.35}
+                      metalness={0.05}
+                    />
+                  </mesh>
+                ));
+              })}
+            </group>
           </group>
         );
       }
@@ -268,12 +272,12 @@ export default function KeychainGenerator() {
   const [offsetX, setOffsetX] = useState(0); // mm
   const [offsetY, setOffsetY] = useState(0); // mm
 
-  // Warstwy
+  // Kaskada grubości zapobiega zjadaniu oczu/konturów przez podkład:
   const [layersConfig, setLayersConfig] = useState([
-    { id: 1, name: "Warstwa 1", color: "#0B0F17", thickness: 0.8 },
-    { id: 2, name: "Warstwa 2", color: "#00E5FF", thickness: 0.8 },
-    { id: 3, name: "Warstwa 3", color: "#2563EB", thickness: 0.8 },
-    { id: 4, name: "Warstwa 4", color: "#FFFFFF", thickness: 0.8 },
+    { id: 1, name: "Warstwa 1 (Baza)", color: "#0B0F17", thickness: 0.6 },
+    { id: 2, name: "Warstwa 2 (Ciało)", color: "#00E5FF", thickness: 0.8 },
+    { id: 3, name: "Warstwa 3 (Cienie)", color: "#2563EB", thickness: 1.0 },
+    { id: 4, name: "Warstwa 4 (Detale)", color: "#FFFFFF", thickness: 1.2 },
   ]);
 
   const [originalColors, setOriginalColors] = useState([]);
@@ -424,12 +428,13 @@ export default function KeychainGenerator() {
     }
 
     if (detectedColors.length > 0) {
+      const defaultThicknesses = [0.6, 0.8, 1.0, 1.2];
       setOriginalColors([...detectedColors]);
       setLayersConfig((prev) =>
         prev.map((layer, idx) => ({
           ...layer,
           color: detectedColors[idx] || layer.color,
-          thickness: 0.8,
+          thickness: defaultThicknesses[idx] || 0.8,
         }))
       );
     }
