@@ -100,7 +100,7 @@ export default function ModelViewer({
       grid.position.y = 0;
       scene.add(grid);
 
-     // 4. Podpory ze slicera
+      // 4. Podpory ze slicera
       if (supportLines && supportLines.length >= 6) {
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
@@ -128,12 +128,6 @@ export default function ModelViewer({
           linewidth: 2,
         });
 
-        const supportMesh = new THREE.LineSegments(lineGeo, lineMat);
-        supportMesh.position.set(0, 0, 0);
-        supportMesh.visible = showSupports;
-        supportsGroupRef.current = supportMesh;
-        scene.add(supportMesh);
-      }
         const supportMesh = new THREE.LineSegments(lineGeo, lineMat);
         supportMesh.position.set(0, 0, 0);
         supportMesh.visible = showSupports;
