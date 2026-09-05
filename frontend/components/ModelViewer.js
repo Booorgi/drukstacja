@@ -65,7 +65,7 @@ export default function ModelViewer({
       if (meshRef.current) scene.remove(meshRef.current);
       if (supportsGroupRef.current) scene.remove(supportsGroupRef.current);
 
-      // 1. Standaryzacja orientacji: STL Z-up -> Three.js Y-up
+      // 1. Standaryzacja orientacji modelu: STL Z-up -> Three.js Y-up
       geometry.rotateX(-Math.PI / 2);
       geometry.computeVertexNormals();
 
@@ -108,14 +108,13 @@ export default function ModelViewer({
           new THREE.Float32BufferAttribute(supportLines, 3)
         );
 
-        // A. Konwersja osi STL Z-up na Three.js Y-up
+        // A. Konwersja osi STL Z-up -> Three.js Y-up
         lineGeo.rotateX(-Math.PI / 2);
 
-        // B. Obrót w poziomie wokół osi pionowej Y dopasowujący orientację podpór do bryły
-        // B. Obrót w poziomie wokół osi pionowej Y dopasowujący orientację podpór do bryły
-        lineGeo.rotateY(Math.PI / 2);
+        // B. Korekta zwrotu osi Z wynikająca z przekształcenia kątowego
+        lineGeo.scale(1, 1, -1);
 
-        // C. Centrowanie w poziomie i wyrównanie podstawy do poziomu stołu (Y = 0)
+        // C. Centrowanie podpór w osiach X, Z i wyrównanie podstawy do Y = 0
         lineGeo.computeBoundingBox();
         const sBbox = lineGeo.boundingBox;
         const sCenterX = (sBbox.max.x + sBbox.min.x) / 2;
