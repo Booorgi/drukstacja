@@ -7,7 +7,6 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
-  const [message, setMessage] = useState(null);
 
   if (!isOpen) return null;
 
@@ -15,7 +14,6 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
     e.preventDefault();
     setLoading(true);
     setAuthError(null);
-    setMessage(null);
 
     try {
       if (isSignUp) {
@@ -25,7 +23,12 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
           password,
         });
         if (error) throw error;
-        setMessage("Konto utworzone! Sprawdź skrzynkę e-mail, aby potwierdzić rejestrację.");
+
+        // Jeśli weryfikacja e-mail jest wyłączona, od razu mamy sesję/usera
+        if (data.user) {
+          if (onLoginSuccess) onLoginSuccess(data.user);
+          onClose();
+        }
       } else {
         // Logowanie istniejącego użytkownika
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -61,7 +64,8 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
         {/* Przycisk zamknięcia */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-mono"
+          type="button"
+          className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-mono cursor-pointer"
         >
           ✕
         </button>
@@ -78,15 +82,10 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
           </p>
         </div>
 
-        {/* Błędy / Powiadomienia */}
+        {/* Błędy */}
         {authError && (
           <div className="mb-4 p-3 rounded-lg bg-red-950/50 border border-red-800 text-red-300 text-xs font-mono">
             {authError}
-          </div>
-        )}
-        {message && (
-          <div className="mb-4 p-3 rounded-lg bg-emerald-950/50 border border-emerald-800 text-emerald-300 text-xs font-mono">
-            {message}
           </div>
         )}
 
@@ -156,8 +155,8 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
               Masz już konto?{" "}
               <button
                 type="button"
-                onClick={() => setIsSignUp(false)}
-                className="text-[#00E5FF] hover:underline font-semibold"
+                onClick={() => { setIsSignUp(false); setAuthError(null); }}
+                className="text-[#00E5FF] hover:underline font-semibold cursor-pointer"
               >
                 Zaloguj się
               </button>
@@ -167,8 +166,8 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
               Nie masz konta?{" "}
               <button
                 type="button"
-                onClick={() => setIsSignUp(true)}
-                className="text-[#00E5FF] hover:underline font-semibold"
+                onClick={() => { setIsSignUp(true); setAuthError(null); }}
+                className="text-[#00E5FF] hover:underline font-semibold cursor-pointer"
               >
                 Utwórz konto
               </button>
