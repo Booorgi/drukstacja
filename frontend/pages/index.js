@@ -1,6 +1,8 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Head from "next/head";
+import { supabase } from "../lib/supabaseClient";
+import AuthModal from "../components/AuthModal";
 
 const ModelViewer = dynamic(() => import("../components/ModelViewer"), { ssr: false });
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -19,6 +21,11 @@ const LAYERS = [
 ];
 
 export default function Home() {
+  // Stany logowania / użytkownika Supabase
+  const [user, setUser] = useState(null);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+  // Stany konfiguratora druku
   const [file, setFile] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [quote, setQuote] = useState(null);
@@ -34,6 +41,19 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Nasłuchiwanie sesji z Supabase
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   async function handleFileSelected(selectedFile) {
     if (!selectedFile) return;
@@ -101,13 +121,13 @@ export default function Home() {
     }
   }
 
-  // Szacowanie wagi i czasu na podstawie geometrii lub wartości domyślnych
+  // Szacunki wagi i czasu
   const volume = analysis?.volume_cm3 ?? 35;
   const estimatedWeight = Math.round(volume * 1.24 * (0.5 + (infill / 100) * 0.7));
   const estimatedHours = Math.max(1, Math.round((estimatedWeight * 4.2) / 60));
   const estimatedMins = Math.round((estimatedWeight * 4.2) % 60);
 
-  // Kalkulacja ceny końcowej (API lub fallback)
+  // Kalkulacja ceny końcowej
   const basePrice = quote?.total_price_pln ? parseFloat(quote.total_price_pln) : 38.5;
   const insertCost = brassInserts ? 15.0 : 0.0;
   const finalPrice = ((basePrice + insertCost) * quantity).toFixed(2);
@@ -145,10 +165,32 @@ export default function Home() {
             <span className="hover:text-[#00E5FF] cursor-pointer transition">Części użytkowe</span>
           </nav>
 
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <div className="flex items-center gap-4">
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Farm Status: 12/16 Wolne
             </span>
+
+            {/* SEKCJA LOGOWANIA SUPABASE */}
+            {user ? (
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-mono text-[#00E5FF] max-w-[120px] truncate">{user.email}</span>
+                <button
+                  type="button"
+                  onClick={() => supabase.auth.signOut()}
+                  className="px-2.5 py-1 text-xs font-mono border border-[#24324A] hover:border-red-500 hover:text-red-400 rounded-lg transition"
+                >
+                  Wyloguj
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsAuthOpen(true)}
+                className="px-3.5 py-1.5 text-xs font-mono font-bold bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30 hover:bg-[#00E5FF]/20 rounded-lg transition"
+              >
+                Zaloguj się
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -453,6 +495,13 @@ export default function Home() {
         </section>
 
       </main>
+
+      {/* MODAL AUTORYZACJI SUPABASE */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onLoginSuccess={(loggedUser) => setUser(loggedUser)}
+      />
     </div>
   );
 }
