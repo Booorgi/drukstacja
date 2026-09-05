@@ -49,7 +49,15 @@ const KeychainViewer3D = dynamic(
       const { OrbitControls, Center, RoundedBox } = drei;
       const { SVGLoader } = stdlib;
 
-      function SvgMakerWorldLayers({ svgString, layersConfig, graphicScale, baseBounds, baseThickness }) {
+      function SvgMakerWorldLayers({
+        svgString,
+        layersConfig,
+        graphicScale,
+        offsetX,
+        offsetY,
+        baseBounds,
+        baseThickness,
+      }) {
         const parsedGroups = useMemo(() => {
           if (!svgString) return { c1: [], c2: [], c3: [], c4: [] };
           try {
@@ -86,17 +94,21 @@ const KeychainViewer3D = dynamic(
           { shapes: parsedGroups.c4, cfg: layersConfig[3] },
         ];
 
-        const targetDim = Math.min(baseBounds?.width || 60, baseBounds?.height || 60) * ((graphicScale || 80) / 100);
+        const targetDim =
+          Math.min(baseBounds?.width || 60, baseBounds?.height || 60) *
+          ((graphicScale || 80) / 100);
         const uniformScale = targetDim / 100;
 
         return (
-          <group key={svgString} position={[0, 0, (baseThickness || 3) / 2 + 0.01]}>
+          <group
+            key={svgString}
+            position={[offsetX, offsetY, (baseThickness || 3) / 2 + 0.01]}
+          >
+            {/* Poprawka: obrót wokół osi X (PI) zamiast ujemnego scale, co zapewnia idealne centrowanie */}
             <Center position={[0, 0, 0]}>
-              <group scale={[uniformScale, -uniformScale, 1]}>
+              <group scale={[uniformScale, uniformScale, 1]} rotation={[Math.PI, 0, 0]}>
                 {groups.map((grp, gIdx) => {
-                  // Mikro-offset eliminujący Z-fighting bez tworzenia widocznych schodów
                   const microZ = gIdx * 0.02;
-
                   return grp.shapes.map((shape, sIdx) => (
                     <mesh key={`g-${gIdx}-s-${sIdx}`} position={[0, 0, microZ]}>
                       <extrudeGeometry
@@ -131,6 +143,8 @@ const KeychainViewer3D = dynamic(
         baseThickness,
         hasHole,
         graphicScale,
+        offsetX,
+        offsetY,
         reliefSvg,
         layersConfig,
       }) {
@@ -201,11 +215,13 @@ const KeychainViewer3D = dynamic(
               </group>
             )}
 
-            {/* Płaskorzeźba */}
+            {/* Płaskorzeźba z obsługą ręcznego przesunięcia X/Y */}
             <SvgMakerWorldLayers
               svgString={reliefSvg}
               layersConfig={layersConfig}
               graphicScale={graphicScale}
+              offsetX={offsetX}
+              offsetY={offsetY}
               baseBounds={baseBounds}
               baseThickness={baseThickness}
             />
@@ -239,7 +255,7 @@ export default function KeychainGenerator() {
   const userMenuRef = useRef(null);
 
   // Kształt bazy i wymiary
-  const [shapeType, setShapeType] = useState("circle");
+  const [shapeType, setShapeType] = useState("hexagon");
   const [baseColor, setBaseColor] = useState("#0B0F17");
   const [baseWidth, setBaseWidth] = useState(65);
   const [baseHeight, setBaseHeight] = useState(50);
@@ -247,8 +263,10 @@ export default function KeychainGenerator() {
   const [baseThickness, setBaseThickness] = useState(3.0);
   const [hasHole, setHasHole] = useState(true);
 
-  // Skalowanie grafiki
-  const [graphicScale, setGraphicScale] = useState(80);
+  // Skalowanie oraz pozycja motywu
+  const [graphicScale, setGraphicScale] = useState(75);
+  const [offsetX, setOffsetX] = useState(0); // mm
+  const [offsetY, setOffsetY] = useState(0); // mm
 
   // Warstwy
   const [layersConfig, setLayersConfig] = useState([
@@ -320,7 +338,11 @@ export default function KeychainGenerator() {
 
     if (file.type === "image/svg+xml") {
       const reader = new FileReader();
-      reader.onload = (ev) => setUploadedSvg(ev.target.result);
+      reader.onload = (ev) => {
+        setUploadedSvg(ev.target.result);
+        setOffsetX(0);
+        setOffsetY(0);
+      };
       reader.readAsText(file);
       return;
     }
@@ -397,6 +419,8 @@ export default function KeychainGenerator() {
   function handleConfirmConversion() {
     if (generatedSvgPreview) {
       setUploadedSvg(generatedSvgPreview);
+      setOffsetX(0);
+      setOffsetY(0);
     }
 
     if (detectedColors.length > 0) {
@@ -649,7 +673,7 @@ export default function KeychainGenerator() {
               {shapeType === "rect"
                 ? `${baseWidth}x${baseHeight}mm`
                 : `⌀${baseDiameter}mm`}{" "}
-              • Skala {graphicScale}% {hasHole ? "(z uchem)" : "(bez ucha)"}
+              • Skala {graphicScale}% • X: {offsetX}mm, Y: {offsetY}mm
             </div>
 
             <KeychainViewer3D
@@ -661,6 +685,8 @@ export default function KeychainGenerator() {
               baseThickness={baseThickness}
               hasHole={hasHole}
               graphicScale={graphicScale}
+              offsetX={offsetX}
+              offsetY={offsetY}
               reliefSvg={uploadedSvg}
               layersConfig={layersConfig}
             />
@@ -675,11 +701,11 @@ export default function KeychainGenerator() {
                   GENERATOR 4-COLOR (AMS)
                 </h1>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30">
-                  Pole robocze: 256×256 mm
+                  Pole: do 245 mm
                 </span>
               </div>
               <p className="text-[11px] font-mono text-[#94A3B8] mt-0.5">
-                Breloki, tabliczki i podkładki wielokolorowe
+                Pełna regulacja wymiarów, skali i pozycji grafiki
               </p>
             </div>
 
@@ -708,7 +734,7 @@ export default function KeychainGenerator() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <span className="font-mono text-xs text-white truncate max-w-[190px]">
-                    {isProcessingImg ? "AI analizuje klastry obrazu..." : imageFileName}
+                    {isProcessingImg ? "AI analizuje obraz..." : imageFileName}
                   </span>
                 </div>
                 <span className="px-2.5 py-1 rounded bg-[#161F30] text-[#00E5FF] border border-[#24324A] text-xs font-mono">
@@ -720,7 +746,7 @@ export default function KeychainGenerator() {
             {/* 2. Kształt i gabaryty bazy */}
             <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-2.5">
               <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
-                2. Kształt i wymiary bazy (do 245 mm)
+                2. Kształt i wymiary bazy
               </span>
 
               <div className="grid grid-cols-3 gap-1.5 text-xs font-mono">
@@ -778,7 +804,7 @@ export default function KeychainGenerator() {
                 </button>
               </div>
 
-              {/* Suwaki wymiarów */}
+              {/* Wymiary */}
               {shapeType === "rect" ? (
                 <div className="grid grid-cols-2 gap-3 text-[11px] font-mono">
                   <div>
@@ -871,31 +897,80 @@ export default function KeychainGenerator() {
               </div>
             </div>
 
-            {/* 3. Skalowanie grafiki */}
-            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-1.5">
+            {/* 3. Skalowanie oraz pozycja (Offset X / Y) motywu */}
+            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-3">
               <div className="flex justify-between text-xs font-mono">
                 <span className="text-white font-bold">Skalowanie motywu na bazie</span>
                 <span className="text-[#00E5FF] font-bold">{graphicScale}%</span>
               </div>
               <input
                 type="range"
-                min="40"
-                max="100"
+                min="30"
+                max="110"
                 step="2"
                 value={graphicScale}
                 onChange={(e) => setGraphicScale(parseInt(e.target.value))}
                 className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
               />
-              <span className="text-[10px] font-mono text-[#94A3B8] block">
-                Zmniejsz skalę, aby zachować margines wokół grafiki.
-              </span>
+
+              {/* Precyzyjne przesuwanie X i Y */}
+              <div className="pt-2 border-t border-[#24324A]/60 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-slate-200 font-bold uppercase">Pozycja motywu (Przesuwanie)</span>
+                  {(offsetX !== 0 || offsetY !== 0) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOffsetX(0);
+                        setOffsetY(0);
+                      }}
+                      className="text-[10px] text-[#00E5FF] hover:underline cursor-pointer"
+                    >
+                      Wyśrodkuj
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-[11px] font-mono">
+                  <div>
+                    <div className="flex justify-between text-[#94A3B8] mb-0.5">
+                      <span>Poziom (X)</span>
+                      <span className="text-white font-bold">{offsetX > 0 ? `+${offsetX}` : offsetX} mm</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="-35"
+                      max="35"
+                      step="1"
+                      value={offsetX}
+                      onChange={(e) => setOffsetX(parseInt(e.target.value))}
+                      className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[#94A3B8] mb-0.5">
+                      <span>Pion (Y)</span>
+                      <span className="text-white font-bold">{offsetY > 0 ? `+${offsetY}` : offsetY} mm</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="-35"
+                      max="35"
+                      step="1"
+                      value={offsetY}
+                      onChange={(e) => setOffsetY(parseInt(e.target.value))}
+                      className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* 4. Warstwy filamentu */}
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
-                  3. Warstwy filamentu & Wypukłość Z (mm)
+                  4. Warstwy filamentu & Wypukłość Z (mm)
                 </span>
                 {originalColors.length > 0 && (
                   <button
@@ -907,7 +982,7 @@ export default function KeychainGenerator() {
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
-                    <span>↺ Przywróć oryginalne</span>
+                    <span>↺ Oryginalne barwy</span>
                   </button>
                 )}
               </div>
