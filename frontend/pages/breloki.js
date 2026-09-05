@@ -90,7 +90,7 @@ const KeychainViewer3D = dynamic(
         const uniformScale = targetDim / 100;
 
         return (
-          <group position={[0, 0, (baseThickness || 3) / 2]}>
+          <group position={[0, 0, (baseThickness || 3) / 2 + 0.01]}>
             <Center position={[0, 0, 0]}>
               <group scale={[uniformScale, -uniformScale, 1]}>
                 {groups.map((grp, gIdx) =>
@@ -236,7 +236,7 @@ export default function KeychainGenerator() {
   const userMenuRef = useRef(null);
 
   // Kształt bazy i wymiary
-  const [shapeType, setShapeType] = useState("rect");
+  const [shapeType, setShapeType] = useState("circle");
   const [baseColor, setBaseColor] = useState("#0B0F17");
   const [baseWidth, setBaseWidth] = useState(65);
   const [baseHeight, setBaseHeight] = useState(50);
