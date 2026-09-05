@@ -85,11 +85,11 @@ export default function ModelViewer({
     const buildSceneWithGeometry = (geometry) => {
       if (meshRef.current) scene.remove(meshRef.current);
 
-      // Obrót o +90 stopni stawia model na brzuchu zamiast na plecach
-      geometry.rotateX(Math.PI / 2);
+      // Obrót o 180 stopni w osi Z odwraca plecy na brzuch bez stawiania modelu w pionie
+      geometry.rotateZ(Math.PI);
       geometry.computeVertexNormals();
 
-      // 1. Centrowanie modelu w poziomie (X, Z) i oparcie spodu na stole (Y = 0)
+      // Centrowanie w (0, 0) i postawienie spodu na Y = 0
       geometry.computeBoundingBox();
       const bbox = geometry.boundingBox;
       const centerX = (bbox.max.x + bbox.min.x) / 2;
@@ -111,6 +111,7 @@ export default function ModelViewer({
       const mesh = new THREE.Mesh(geometry, material);
       meshRef.current = mesh;
       scene.add(mesh);
+      // ... dalsza część bez zmian
 
       // 2. Siatka stołu roboczego
       geometry.computeBoundingSphere();
