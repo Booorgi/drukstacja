@@ -111,10 +111,13 @@ export default function ModelViewer({
         // A. Konwersja osi STL Z-up -> Three.js Y-up
         lineGeo.rotateX(-Math.PI / 2);
 
-        // B. Obrót o 180 stopni w poziomie wokół osi Y (zamiana przód/tył i lewo/prawo)
+        // B. Obrót w osi podłużnej (przód/tył)
         lineGeo.rotateY(Math.PI);
 
-        // C. Precyzyjne centrowanie podpór w (X=0, Z=0) i oparcie na Y=0
+        // C. Lustrzane odbicie lewo/prawo (oś X)
+        lineGeo.scale(-1, 1, 1);
+
+        // D. Centrowanie podpór w osiach X, Z i oparcie podstawy na stole Y = 0
         lineGeo.computeBoundingBox();
         const sBbox = lineGeo.boundingBox;
         const sCenterX = (sBbox.max.x + sBbox.min.x) / 2;
