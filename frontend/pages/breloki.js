@@ -58,24 +58,14 @@ const KeychainViewer3D = dynamic(
             const c4 = [];
 
             svgData.paths.forEach((path) => {
-              const hex = path.color?.getHexString()?.toLowerCase();
               const parentId = path.userData?.node?.parentElement?.id;
               const shapes = path.toShapes(true);
 
-              if (parentId === "color_1" || hex === "111111") {
-                c1.push(...shapes);
-              } else if (parentId === "color_2" || hex === "222222") {
-                c2.push(...shapes);
-              } else if (parentId === "color_3" || hex === "333333") {
-                c3.push(...shapes);
-              } else {
-                c4.push(...shapes);
-              }
+              if (parentId === "color_1") c1.push(...shapes);
+              else if (parentId === "color_2") c2.push(...shapes);
+              else if (parentId === "color_3") c3.push(...shapes);
+              else c4.push(...shapes);
             });
-
-            if (c1.length === 0 && c2.length === 0 && c3.length === 0 && c4.length === 0) {
-              c1.push(...svgData.paths.flatMap((p) => p.toShapes(true)));
-            }
 
             return { c1, c2, c3, c4 };
           } catch (err) {
@@ -85,34 +75,42 @@ const KeychainViewer3D = dynamic(
         }, [svgString]);
 
         const groups = [
-          { shapes: parsedGroups.c1, cfg: layersConfig[0] },
-          { shapes: parsedGroups.c2, cfg: layersConfig[1] },
-          { shapes: parsedGroups.c3, cfg: layersConfig[2] },
-          { shapes: parsedGroups.c4, cfg: layersConfig[3] },
+          { shapes: parsedGroups.c1, cfg: layersConfig[0], order: 1 },
+          { shapes: parsedGroups.c2, cfg: layersConfig[1], order: 2 },
+          { shapes: parsedGroups.c3, cfg: layersConfig[2], order: 3 },
+          { shapes: parsedGroups.c4, cfg: layersConfig[3], order: 4 },
         ];
 
         return (
           <Center position={[0, 0, 0]}>
             <group scale={[0.4, -0.4, 1]}>
-              {groups.map((grp, gIdx) =>
-                grp.shapes.map((shape, sIdx) => (
-                  <mesh key={`g-${gIdx}-s-${sIdx}`}>
+              {groups.map((grp, gIdx) => {
+                // Mikro-offset w osi Z gwarantuje, że detale nie zostaną utopione pod podkładem
+                const zOffset = gIdx * 0.05;
+
+                return grp.shapes.map((shape, sIdx) => (
+                  <mesh
+                    key={`g-${gIdx}-s-${sIdx}`}
+                    position={[0, 0, zOffset]}
+                    renderOrder={grp.order}
+                  >
                     <extrudeGeometry
                       args={[
                         shape,
                         {
                           depth: grp.cfg.thickness,
-                          bevelEnabled: true,
-                          bevelThickness: 0.15,
-                          bevelSize: 0.1,
-                          bevelSegments: 2,
+                          bevelEnabled: false,
                         },
                       ]}
                     />
-                    <meshStandardMaterial color={grp.cfg.color} roughness={0.35} metalness={0.05} />
+                    <meshStandardMaterial
+                      color={grp.cfg.color}
+                      roughness={0.35}
+                      metalness={0.05}
+                    />
                   </mesh>
-                ))
-              )}
+                ));
+              })}
             </group>
           </Center>
         );
@@ -182,10 +180,10 @@ export default function KeychainGenerator() {
   const [baseColor, setBaseColor] = useState("#0B0F17");
 
   const [layersConfig, setLayersConfig] = useState([
-    { id: 1, name: "Warstwa 1", color: "#0B0F17", thickness: 2.0 },
-    { id: 2, name: "Warstwa 2", color: "#00E5FF", thickness: 1.4 },
-    { id: 3, name: "Warstwa 3", color: "#2563EB", thickness: 1.0 },
-    { id: 4, name: "Warstwa 4", color: "#FFFFFF", thickness: 0.8 },
+    { id: 1, name: "Warstwa 1", color: "#F1F1F0", thickness: 0.8 },
+    { id: 2, name: "Warstwa 2", color: "#BD9E81", thickness: 1.0 },
+    { id: 3, name: "Warstwa 3", color: "#8F5A33", thickness: 1.2 },
+    { id: 4, name: "Warstwa 4", color: "#342014", thickness: 1.4 },
   ]);
 
   // ETAP 1: PREPROCESSING MODAL
