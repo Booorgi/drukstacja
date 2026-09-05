@@ -23,10 +23,10 @@ def get_slicer_binary() -> str:
     return "prusa-slicer"
 
 
-def extract_support_segments(gcode_path: str) -> list[float]:
+def extract_support_segments(gcode_path: str, bed_center: tuple[float, float]) -> list[float]:
     """
-    Parsuje G-Code i wyciąga współrzędne podpór,
-    centrując je wstępnie w osiach XY.
+    Parsuje G-Code i wyciąga współrzędne podpór organicznych,
+    odejmując środek stołu/obiektu, na którym slicer umieścił wydruk.
     """
     raw_segments = []
     is_support = False
@@ -67,15 +67,7 @@ def extract_support_segments(gcode_path: str) -> list[float]:
     if not raw_segments:
         return []
 
-    # Obliczenie środka podpór z G-Code
-    xs = [raw_segments[i] for i in range(0, len(raw_segments), 3)]
-    ys = [raw_segments[i+1] for i in range(0, len(raw_segments), 3)]
-
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
-
-    center_x = (min_x + max_x) / 2.0
-    center_y = (min_y + max_y) / 2.0
+    ref_x, ref_y = bed_center
 
     formatted = []
     step = 6 if len(raw_segments) <= 150000 else 12
@@ -85,8 +77,8 @@ def extract_support_segments(gcode_path: str) -> list[float]:
         gx2, gy2, gz2 = raw_segments[i+3], raw_segments[i+4], raw_segments[i+5]
 
         formatted.extend([
-            round(gx1 - center_x, 2), round(gy1 - center_y, 2), round(gz1, 2),
-            round(gx2 - center_x, 2), round(gy2 - center_y, 2), round(gz2, 2)
+            round(gx1 - ref_x, 2), round(gy1 - ref_y, 2), round(gz1, 2),
+            round(gx2 - ref_x, 2), round(gy2 - ref_y, 2), round(gz2, 2)
         ])
 
     return formatted
@@ -97,6 +89,7 @@ def run_slicer(stl_path: str, infill: int = 20, layer_height: float = 0.2) -> di
         gcode_path = tmp_gcode.name
 
     slicer_bin = get_slicer_binary()
+    bed_center = (125.0, 105.0)  # Standardowy środek stołu MK3/MK4 (250x210)
 
     try:
         cmd = [
@@ -104,7 +97,7 @@ def run_slicer(stl_path: str, infill: int = 20, layer_height: float = 0.2) -> di
             "--export-gcode",
             "--support-material",
             "--support-material-auto",
-            "--support-material-style=organic",
+            "--support-material-style=organic",  # Podpory organiczne / drzewiaste
             f"--fill-density={int(infill)}%",
             f"--layer-height={layer_height}",
             "--output", gcode_path,
@@ -132,11 +125,18 @@ def run_slicer(stl_path: str, infill: int = 20, layer_height: float = 0.2) -> di
                 if weight_match:
                     filament_g = round(float(weight_match.group(1)), 2)
 
+                # Wykrywamy konfigurację stołu, jeśli została zapisana w G-Code
+                bed_match = re.search(r"; bed_shape\s*=\s*([^\r\n]+)", content)
+                if bed_match:
+                    nums = [float(c) for c in re.findall(r"([\d\.]+)", bed_match.group(1))]
+                    if len(nums) >= 4:
+                        bed_center = (max(nums) / 2.0, max(nums[1::2]) / 2.0)
+
                 if "TYPE:Support material" in content:
                     has_supports = True
 
             if has_supports:
-                support_lines = extract_support_segments(gcode_path)
+                support_lines = extract_support_segments(gcode_path, bed_center)
 
         return {
             "print_time": print_time_str,
