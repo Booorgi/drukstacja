@@ -1,7 +1,7 @@
 """
 Drukstacja - backend API
-Obsluguje: upload pliku CAD (STL/STEP/OBJ) -> konwersja STEP -> cięcie slicerem -> zapis w R2 -> wycena druku 3D
-oraz zaawansowaną wektoryzację wielowarstwową (Multi-Color Relief) za pomocą Gemini AI pod generator breloków.
+Obsługuje: upload pliku CAD (STL/STEP/OBJ) -> konwersja STEP -> cięcie slicerem -> zapis w R2 -> wycena druku 3D
+oraz precyzyjną kwantyzację i wektoryzację obrazów (standard MakerWorld) pod wielokolorowy generator breloków FDM.
 """
 import os
 import re
@@ -14,9 +14,10 @@ from pathlib import Path
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from google import genai
-from google.genai import types
 import trimesh
+import cv2
+import numpy as np
+from sklearn.cluster import KMeans
 
 from analysis import analyze_file, UnsupportedFileType
 from pricing import calculate_price, MATERIALS
@@ -25,7 +26,7 @@ from slicer import convert_step_to_stl, run_slicer
 from orientation import auto_orient_mesh
 
 # Inicjalizacja aplikacji FastAPI
-app = FastAPI(title="Drukstacja API", version="0.3.0")
+app = FastAPI(title="Drukstacja API", version="0.4.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,10 +35,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Inicjalizacja klienta Gemini AI
-gemini_api_key = os.getenv("GEMINI_API_KEY")
-gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
 MAX_FILE_SIZE_MB = 100
 ALLOWED_EXTENSIONS = {".stl", ".step", ".stp", ".obj"}
@@ -51,6 +48,100 @@ class QuoteRequest(BaseModel):
     infill_percent: int = 20
 
 
+def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
+    """
+    Algorytmiczna kwantyzacja i wektoryzacja konturów (MakerWorld Standard):
+    1. Rozpoznaje kanał przezroczystości (alfa), jeśli tło zostało odcięte.
+    2. Grupuje kolory algorytmem K-Means do n_colors warstw.
+    3. Sortuje klastry według luminancji (od najciemniejszych konturów do najjaśniejszych świateł).
+    4. Trasuje kontury OpenCV do zamkniętych ścieżek wektorowych SVG.
+    """
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise ValueError("Nie udało się zdekodować przesłanego pliku graficznego.")
+
+    has_alpha = False
+    alpha_mask = None
+    if len(img.shape) == 3 and img.shape[2] == 4:
+        has_alpha = True
+        alpha_mask = img[:, :, 3] > 30
+        bgr = img[:, :, :3]
+    else:
+        bgr = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+    # Skalowanie do optymalnej rozdzielczości roboczej
+    target_dim = 450
+    h, w = bgr.shape[:2]
+    scale = target_dim / max(h, w)
+    new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
+    bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    if has_alpha:
+        alpha_resized = cv2.resize(
+            alpha_mask.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
+        ).astype(bool)
+        pixels = bgr_resized[alpha_resized].reshape(-1, 3)
+        if len(pixels) < n_colors:
+            pixels = bgr_resized.reshape(-1, 3)
+            alpha_resized = np.ones((new_h, new_w), dtype=bool)
+    else:
+        alpha_resized = np.ones((new_h, new_w), dtype=bool)
+        pixels = bgr_resized.reshape(-1, 3)
+
+    # Kwantyzacja K-Means
+    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=4)
+    kmeans.fit(pixels)
+
+    # Sortowanie klastrów wg luminancji
+    centers = kmeans.cluster_centers_
+    luminance = 0.299 * centers[:, 2] + 0.587 * centers[:, 1] + 0.114 * centers[:, 0]
+    sorted_indices = np.argsort(luminance)
+
+    quantized_map = np.full((new_h, new_w), -1, dtype=int)
+    if has_alpha:
+        quantized_map[alpha_resized] = kmeans.labels_
+    else:
+        quantized_map = kmeans.labels_.reshape((new_h, new_w))
+
+    svg_paths_by_layer = {0: [], 1: [], 2: [], 3: []}
+    color_ids = ["color_1", "color_2", "color_3", "color_4"]
+
+    for rank, cluster_idx in enumerate(sorted_indices):
+        mask = (quantized_map == cluster_idx).astype(np.uint8) * 255
+        mask = cv2.medianBlur(mask, 3)
+
+        # Wykrywanie zagnieżdżonych konturów
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_KCOS)
+        if hierarchy is None:
+            continue
+
+        for i, cnt in enumerate(contours):
+            # Filtracja mikro-artefaktów
+            if cv2.contourArea(cnt) < 6:
+                continue
+
+            pts = cnt.reshape(-1, 2)
+            path_d = f"M {(pts[0][0] / new_w) * 100:.2f} {(pts[0][1] / new_h) * 100:.2f} "
+            for pt in pts[1:]:
+                path_d += f"L {(pt[0] / new_w) * 100:.2f} {(pt[1] / new_h) * 100:.2f} "
+            path_d += "Z"
+
+            svg_paths_by_layer[rank].append(path_d)
+
+    hex_colors = ["#111111", "#222222", "#333333", "#444444"]
+    svg_output = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
+
+    for rank in range(min(n_colors, 4)):
+        c_id = color_ids[rank]
+        c_hex = hex_colors[rank]
+        paths_str = " ".join([f'<path d="{p}" />' for p in svg_paths_by_layer[rank]])
+        svg_output.append(f'<g id="{c_id}" fill="{c_hex}">{paths_str}</g>')
+
+    svg_output.append("</svg>")
+    return "".join(svg_output)
+
+
 @app.get("/")
 def root():
     return {"status": "ok", "service": "drukstacja-backend"}
@@ -58,70 +149,20 @@ def root():
 
 @app.get("/materials")
 def get_materials():
-    """Lista dostepnych materialow i ich cen za kg."""
+    """Lista dostępnych materiałów i ich cen za kg."""
     return MATERIALS
 
 
 @app.post("/vectorize-ai")
 async def vectorize_image_ai(file: UploadFile = File(...)):
-    """
-    Kwantyzacja i wektoryzacja a'la MakerWorld:
-    Gemini dzieli obraz na maksymalnie 4 ściśle wyodrębnione klastry kolorów (Filament Color 1-4)
-    i zwraca precyzyjne ścieżki SVG dla każdego koloru.
-    """
-    if not gemini_client:
-        raise HTTPException(
-            status_code=500,
-            detail="Brak skonfigurowanego klucza GEMINI_API_KEY w zmiennych środowiskowych serwera.",
-        )
-
-    contents = await file.read()
-    mime_type = file.content_type or "image/png"
-
-    prompt = """
-    Jesteś silnikiem wektoryzacji CAD pod wielokolorowy druk 3D FDM (odpowiednik MakerWorld Image-to-Keychain).
-    Twoim zadaniem jest zamiana DOWOLNEGO przesłanego obrazu (logo, napis, postać, grafika, rysunek, symbol, zwierzę, pojazd) na czysty, wielowarstwowy SVG przygotowany do ekstruzji 3D.
-
-    Zignoruj tło zdjęcia oraz szum otoczenia. Wyodrębnij główny motyw i dokonaj kwantyzacji koloru do DOKŁADNIE 4 uniwersalnych warstw filamentu:
-
-    Hierarchia warstw SVG:
-    1. <g id="color_1" fill="#111111">: KONTURY I CIEMNE DETALE — czarne linie, obrysy obiektów, napisy, najciemniejsze krawędzie i kluczowe linie podziału.
-    2. <g id="color_2" fill="#222222">: GŁÓWNA BRYŁA / CIEMNIEJSZE WYPEŁNIENIE — dominujące ciemne i nasycone płaszczyzny obiektu.
-    3. <g id="color_3" fill="#333333">: TONY ŚREDNIE / DRUGOPLANOWE — średnie barwy, przejścia, detale wewnątrz głównej bryły.
-    4. <g id="color_4" fill="#444444">: NAJJAŚNIEJSZE DETALE I AKCENTY — białe lub jasne wypełnienia, refleksy, kontrastowe elementy wierzchnie.
-
-    Wymagania techniczne:
-    - Wszystkie elementy MUSZĄ być ZAMKNIĘTYMI ścieżkami <path d="..." /> z komendą Z na końcu.
-    - Współrzędne muszą mieścić się w viewBox="0 0 100 100" i być wyśrodkowane.
-    - Zero obramowań (stroke="none"), zero gradientów, zero zbędnych elementów <rect> w tle.
-    - Zwróć WYŁĄCZNIE czysty kod SVG (od <svg> do </svg>), bez znaczników markdown (nie dodawaj ```xml ani ```svg).
-    """
-
+    """Precyzyjna kwantyzacja i trasowanie konturów piksel-po-pikselu."""
     try:
-        response = gemini_client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=[
-                types.Part.from_bytes(data=contents, mime_type=mime_type),
-                prompt,
-            ],
-        )
-
-        svg_text = response.text.strip()
-        svg_clean = re.sub(r"^```(?:svg|xml)?", "", svg_text, flags=re.IGNORECASE)
-        svg_clean = re.sub(r"```$", "", svg_clean).strip()
-
-        start_idx = svg_clean.find("<svg")
-        end_idx = svg_clean.rfind("</svg>")
-        if start_idx != -1 and end_idx != -1:
-            svg_clean = svg_clean[start_idx : end_idx + 6]
-        else:
-            raise ValueError("Model nie zwrócił poprawnego kodu SVG.")
-
-        return {"svg": svg_clean}
-
+        contents = await file.read()
+        svg_result = image_to_quantized_svg(contents, n_colors=4)
+        return {"svg": svg_result}
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Błąd wektoryzacji Gemini AI: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Błąd wektoryzacji konturów: {str(e)}")
 
 
 @app.post("/analyze")
@@ -138,7 +179,7 @@ async def analyze(file: UploadFile = File(...)):
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Nieobslugiwany format pliku: {ext}. Dozwolone: {', '.join(ALLOWED_EXTENSIONS)}",
+            detail=f"Nieobsługiwany format pliku: {ext}. Dozwolone: {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
     tmp_dir = tempfile.mkdtemp()
@@ -154,7 +195,7 @@ async def analyze(file: UploadFile = File(...)):
         if size_mb > MAX_FILE_SIZE_MB:
             raise HTTPException(
                 status_code=400,
-                detail=f"Plik za duzy ({size_mb:.1f}MB). Limit: {MAX_FILE_SIZE_MB}MB",
+                detail=f"Plik za duży ({size_mb:.1f}MB). Limit: {MAX_FILE_SIZE_MB}MB",
             )
 
         # 1. Wysyłka do R2
@@ -220,16 +261,16 @@ async def analyze(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Blad analizy lub zapisu w R2: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Błąd analizy lub zapisu w R2: {str(e)}")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 @app.post("/quote")
 def quote(req: QuoteRequest):
-    """Liczy cene na podstawie danych geometrii zwroconych przez /analyze."""
+    """Liczy cenę na podstawie geometrii zwróconej przez /analyze."""
     if req.material not in MATERIALS:
-        raise HTTPException(status_code=400, detail=f"Nieznany material: {req.material}")
+        raise HTTPException(status_code=400, detail=f"Nieznany materiał: {req.material}")
 
     result = calculate_price(
         volume_cm3=req.volume_cm3,
