@@ -85,9 +85,7 @@ const KeychainViewer3D = dynamic(
           <Center position={[0, 0, 0]}>
             <group scale={[0.4, -0.4, 1]}>
               {groups.map((grp, gIdx) => {
-                // Mikro-offset w osi Z gwarantuje, że detale nie zostaną utopione pod podkładem
                 const zOffset = gIdx * 0.05;
-
                 return grp.shapes.map((shape, sIdx) => (
                   <mesh
                     key={`g-${gIdx}-s-${sIdx}`}
@@ -179,12 +177,16 @@ export default function KeychainGenerator() {
   const [shapeType, setShapeType] = useState("rect");
   const [baseColor, setBaseColor] = useState("#0B0F17");
 
+  // Konfiguracja warstw
   const [layersConfig, setLayersConfig] = useState([
-    { id: 1, name: "Warstwa 1", color: "#F1F1F0", thickness: 0.8 },
-    { id: 2, name: "Warstwa 2", color: "#BD9E81", thickness: 1.0 },
-    { id: 3, name: "Warstwa 3", color: "#8F5A33", thickness: 1.2 },
-    { id: 4, name: "Warstwa 4", color: "#342014", thickness: 1.4 },
+    { id: 1, name: "Warstwa 1", color: "#0B0F17", thickness: 0.8 },
+    { id: 2, name: "Warstwa 2", color: "#00E5FF", thickness: 1.0 },
+    { id: 3, name: "Warstwa 3", color: "#2563EB", thickness: 1.2 },
+    { id: 4, name: "Warstwa 4", color: "#FFFFFF", thickness: 1.4 },
   ]);
+
+  // Kopia zapasowa kolorów wykrytych ze zdjęcia (do resetowania)
+  const [originalColors, setOriginalColors] = useState([]);
 
   // ETAP 1: PREPROCESSING MODAL
   const [isPreprocessingOpen, setIsPreprocessingOpen] = useState(false);
@@ -195,7 +197,7 @@ export default function KeychainGenerator() {
   const [cropRatio, setCropRatio] = useState("1:1");
   const [keepBg, setKeepBg] = useState(false);
 
-  // ETAP 2: CONVERSION PREVIEW MODAL & AUTO-PALETTE
+  // ETAP 2: CONVERSION PREVIEW MODAL
   const [isConversionPreviewOpen, setIsConversionPreviewOpen] = useState(false);
   const [generatedSvgPreview, setGeneratedSvgPreview] = useState(null);
   const [detectedColors, setDetectedColors] = useState([]);
@@ -216,6 +218,25 @@ export default function KeychainGenerator() {
       next[index] = { ...next[index], [key]: val };
       return next;
     });
+  }
+
+  // Przywrócenie pojedynczej warstwy do koloru z grafiki
+  function resetSingleLayerColor(index) {
+    if (originalColors[index]) {
+      updateLayer(index, "color", originalColors[index]);
+    }
+  }
+
+  // Przywrócenie wszystkich warstw do kolorów z grafiki
+  function resetAllColorsToOriginal() {
+    if (originalColors.length > 0) {
+      setLayersConfig((prev) =>
+        prev.map((layer, idx) => ({
+          ...layer,
+          color: originalColors[idx] || layer.color,
+        }))
+      );
+    }
   }
 
   function handleFileSelected(e) {
@@ -306,6 +327,9 @@ export default function KeychainGenerator() {
     }
 
     if (detectedColors.length > 0) {
+      // Zapisujemy kopię oryginalną
+      setOriginalColors([...detectedColors]);
+      // Aplikujemy do aktywnych warstw
       setLayersConfig((prev) =>
         prev.map((layer, idx) => ({
           ...layer,
@@ -631,11 +655,26 @@ export default function KeychainGenerator() {
               </div>
             </div>
 
-            {/* Warstwy filamentu (z automatycznie pobranymi kolorami z K-Means) */}
+            {/* Warstwy filamentu z PRZYCISKIEM RESETU DO DOMYŚLNYCH KOLORÓW */}
             <div className="space-y-2.5">
-              <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
-                2. Warstwy filamentu & Grubość Z (mm)
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
+                  2. Warstwy filamentu & Grubość Z (mm)
+                </span>
+                {originalColors.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={resetAllColorsToOriginal}
+                    className="text-[10px] font-mono text-[#00E5FF] hover:underline flex items-center gap-1 cursor-pointer"
+                    title="Przywróć oryginalne barwy wykryte z grafiki"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span>↺ Przywróć oryginalne</span>
+                  </button>
+                )}
+              </div>
 
               {layersConfig.map((layer, idx) => (
                 <div key={layer.id} className="bg-[#0B0F17]/70 p-2.5 rounded-xl border border-[#24324A] space-y-1.5">
@@ -645,14 +684,27 @@ export default function KeychainGenerator() {
                         {layer.id}
                       </span>
                       <div
-                        className="w-3.5 h-3.5 rounded border border-white/20"
+                        className="w-4 h-4 rounded border border-white/20 shadow-sm"
                         style={{ backgroundColor: layer.color }}
                       />
-                      <span className="text-white text-[11px] truncate max-w-[150px]">
+                      <span className="text-white text-[11px] truncate max-w-[130px]">
                         {layer.name} ({layer.color})
                       </span>
                     </div>
-                    <span className="text-[#00E5FF] font-bold">{layer.thickness} mm</span>
+
+                    <div className="flex items-center gap-2">
+                      {originalColors[idx] && originalColors[idx] !== layer.color && (
+                        <button
+                          type="button"
+                          onClick={() => resetSingleLayerColor(idx)}
+                          className="text-[10px] font-mono text-[#94A3B8] hover:text-[#00E5FF] border border-[#24324A] px-1.5 py-0.5 rounded transition"
+                          title={`Cofnij do koloru wykrytego: ${originalColors[idx]}`}
+                        >
+                          Cofnij
+                        </button>
+                      )}
+                      <span className="text-[#00E5FF] font-bold">{layer.thickness} mm</span>
+                    </div>
                   </div>
 
                   <input
