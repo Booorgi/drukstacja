@@ -8,7 +8,6 @@ import CartDrawer from "../components/CartDrawer";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-// Domyślna, uniwersalna kompozycja 4-warstwowa (logo / tarcza z motywem geometrycznym)
 const DEFAULT_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <g id="color_1" fill="#111111">
     <path d="M50 8 L85 24 L85 64 L50 92 L15 64 L15 24 Z M50 14 L20 28 L20 60 L50 85 L80 60 L80 28 Z" />
@@ -147,7 +146,6 @@ const KeychainViewer3D = dynamic(
               </group>
             )}
 
-            {/* Płaskorzeźba ułożona na bazie */}
             <group position={[0, 0, 2.01]}>
               <SvgMakerWorldLayers svgString={reliefSvg} layersConfig={layersConfig} />
             </group>
@@ -180,11 +178,9 @@ export default function KeychainGenerator() {
   const genMenuRef = useRef(null);
   const userMenuRef = useRef(null);
 
-  // Kształt bazy i kolor tła
   const [shapeType, setShapeType] = useState("rect");
   const [baseColor, setBaseColor] = useState("#0B0F17");
 
-  // Uniwersalna konfiguracja 4 warstw filamentu
   const [layersConfig, setLayersConfig] = useState([
     { id: 1, name: "Filament 1: Kontury / Detale", color: "#0B0F17", thickness: 2.0 },
     { id: 2, name: "Filament 2: Główna bryła", color: "#00E5FF", thickness: 1.4 },
@@ -192,13 +188,17 @@ export default function KeychainGenerator() {
     { id: 4, name: "Filament 4: Jasne akcenty", color: "#FFFFFF", thickness: 0.8 },
   ]);
 
-  // Korekcja obrazu przed wysyłką do Gemini
-  const [contrast, setContrast] = useState(1.2);
-  const [brightness, setBrightness] = useState(1.0);
+  // STANY DLA OKNA MODALNEGO PREPROCESSINGU
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalImageSrc, setModalImageSrc] = useState(null);
+  const [exposure, setExposure] = useState(1.0);
+  const [contrast, setContrast] = useState(1.0);
+  const [saturation, setSaturation] = useState(1.0);
+  const [cropRatio, setCropRatio] = useState("1:1");
+  const [keepBg, setKeepBg] = useState(false);
 
-  const [rawImageFile, setRawImageFile] = useState(null);
   const [uploadedSvg, setUploadedSvg] = useState(DEFAULT_SVG);
-  const [imageFileName, setImageFileName] = useState("Grafika 4-Color");
+  const [imageFileName, setImageFileName] = useState("Wybierz plik z grafiką");
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
@@ -215,71 +215,78 @@ export default function KeychainGenerator() {
     });
   }
 
-  async function applyAdjustmentsAndVectorize(file) {
-    if (!file) return;
-    setIsProcessingImg(true);
-
-    try {
-      const img = new Image();
-      const reader = new FileReader();
-
-      reader.onload = (e) => {
-        img.onload = async () => {
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          canvas.width = img.width;
-          canvas.height = img.height;
-
-          ctx.filter = `contrast(${contrast}) brightness(${brightness})`;
-          ctx.drawImage(img, 0, 0);
-
-          canvas.toBlob(async (blob) => {
-            if (!blob) return;
-
-            const formData = new FormData();
-            formData.append("file", blob, "adjusted.png");
-
-            try {
-              const res = await fetch(`${API_URL}/vectorize-ai`, {
-                method: "POST",
-                body: formData,
-              });
-
-              if (!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.detail || "Błąd generowania");
-              }
-
-              const data = await res.json();
-              setUploadedSvg(data.svg);
-            } catch (err) {
-              alert("Błąd wektoryzacji Gemini: " + err.message);
-            } finally {
-              setIsProcessingImg(false);
-            }
-          }, "image/png");
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    } catch (e) {
-      console.error(e);
-      setIsProcessingImg(false);
-    }
-  }
-
-  function handleFileSelect(e) {
+  function handleFileSelected(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+
     setImageFileName(file.name);
-    setRawImageFile(file);
 
     if (file.type === "image/svg+xml") {
       const reader = new FileReader();
       reader.onload = (ev) => setUploadedSvg(ev.target.result);
       reader.readAsText(file);
-    } else {
-      applyAdjustmentsAndVectorize(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setModalImageSrc(ev.target.result);
+      setExposure(1.0);
+      setContrast(1.0);
+      setSaturation(1.0);
+      setIsModalOpen(true);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Po zatwierdzeniu w modalu ("Confirm")
+  async function handleConfirmPreprocessing() {
+    setIsModalOpen(false);
+    setIsProcessingImg(true);
+
+    try {
+      const img = new Image();
+      img.onload = async () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        
+        canvas.width = img.width;
+        canvas.height = img.height;
+
+        // Aplikacja suwaków: jasność (exposure), kontrast i nasycenie
+        ctx.filter = `brightness(${exposure}) contrast(${contrast}) saturate(${saturation})`;
+        ctx.drawImage(img, 0, 0);
+
+        canvas.toBlob(async (blob) => {
+          if (!blob) return;
+
+          const formData = new FormData();
+          formData.append("file", blob, "preprocessed.png");
+
+          try {
+            const res = await fetch(`${API_URL}/vectorize-ai`, {
+              method: "POST",
+              body: formData,
+            });
+
+            if (!res.ok) {
+              const err = await res.json();
+              throw new Error(err.detail || "Błąd generowania");
+            }
+
+            const data = await res.json();
+            setUploadedSvg(data.svg);
+          } catch (err) {
+            alert("Błąd Gemini AI: " + err.message);
+          } finally {
+            setIsProcessingImg(false);
+          }
+        }, "image/png");
+      };
+      img.src = modalImageSrc;
+    } catch (e) {
+      console.error(e);
+      setIsProcessingImg(false);
     }
   }
 
@@ -488,7 +495,7 @@ export default function KeychainGenerator() {
         </div>
       </header>
 
-      {/* VIEWPORT 3D I KONTROLKI */}
+      {/* VIEWPORT & FORMULARZ */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* LEWA STRONA: 3D VIEWPORT */}
         <section className="lg:col-span-7 flex flex-col gap-4">
@@ -507,7 +514,7 @@ export default function KeychainGenerator() {
           </div>
         </section>
 
-        {/* PRAWA STRONA: FORMULARZ DLA KAŻDEGO DETALU */}
+        {/* PRAWA STRONA: KONTROLKI */}
         <section className="lg:col-span-5 flex flex-col gap-4">
           <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-5 shadow-xl space-y-4 max-h-[620px] overflow-y-auto custom-scrollbar">
             <div className="border-b border-[#24324A] pb-2">
@@ -518,79 +525,45 @@ export default function KeychainGenerator() {
                 </span>
               </div>
               <p className="text-[11px] font-mono text-[#94A3B8] mt-0.5">
-                Dowolne logo, napis, grafika lub symbol w 4 płaszczyznach
+                Kwantyzacja kolorów i niezależna grubość każdego detalu
               </p>
             </div>
 
-            {/* Krok 1: Wgraj plik i parametry obrazu */}
-            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-2.5">
-              <span className="text-[11px] font-mono text-[#00E5FF] uppercase font-bold block">
-                Krok 1: Wgraj grafikę (PNG, JPG, SVG)
+            {/* Upload otwierający okno Preprocessingu */}
+            <div>
+              <span className="text-[11px] font-mono text-[#00E5FF] uppercase font-bold block mb-1.5">
+                1. Wybierz grafikę
               </span>
-
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".png,.jpg,.jpeg,.svg"
                 className="hidden"
-                onChange={handleFileSelect}
+                onChange={handleFileSelected}
               />
-
               <div
                 onClick={() => !isProcessingImg && fileInputRef.current?.click()}
-                className={`border border-dashed rounded-xl p-2.5 flex items-center justify-between transition cursor-pointer ${
+                className={`border border-dashed rounded-xl p-3 flex items-center justify-between transition cursor-pointer ${
                   isProcessingImg
                     ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white animate-pulse"
-                    : "border-[#24324A] hover:border-[#00E5FF] bg-[#161F30]/40"
+                    : "border-[#24324A] hover:border-[#00E5FF] bg-[#0B0F17]"
                 }`}
               >
-                <span className="font-mono text-xs text-white truncate max-w-[200px]">
-                  {isProcessingImg ? "AI przetwarza warstwy..." : imageFileName}
-                </span>
-                <span className="px-2 py-0.5 rounded bg-[#161F30] text-[#00E5FF] border border-[#24324A] text-xs font-mono">
-                  {isProcessingImg ? "..." : "Wybierz plik"}
-                </span>
-              </div>
-
-              {/* Suwaki kontrastu i jasności */}
-              <div className="grid grid-cols-2 gap-3 pt-1 text-[11px] font-mono">
-                <div>
-                  <div className="flex justify-between text-[#94A3B8] mb-0.5">
-                    <span>Kontrast</span>
-                    <span className="text-white">{contrast.toFixed(1)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="2.0"
-                    step="0.1"
-                    value={contrast}
-                    onChange={(e) => setContrast(parseFloat(e.target.value))}
-                    onMouseUp={() => rawImageFile && applyAdjustmentsAndVectorize(rawImageFile)}
-                    className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
-                  />
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-[#00E5FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="font-mono text-xs text-white truncate max-w-[200px]">
+                    {isProcessingImg ? "AI analizuje warstwy..." : imageFileName}
+                  </span>
                 </div>
-
-                <div>
-                  <div className="flex justify-between text-[#94A3B8] mb-0.5">
-                    <span>Jasność</span>
-                    <span className="text-white">{brightness.toFixed(1)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="1.8"
-                    step="0.1"
-                    value={brightness}
-                    onChange={(e) => setBrightness(parseFloat(e.target.value))}
-                    onMouseUp={() => rawImageFile && applyAdjustmentsAndVectorize(rawImageFile)}
-                    className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
-                  />
-                </div>
+                <span className="px-2.5 py-1 rounded bg-[#161F30] text-[#00E5FF] border border-[#24324A] text-xs font-mono">
+                  {isProcessingImg ? "..." : "Wybierz"}
+                </span>
               </div>
             </div>
 
-            {/* Krok 2: Kształt bazy */}
+            {/* Kształt bazy */}
             <div className="grid grid-cols-2 gap-2 text-xs font-mono">
               <button
                 type="button"
@@ -612,7 +585,7 @@ export default function KeychainGenerator() {
               </button>
             </div>
 
-            {/* Poziom 0: Baza podkładki */}
+            {/* Kolor bazy */}
             <div className="bg-[#0B0F17]/60 p-2.5 rounded-xl border border-[#24324A] space-y-1.5">
               <span className="text-[10px] font-mono text-[#94A3B8] uppercase block">
                 Poziom 0: Kolor podkładki breloka (grubość 4 mm)
@@ -633,10 +606,10 @@ export default function KeychainGenerator() {
               </div>
             </div>
 
-            {/* Krok 3: 4 Poziomy filamentu i wypukłości */}
+            {/* Warstwy filamentu */}
             <div className="space-y-2.5">
               <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
-                Krok 2: Warstwy filamentu & Wypukłość Z (mm)
+                2. Warstwy filamentu & Grubość Z (mm)
               </span>
 
               {layersConfig.map((layer, idx) => (
@@ -651,17 +624,15 @@ export default function KeychainGenerator() {
                     <span className="text-[#00E5FF] font-bold">{layer.thickness} mm</span>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="range"
-                      min="0.4"
-                      max="3.0"
-                      step="0.2"
-                      value={layer.thickness}
-                      onChange={(e) => updateLayer(idx, "thickness", parseFloat(e.target.value))}
-                      className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
-                    />
-                  </div>
+                  <input
+                    type="range"
+                    min="0.4"
+                    max="3.0"
+                    step="0.2"
+                    value={layer.thickness}
+                    onChange={(e) => updateLayer(idx, "thickness", parseFloat(e.target.value))}
+                    className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
+                  />
 
                   <div className="flex flex-wrap gap-1 pt-1">
                     {PALETTE.map((pal) => (
@@ -681,7 +652,7 @@ export default function KeychainGenerator() {
               ))}
             </div>
 
-            {/* Koszyk i zamówienie */}
+            {/* Koszyk */}
             <div className="pt-2 border-t border-[#24324A] space-y-2">
               <div className="flex items-baseline justify-between font-mono">
                 <div>
@@ -723,6 +694,154 @@ export default function KeychainGenerator() {
           </div>
         </section>
       </main>
+
+      {/* ========================================================= */}
+      {/* OKNO MODALNE: IMAGE PREPROCESSING (A'LA MAKERWORLD)       */}
+      {/* ========================================================= */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#0E1524] border border-[#24324A] rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-[#24324A] flex items-center justify-between">
+              <h2 className="text-base font-bold text-white tracking-wide">Image Preprocessing</h2>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-[#94A3B8] hover:text-white transition cursor-pointer text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
+              {/* Podgląd z siatką przezroczystości */}
+              <div className="md:col-span-7 flex items-center justify-center bg-[#070A10] border border-[#24324A] rounded-xl p-4 min-h-[320px] bg-[radial-gradient(#1E293B_1px,transparent_1px)] [background-size:16px_16px] overflow-hidden relative">
+                {modalImageSrc && (
+                  <img
+                    src={modalImageSrc}
+                    alt="Preprocessed Preview"
+                    className="max-h-[300px] object-contain rounded transition-all duration-75"
+                    style={{
+                      filter: `brightness(${exposure}) contrast(${contrast}) saturate(${saturation})`,
+                    }}
+                  />
+                )}
+              </div>
+
+              {/* Pasek narzędziowy (MakerWorld controls) */}
+              <div className="md:col-span-5 flex flex-col justify-between space-y-4 font-mono text-xs">
+                <div className="space-y-4">
+                  {/* Crop Ratio */}
+                  <div>
+                    <label className="text-[#94A3B8] uppercase block mb-1.5 font-bold">Crop Ratio</label>
+                    <div className="flex items-center gap-1.5">
+                      {["Free", "1:1", "4:3", "3:2"].map((ratio) => (
+                        <button
+                          key={ratio}
+                          type="button"
+                          onClick={() => setCropRatio(ratio)}
+                          className={`px-2.5 py-1 rounded border text-[11px] transition ${
+                            cropRatio === ratio
+                              ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white font-bold"
+                              : "border-[#24324A] text-[#94A3B8] hover:border-slate-500"
+                          }`}
+                        >
+                          {ratio}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Keep Background */}
+                  <div className="flex items-center justify-between py-1 border-y border-[#24324A]">
+                    <span className="text-white">Keep Background</span>
+                    <button
+                      type="button"
+                      onClick={() => setKeepBg(!keepBg)}
+                      className={`w-10 h-5 flex items-center rounded-full p-1 cursor-pointer transition ${
+                        keepBg ? "bg-emerald-500 justify-end" : "bg-[#1E293B] justify-start"
+                      }`}
+                    >
+                      <div className="bg-white w-3.5 h-3.5 rounded-full shadow-md" />
+                    </button>
+                  </div>
+
+                  {/* Suwaki Image Adjustment */}
+                  <div className="space-y-3 pt-1">
+                    <span className="text-[#00E5FF] uppercase font-bold block text-[11px]">Image Adjustment</span>
+
+                    <div>
+                      <div className="flex justify-between text-[#94A3B8] mb-1">
+                        <span>Exposure (Jasność)</span>
+                        <span className="text-white">{exposure.toFixed(1)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="2.0"
+                        step="0.1"
+                        value={exposure}
+                        onChange={(e) => setExposure(parseFloat(e.target.value))}
+                        className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[#94A3B8] mb-1">
+                        <span>Contrast (Kontrast)</span>
+                        <span className="text-white">{contrast.toFixed(1)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="2.5"
+                        step="0.1"
+                        value={contrast}
+                        onChange={(e) => setContrast(parseFloat(e.target.value))}
+                        className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[#94A3B8] mb-1">
+                        <span>Saturation (Nasycenie)</span>
+                        <span className="text-white">{saturation.toFixed(1)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="2.5"
+                        step="0.1"
+                        value={saturation}
+                        onChange={(e) => setSaturation(parseFloat(e.target.value))}
+                        className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stopka z przyciskami Cancel i Confirm */}
+                <div className="flex items-center justify-end gap-2 pt-4 border-t border-[#24324A]">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-4 py-2 rounded-lg border border-[#24324A] text-[#94A3B8] hover:text-white hover:border-slate-500 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmPreprocessing}
+                    className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onLoginSuccess={(u) => setUser(u)} />
       <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} items={cartItems} onRemoveItem={() => fetchCart(user?.id)} />
