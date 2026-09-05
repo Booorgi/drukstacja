@@ -87,7 +87,6 @@ const KeychainViewer3D = dynamic(
           }
         }, [svgString]);
 
-        // Grupy ułożone od podkładu do najmniejszych detali
         const groups = [
           { shapes: parsedGroups.c1, cfg: layersConfig[0], level: 0 },
           { shapes: parsedGroups.c2, cfg: layersConfig[1], level: 1 },
@@ -95,7 +94,6 @@ const KeychainViewer3D = dynamic(
           { shapes: parsedGroups.c4, cfg: layersConfig[3], level: 3 },
         ];
 
-        // Wyznaczamy skalę tak, aby 100 jednostek SVG idealnie odpowiadało wymiarom bazy
         const minBound = Math.min(baseBounds?.width || 60, baseBounds?.height || 60);
         const uniformScale = (minBound * ((graphicScale || 80) / 100)) / 100;
 
@@ -104,10 +102,11 @@ const KeychainViewer3D = dynamic(
             key={svgString}
             position={[offsetX, offsetY, (baseThickness || 3) / 2]}
           >
-            {/* Przesunięcie [-50, 50, 0] przesuwa środek viewBox SVG (50, 50) dokładnie w punkt zerowy (0,0) bazy */}
-            <group scale={[uniformScale, -uniformScale, 1]} position={[-50 * uniformScale, 50 * uniformScale, 0]}>
+            <group
+              scale={[uniformScale, -uniformScale, 1]}
+              position={[-50 * uniformScale, 50 * uniformScale, 0]}
+            >
               {groups.map((grp, gIdx) => {
-                // Mikro-wysunięcie w Z dla każdej kolejnej warstwy zapobiega zakrywaniu detali przez podkład
                 const stepZ = grp.level * 0.08;
 
                 return grp.shapes.map((shape, sIdx) => (
@@ -219,7 +218,7 @@ const KeychainViewer3D = dynamic(
               </group>
             )}
 
-            {/* Płaskorzeźba z obsługą ręcznego przesunięcia X/Y */}
+            {/* Płaskorzeźba */}
             <SvgMakerWorldLayers
               svgString={reliefSvg}
               layersConfig={layersConfig}
@@ -269,10 +268,10 @@ export default function KeychainGenerator() {
 
   // Skalowanie oraz pozycja motywu
   const [graphicScale, setGraphicScale] = useState(75);
-  const [offsetX, setOffsetX] = useState(0); // mm
-  const [offsetY, setOffsetY] = useState(0); // mm
+  const [offsetX, setOffsetX] = useState(0);
+  const [offsetY, setOffsetY] = useState(0);
 
-  // Kaskada grubości zapobiega zjadaniu oczu/konturów przez podkład:
+  // Warstwy (kaskada grubości chroniąca detale)
   const [layersConfig, setLayersConfig] = useState([
     { id: 1, name: "Warstwa 1 (Baza)", color: "#0B0F17", thickness: 0.6 },
     { id: 2, name: "Warstwa 2 (Ciało)", color: "#00E5FF", thickness: 0.8 },
@@ -917,6 +916,15 @@ export default function KeychainGenerator() {
                 onChange={(e) => setGraphicScale(parseInt(e.target.value))}
                 className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
               />
+
+              {graphicScale < 55 && (
+                <div className="flex items-center gap-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-[10px] font-mono">
+                  <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <span>Część najcieńszych detali przy skali &lt;55% może wymagać dyszy 0.2 mm.</span>
+                </div>
+              )}
 
               {/* Precyzyjne przesuwanie X i Y */}
               <div className="pt-2 border-t border-[#24324A]/60 space-y-2">

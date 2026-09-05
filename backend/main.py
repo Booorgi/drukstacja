@@ -26,7 +26,7 @@ from slicer import convert_step_to_stl, run_slicer
 from orientation import auto_orient_mesh
 
 # Inicjalizacja aplikacji FastAPI
-app = FastAPI(title="Drukstacja API", version="0.4.0")
+app = FastAPI(title="Drukstacja API", version="0.4.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -126,28 +126,41 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
     collected_paths = []
     color_ids = ["color_1", "color_2", "color_3", "color_4"]
 
+    # Elementy strukturalne pod optymalizację minimalnej grubości ścieżki (dysza 0.4 mm)
+    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+
     for cluster_idx in range(n_colors):
         mask = (quantized_map == cluster_idx).astype(np.uint8) * 255
         if not np.any(mask):
             continue
 
-        # Usunięcie ząbków i pasków
-        mask = cv2.medianBlur(mask, 5)
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        # Zamykanie mikroszczelin
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
+
+        # Pogrubienie drobnych detali, aby dysza 0.4 mm nie gubiła linii
+        if cluster_idx > 0:
+            mask = cv2.dilate(mask, kernel_dilate, iterations=1)
+
+        mask = cv2.medianBlur(mask, 3)
 
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS)
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area < 8 or area > (0.90 * (new_w * new_h)):
+            # Odrzucanie pojedynczych drobin mniejszych niż ~16 px oraz zewnętrznego tła
+            if area < 16 or area > (0.92 * (new_w * new_h)):
                 continue
 
-            pts = cnt.reshape(-1, 2)
+            # Uproszczenie krawędzi metodą Ramer-Douglas-Peucker pod płynny ruch ekstrudera
+            perimeter = cv2.arcLength(cnt, True)
+            epsilon = 0.0018 * perimeter
+            approx_cnt = cv2.approxPolyDP(cnt, epsilon, True)
+
+            pts = approx_cnt.reshape(-1, 2)
             if len(pts) < 3:
                 continue
 
-            # Centrowanie punktów
             def map_pt(pt):
                 nx = 50.0 + (pt[0] - center_x) * scale_fit
                 ny = 50.0 + (pt[1] - center_y) * scale_fit
@@ -186,6 +199,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
 
     svg_output.append("</svg>")
     return "".join(svg_output), final_colors
+
 
 @app.get("/")
 def root():
