@@ -35,6 +35,7 @@ export default function Home() {
   const [includeVat, setIncludeVat] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showSupports, setShowSupports] = useState(false);
 
   async function handleFileSelected(selectedFile) {
     setFile(selectedFile);
