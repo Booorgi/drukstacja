@@ -48,19 +48,16 @@ class QuoteRequest(BaseModel):
     infill_percent: int = 20
 
 
-def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
+def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
     """
-    Algorytmiczna kwantyzacja i wektoryzacja konturów (MakerWorld Standard):
-    - Zachowuje oryginalne kolory filamentu z K-Means
-    - Sortuje ścieżki wg powierzchni (największe na spód, detale na wierzch)
-    - Eliminuje zakrywanie detali przez tło/sylwetkę
+    Algorytmiczna kwantyzacja i wektoryzacja konturów (MakerWorld Standard).
+    Zwraca krotkę: (kod_svg, lista_wykrytych_kolorow_hex).
     """
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
     if img is None:
         raise ValueError("Nie udało się zdekodować przesłanego pliku graficznego.")
 
-    # 1. Obsługa przezroczystości (alfa) lub detekcja tła
     has_alpha = False
     if len(img.shape) == 3 and img.shape[2] == 4:
         has_alpha = True
@@ -69,7 +66,6 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
     else:
         bgr = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
-    # 2. Skalowanie do stałego rozmiaru roboczego
     target_dim = 400
     h, w = bgr.shape[:2]
     scale = target_dim / max(h, w)
@@ -81,7 +77,6 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
             alpha_mask.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
         ).astype(bool)
     else:
-        # Automatyczne odcięcie jasnego/białego tła w rogach
         corners = [
             bgr_resized[0, 0],
             bgr_resized[0, -1],
@@ -100,13 +95,11 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
         pixels = bgr_resized.reshape(-1, 3)
         alpha_resized = np.ones((new_h, new_w), dtype=bool)
 
-    # 3. K-Means
     kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=4)
     kmeans.fit(pixels)
 
-    # Pobieramy rzeczywiste kolory klastrów w formacie HEX
-    centers = kmeans.cluster_centers_.astype(int)  # BGR
-    hex_colors = [f"#{c[2]:02x}{c[1]:02x}{c[0]:02x}" for c in centers]
+    centers = kmeans.cluster_centers_.astype(int)
+    hex_colors = [f"#{c[2]:02x}{c[1]:02x}{c[0]:02x}".upper() for c in centers]
 
     quantized_map = np.full((new_h, new_w), -1, dtype=int)
     quantized_map[alpha_resized] = kmeans.labels_
@@ -115,7 +108,6 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
     pad = 4.0
     usable_box = 100.0 - (2 * pad)
 
-    # 4. Zbieranie wszystkich ścieżek z ich powierzchnią i przynależnością do warstwy
     collected_paths = []
     color_ids = ["color_1", "color_2", "color_3", "color_4"]
 
@@ -124,14 +116,11 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
         if not np.any(mask):
             continue
 
-        # Wygładzamy drobne ząbkowanie pikseli
         mask = cv2.medianBlur(mask, 3)
-
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS)
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            # Odrzucamy szum (< 6px) oraz obrys całego tła (> 88%)
             if area < 6 or area > (0.88 * total_area):
                 continue
 
@@ -139,7 +128,6 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
             if len(pts) < 3:
                 continue
 
-            # Budowanie ścieżki SVG
             start_x = pad + (pts[0][0] / new_w) * usable_box
             start_y = pad + (pts[0][1] / new_h) * usable_box
             path_d = f"M {start_x:.2f} {start_y:.2f} "
@@ -156,13 +144,11 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
                 "path_d": path_d
             })
 
-    # 5. SORTOWANIE: Największe płaszczyzny idą na spód, a detale na sam wierzch!
     collected_paths.sort(key=lambda x: x["area"], reverse=True)
 
-    # 6. Generowanie wynikowego SVG
     svg_output = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
+    final_colors = []
 
-    # Grupujemy ścieżki pod kątem 4 kolorów Three.js
     for cluster_idx in range(n_colors):
         c_id = color_ids[cluster_idx]
         c_hex = hex_colors[cluster_idx]
@@ -171,9 +157,12 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4) -> str:
         if group_paths:
             paths_str = " ".join([f'<path d="{p}" />' for p in group_paths])
             svg_output.append(f'<g id="{c_id}" fill="{c_hex}">{paths_str}</g>')
+            final_colors.append(c_hex)
+        else:
+            final_colors.append("#111111")
 
     svg_output.append("</svg>")
-    return "".join(svg_output)
+    return "".join(svg_output), final_colors
 
 
 @app.get("/")
@@ -189,14 +178,17 @@ def get_materials():
 
 @app.post("/vectorize-ai")
 async def vectorize_image_ai(file: UploadFile = File(...)):
-    """Precyzyjna kwantyzacja i trasowanie konturów piksel-po-pikselu."""
+    """Wektoryzacja konturów z auto-pobieraniem palety barw."""
     try:
         contents = await file.read()
-        svg_result = image_to_quantized_svg(contents, n_colors=4)
-        return {"svg": svg_result}
+        svg_result, detected_colors = image_to_quantized_svg(contents, n_colors=4)
+        return {
+            "svg": svg_result,
+            "detected_colors": detected_colors
+        }
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Błąd wektoryzacji konturów: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Błąd wektoryzacji: {str(e)}")
 
 
 @app.post("/analyze")
