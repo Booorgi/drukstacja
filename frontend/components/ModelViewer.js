@@ -85,18 +85,19 @@ export default function ModelViewer({
     const buildSceneWithGeometry = (geometry) => {
       if (meshRef.current) scene.remove(meshRef.current);
 
+      // Obrót o +90 stopni stawia model na brzuchu zamiast na plecach
+      geometry.rotateX(Math.PI / 2);
       geometry.computeVertexNormals();
 
-      // 1. Centrowanie modelu w poziomie (X, Z) i oparcie spodu bezpośrednio na stole (Y = 0)
+      // 1. Centrowanie modelu w poziomie (X, Z) i oparcie spodu na stole (Y = 0)
       geometry.computeBoundingBox();
-      let bbox = geometry.boundingBox;
-      let centerX = (bbox.max.x + bbox.min.x) / 2;
-      let centerZ = (bbox.max.z + bbox.min.z) / 2;
-      let minY = bbox.min.y;
+      const bbox = geometry.boundingBox;
+      const centerX = (bbox.max.x + bbox.min.x) / 2;
+      const centerZ = (bbox.max.z + bbox.min.z) / 2;
+      const minY = bbox.min.y;
 
       geometry.translate(-centerX, -minY, -centerZ);
 
-      // Aktualizacja po przesunięciu
       geometry.computeBoundingBox();
       const finalBbox = geometry.boundingBox;
       const modelHeight = finalBbox.max.y - finalBbox.min.y;
@@ -111,7 +112,7 @@ export default function ModelViewer({
       meshRef.current = mesh;
       scene.add(mesh);
 
-      // 2. Siatka stołu roboczego dopasowana do gabarytów
+      // 2. Siatka stołu roboczego
       geometry.computeBoundingSphere();
       const radius = geometry.boundingSphere.radius || 60;
       const grid = new THREE.GridHelper(Math.max(radius * 3.5, 140), 20, 0x94a3b8, 0xe2e8f0);
@@ -130,7 +131,7 @@ export default function ModelViewer({
       };
       animate();
     };
-
+    
     const loader = new STLLoader();
 
     if (previewUrl) {
