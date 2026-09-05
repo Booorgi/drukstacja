@@ -1,100 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Head from "next/head";
 import Link from "next/link";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Center, RoundedBox } from "@react-three/drei";
-import * as THREE from "three";
-import { SVGLoader } from "three-stdlib";
+import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabaseClient";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
 
-// Przykładowy domyślny kształt gwiazdy/logo w SVG, gdy użytkownik jeszcze nic nie wgrał
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
 const DEFAULT_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <path d="M50 15 L62 38 L87 42 L68 60 L73 85 L50 72 L27 85 L32 60 L13 42 L38 38 Z" fill="black" />
 </svg>`;
-
-// Komponent generujący trójwymiarowe wytłoczenie z wektorów SVG
-function SvgExtrusion({ svgString, depth, color }) {
-  const shapes = useMemo(() => {
-    if (!svgString) return [];
-    try {
-      const loader = new SVGLoader();
-      const svgData = loader.parse(svgString);
-      return svgData.paths.flatMap((path) => path.toShapes(true));
-    } catch (err) {
-      console.error("Błąd parsowania SVG:", err);
-      return [];
-    }
-  }, [svgString]);
-
-  if (!shapes.length) return null;
-
-  return (
-    <Center position={[0, 0, 0]}>
-      <group scale={[0.35, -0.35, 1]}> {/* Odwrócenie osi Y charakterystyczne dla SVG */}
-        {shapes.map((shape, idx) => (
-          <mesh key={idx}>
-            <extrudeGeometry
-              args={[
-                shape,
-                {
-                  depth: depth,
-                  bevelEnabled: true,
-                  bevelThickness: 0.2,
-                  bevelSize: 0.2,
-                  bevelSegments: 2,
-                },
-              ]}
-            />
-            <meshStandardMaterial color={color} roughness={0.3} metalness={0.1} />
-          </mesh>
-        ))}
-      </group>
-    </Center>
-  );
-}
-
-// Baza breloka
-function KeychainBase({ shapeType, baseColor, reliefSvg, reliefDepth, reliefColor }) {
-  return (
-    <group>
-      {/* 1. Baza: Prostokątna zaokrąglona */}
-      {shapeType === "rect" && (
-        <group>
-          <RoundedBox args={[65, 45, 4]} radius={4} smoothness={4} position={[0, 0, 0]}>
-            <meshStandardMaterial color={baseColor} roughness={0.5} />
-          </RoundedBox>
-          {/* Ucho na kółko */}
-          <mesh position={[-36, 0, 0]}>
-            <torusGeometry args={[6, 2, 16, 32]} />
-            <meshStandardMaterial color={baseColor} roughness={0.5} />
-          </mesh>
-        </group>
-      )}
-
-      {/* 2. Baza: Okrągła */}
-      {shapeType === "circle" && (
-        <group>
-          <mesh rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[26, 26, 4, 48]} />
-            <meshStandardMaterial color={baseColor} roughness={0.5} />
-          </mesh>
-          {/* Ucho na kółko */}
-          <mesh position={[0, 30, 0]}>
-            <torusGeometry args={[6, 2, 16, 32]} />
-            <meshStandardMaterial color={baseColor} roughness={0.5} />
-          </mesh>
-        </group>
-      )}
-
-      {/* 3. Wytłoczone logo ze zdjęcia na powierzchni bazy (Z = +2.01mm) */}
-      <group position={[0, 0, 2.01]}>
-        <SvgExtrusion svgString={reliefSvg} depth={reliefDepth} color={reliefColor} />
-      </group>
-    </group>
-  );
-}
 
 const COLORS = [
   { id: "#0B0F17", name: "Czerń Głęboka" },
@@ -105,6 +21,110 @@ const COLORS = [
   { id: "#F59E0B", name: "Bursztyn / Złoty" },
   { id: "#10B981", name: "Szmaragdowa Zieleń" },
 ];
+
+// Dynamiczny import komponentu Three.js (wyłączony SSR)
+const KeychainViewer3D = dynamic(
+  () =>
+    Promise.all([
+      import("@react-three/fiber"),
+      import("@react-three/drei"),
+      import("three-stdlib"),
+    ]).then(([{ Canvas }, { OrbitControls, Center, RoundedBox }, { SVGLoader }]) => {
+      function SvgExtrusion({ svgString, depth, color }) {
+        const shapes = useMemo(() => {
+          if (!svgString) return [];
+          try {
+            const loader = new SVGLoader();
+            const svgData = loader.parse(svgString);
+            return svgData.paths.flatMap((path) => path.toShapes(true));
+          } catch (err) {
+            console.error("Błąd parsowania SVG:", err);
+            return [];
+          }
+        }, [svgString]);
+
+        if (!shapes.length) return null;
+
+        return (
+          <Center position={[0, 0, 0]}>
+            <group scale={[0.35, -0.35, 1]}>
+              {shapes.map((shape, idx) => (
+                <mesh key={idx}>
+                  <extrudeGeometry
+                    args={[
+                      shape,
+                      {
+                        depth: depth,
+                        bevelEnabled: true,
+                        bevelThickness: 0.2,
+                        bevelSize: 0.2,
+                        bevelSegments: 2,
+                      },
+                    ]}
+                  />
+                  <meshStandardMaterial color={color} roughness={0.3} metalness={0.1} />
+                </mesh>
+              ))}
+            </group>
+          </Center>
+        );
+      }
+
+      function KeychainMesh({ shapeType, baseColor, reliefSvg, reliefDepth, reliefColor }) {
+        return (
+          <group>
+            {shapeType === "rect" && (
+              <group>
+                <RoundedBox args={[65, 45, 4]} radius={4} smoothness={4} position={[0, 0, 0]}>
+                  <meshStandardMaterial color={baseColor} roughness={0.5} />
+                </RoundedBox>
+                <mesh position={[-36, 0, 0]}>
+                  <torusGeometry args={[6, 2, 16, 32]} />
+                  <meshStandardMaterial color={baseColor} roughness={0.5} />
+                </mesh>
+              </group>
+            )}
+
+            {shapeType === "circle" && (
+              <group>
+                <mesh rotation={[Math.PI / 2, 0, 0]}>
+                  <cylinderGeometry args={[26, 26, 4, 48]} />
+                  <meshStandardMaterial color={baseColor} roughness={0.5} />
+                </mesh>
+                <mesh position={[0, 30, 0]}>
+                  <torusGeometry args={[6, 2, 16, 32]} />
+                  <meshStandardMaterial color={baseColor} roughness={0.5} />
+                </mesh>
+              </group>
+            )}
+
+            <group position={[0, 0, 2.01]}>
+              <SvgExtrusion svgString={reliefSvg} depth={reliefDepth} color={reliefColor} />
+            </group>
+          </group>
+        );
+      }
+
+      return function Viewer({ shapeType, baseColor, reliefSvg, reliefDepth, reliefColor }) {
+        return (
+          <Canvas camera={{ position: [0, 45, 90], fov: 45 }}>
+            <ambientLight intensity={0.7} />
+            <directionalLight position={[20, 50, 30]} intensity={1.5} />
+            <directionalLight position={[-20, 20, -20]} intensity={0.6} />
+            <KeychainMesh
+              shapeType={shapeType}
+              baseColor={baseColor}
+              reliefSvg={reliefSvg}
+              reliefDepth={reliefDepth}
+              reliefColor={reliefColor}
+            />
+            <OrbitControls makeDefault minDistance={30} maxDistance={180} />
+          </Canvas>
+        );
+      };
+    }),
+  { ssr: false }
+);
 
 export default function KeychainGenerator() {
   const [user, setUser] = useState(null);
@@ -117,77 +137,96 @@ export default function KeychainGenerator() {
   const userMenuRef = useRef(null);
 
   // Konfiguracja Breloka
-  const [shapeType, setShapeType] = useState("rect"); // rect | circle
+  const [shapeType, setShapeType] = useState("rect");
   const [baseColor, setBaseColor] = useState("#0B0F17");
   const [reliefColor, setReliefColor] = useState("#00E5FF");
-  const [reliefDepth, setReliefDepth] = useState(1.6); // wysokość wypukłości w mm
+  const [reliefDepth, setReliefDepth] = useState(1.6);
   const [uploadedSvg, setUploadedSvg] = useState(DEFAULT_SVG);
   const [imageFileName, setImageFileName] = useState("Domyślna Gwiazda");
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [useAI, setUseAI] = useState(true);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
   const fileInputRef = useRef(null);
 
   const unitPrice = 18.0;
   const totalPrice = (unitPrice * quantity).toFixed(2);
 
-  // Konwersja wgranego pliku (JPG/PNG/SVG) na wektory
-  function handleImageUpload(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function handleImageUpload(e) {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
 
-    setImageFileName(file.name);
+    setImageFileName(selectedFile.name);
 
-    if (file.type === "image/svg+xml") {
-      // Jeśli użytkownik wgrał bezpośrednio plik wektorowy SVG
+    // Jeśli to bezpośredni SVG, nie musimy pytać Gemini
+    if (selectedFile.type === "image/svg+xml") {
       const reader = new FileReader();
       reader.onload = (ev) => setUploadedSvg(ev.target.result);
-      reader.readAsText(file);
-    } else {
-      // Jeśli wgrał JPG / PNG -> binaryzujemy obraz na Canvas i generujemy kontur SVG
+      reader.readAsText(selectedFile);
+      return;
+    }
+
+    // Wektoryzacja przez Gemini AI w backendzie
+    if (useAI) {
       setIsProcessingImg(true);
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          canvas.width = 100;
-          canvas.height = 100;
+      try {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
 
-          // Rysujemy i skalujemy obrazek do kwadratu 100x100
-          ctx.drawImage(img, 0, 0, 100, 100);
-          const imgData = ctx.getImageData(0, 0, 100, 100);
-          const data = imgData.data;
+        const res = await fetch(`${API_URL}/vectorize-ai`, {
+          method: "POST",
+          body: formData,
+        });
 
-          // Progowanie (Black & White thresholding)
-          let pathPoints = "";
-          for (let y = 0; y < 100; y += 4) {
-            for (let x = 0; x < 100; x += 4) {
-              const i = (y * 100 + x) * 4;
-              const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-              // Jeśli piksel jest ciemny (lub kryjący), traktujemy go jako element wypukły
-              if (brightness < 128 && data[i + 3] > 50) {
-                pathPoints += `M${x},${y} h3 v3 h-3 z `;
-              }
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail || "Błąd generowania wektora");
+        }
+
+        const data = await res.json();
+        setUploadedSvg(data.svg);
+      } catch (err) {
+        console.error("Błąd AI:", err);
+        alert("Błąd Gemini AI: " + err.message + ". Używam awaryjnej wektoryzacji lokalnej.");
+        fallbackCanvasVectorize(selectedFile);
+      } finally {
+        setIsProcessingImg(false);
+      }
+    } else {
+      fallbackCanvasVectorize(selectedFile);
+    }
+  }
+
+  // Awaryjne proste progowanie canvas
+  function fallbackCanvasVectorize(file) {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = 100;
+        canvas.height = 100;
+        ctx.drawImage(img, 0, 0, 100, 100);
+        const data = ctx.getImageData(0, 0, 100, 100).data;
+
+        let pathPoints = "";
+        for (let y = 0; y < 100; y += 4) {
+          for (let x = 0; x < 100; x += 4) {
+            const i = (y * 100 + x) * 4;
+            const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+            if (brightness < 128 && data[i + 3] > 50) {
+              pathPoints += `M${x},${y} h3 v3 h-3 z `;
             }
           }
+        }
 
-          if (!pathPoints) {
-            pathPoints = "M20,20 h60 v60 h-60 z"; // Fallback jeśli zdjęcie było całkiem białe
-          }
-
-          const generatedSvg = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-            <path d="${pathPoints}" fill="black" />
-          </svg>`;
-
-          setUploadedSvg(generatedSvg);
-          setIsProcessingImg(false);
-        };
-        img.src = ev.target.result;
+        if (!pathPoints) pathPoints = "M20,20 h60 v60 h-60 z";
+        setUploadedSvg(`<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="${pathPoints}" fill="black" /></svg>`);
       };
-      reader.readAsDataURL(file);
-    }
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
   }
 
   async function fetchCart(userId) {
@@ -236,7 +275,7 @@ export default function KeychainGenerator() {
     try {
       const { error } = await supabase.from("orders").insert({
         user_id: user.id,
-        file_name: `Brelok z logo: [${imageFileName}]`,
+        file_name: `Brelok AI Relief: [${imageFileName}]`,
         material: "PLA / PETG Multi-Color",
         technology: "FDM Dual-Color Relief",
         layer_height: "0.20 mm",
@@ -262,7 +301,7 @@ export default function KeychainGenerator() {
   return (
     <div className="min-h-screen flex flex-col bg-[#0B0F17] text-[#F8FAFC] font-sans">
       <Head>
-        <title>Generator Breloków ze Zdjęcia 3D — Drukstacja</title>
+        <title>Generator Breloków ze Zdjęcia AI 3D — Drukstacja</title>
       </Head>
 
       {/* NAVBAR */}
@@ -398,33 +437,24 @@ export default function KeychainGenerator() {
         </div>
       </header>
 
-      {/* GŁÓWNY PANEL ROBOCZY */}
+      {/* PANEL ROBOCZY */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* LEWA STRONA: INTERAKTYWNY VIEWPORT 3D (7 kolumn) */}
         <section className="lg:col-span-7 flex flex-col gap-4">
           <div className="relative w-full h-[540px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
             <div className="absolute top-4 left-4 z-10 font-mono text-xs text-[#94A3B8] bg-[#0B0F17]/80 px-3 py-1.5 rounded-lg border border-[#24324A] backdrop-blur-md">
               Podgląd 3D na żywo • Obracaj lewym przyciskiem myszy
             </div>
 
-            <Canvas camera={{ position: [0, 45, 90], fov: 45 }}>
-              <ambientLight intensity={0.7} />
-              <directionalLight position={[20, 50, 30]} intensity={1.5} />
-              <directionalLight position={[-20, 20, -20]} intensity={0.6} />
-              <KeychainBase
-                shapeType={shapeType}
-                baseColor={baseColor}
-                reliefSvg={uploadedSvg}
-                reliefDepth={reliefDepth}
-                reliefColor={reliefColor}
-              />
-              <OrbitControls makeDefault minDistance={30} maxDistance={180} />
-            </Canvas>
+            <KeychainViewer3D
+              shapeType={shapeType}
+              baseColor={baseColor}
+              reliefSvg={uploadedSvg}
+              reliefDepth={reliefDepth}
+              reliefColor={reliefColor}
+            />
           </div>
         </section>
 
-        {/* PRAWA STRONA: FORMULARZ PARAMETRÓW RELIEFU (5 kolumn) */}
         <section className="lg:col-span-5 flex flex-col gap-4">
           <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-6 shadow-xl space-y-5">
             <div className="border-b border-[#24324A] pb-3">
@@ -434,11 +464,25 @@ export default function KeychainGenerator() {
               </p>
             </div>
 
-            {/* 1. Upload Grafiki */}
+            {/* Upload grafiki z AI */}
             <div>
-              <label className="block text-xs font-medium text-[#94A3B8] mb-2 uppercase tracking-wider">
-                1. Wgraj grafikę (PNG, JPG, SVG)
-              </label>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-xs font-medium text-[#94A3B8] uppercase tracking-wider">
+                  1. Wgraj grafikę (PNG, JPG, SVG)
+                </label>
+                <label className="flex items-center gap-1.5 text-xs font-mono cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useAI}
+                    onChange={(e) => setUseAI(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-[#00E5FF] rounded cursor-pointer"
+                  />
+                  <span className={useAI ? "text-[#00E5FF] font-bold" : "text-[#94A3B8]"}>
+                    ✨ Gemini AI Wektoryzacja
+                  </span>
+                </label>
+              </div>
+
               <input
                 ref={fileInputRef}
                 type="file"
@@ -447,24 +491,28 @@ export default function KeychainGenerator() {
                 onChange={handleImageUpload}
               />
               <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border border-dashed border-[#24324A] hover:border-[#00E5FF] bg-[#0B0F17] rounded-xl p-3 flex items-center justify-between cursor-pointer transition"
+                onClick={() => !isProcessingImg && fileInputRef.current?.click()}
+                className={`border border-dashed rounded-xl p-3 flex items-center justify-between transition cursor-pointer ${
+                  isProcessingImg
+                    ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white animate-pulse"
+                    : "border-[#24324A] hover:border-[#00E5FF] bg-[#0B0F17]"
+                }`}
               >
                 <div className="flex items-center gap-2 text-xs">
                   <svg className="w-5 h-5 text-[#00E5FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <span className="font-mono text-white truncate max-w-[200px]">
-                    {isProcessingImg ? "Przetwarzam obraz..." : imageFileName}
+                    {isProcessingImg ? "Gemini przetwarza obraz na wektory 3D..." : imageFileName}
                   </span>
                 </div>
                 <span className="px-2.5 py-1 rounded bg-[#161F30] text-[#00E5FF] border border-[#24324A] text-xs font-mono">
-                  Wybierz
+                  {isProcessingImg ? "Generuję..." : "Wybierz"}
                 </span>
               </div>
             </div>
 
-            {/* 2. Kształt Bazy */}
+            {/* Kształt bazy */}
             <div>
               <label className="block text-xs font-medium text-[#94A3B8] mb-2 uppercase tracking-wider">
                 2. Kształt bazy breloka
@@ -473,7 +521,7 @@ export default function KeychainGenerator() {
                 <button
                   type="button"
                   onClick={() => setShapeType("rect")}
-                  className={`py-2 px-3 rounded-lg border font-bold transition ${
+                  className={`py-2 px-3 rounded-lg border font-bold transition cursor-pointer ${
                     shapeType === "rect"
                       ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
                       : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
@@ -484,7 +532,7 @@ export default function KeychainGenerator() {
                 <button
                   type="button"
                   onClick={() => setShapeType("circle")}
-                  className={`py-2 px-3 rounded-lg border font-bold transition ${
+                  className={`py-2 px-3 rounded-lg border font-bold transition cursor-pointer ${
                     shapeType === "circle"
                       ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
                       : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
@@ -495,7 +543,7 @@ export default function KeychainGenerator() {
               </div>
             </div>
 
-            {/* 3. Suwak Wysokości Wypukłości (Reliefu) */}
+            {/* Suwak wypukłości */}
             <div>
               <div className="flex justify-between text-xs font-mono mb-1">
                 <span className="text-[#94A3B8] uppercase">Wysokość wypukłości</span>
@@ -512,7 +560,7 @@ export default function KeychainGenerator() {
               />
             </div>
 
-            {/* 4. Kolory: Baza & Wypukłość */}
+            {/* Kolory */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-medium text-[#94A3B8] mb-1 uppercase">Kolor bazy</label>
@@ -522,7 +570,7 @@ export default function KeychainGenerator() {
                       key={col.id}
                       type="button"
                       onClick={() => setBaseColor(col.id)}
-                      className={`w-6 h-6 rounded-md border transition ${
+                      className={`w-6 h-6 rounded-md border transition cursor-pointer ${
                         baseColor === col.id ? "border-[#00E5FF] scale-110" : "border-[#24324A]"
                       }`}
                       style={{ backgroundColor: col.id }}
@@ -539,7 +587,7 @@ export default function KeychainGenerator() {
                       key={col.id}
                       type="button"
                       onClick={() => setReliefColor(col.id)}
-                      className={`w-6 h-6 rounded-md border transition ${
+                      className={`w-6 h-6 rounded-md border transition cursor-pointer ${
                         reliefColor === col.id ? "border-[#00E5FF] scale-110" : "border-[#24324A]"
                       }`}
                       style={{ backgroundColor: col.id }}
@@ -558,7 +606,7 @@ export default function KeychainGenerator() {
                 <button
                   type="button"
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="w-8 h-8 bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono rounded-lg transition"
+                  className="w-8 h-8 bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono rounded-lg transition cursor-pointer"
                 >
                   -
                 </button>
@@ -566,7 +614,7 @@ export default function KeychainGenerator() {
                 <button
                   type="button"
                   onClick={() => setQuantity(quantity + 1)}
-                  className="w-8 h-8 bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono rounded-lg transition"
+                  className="w-8 h-8 bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono rounded-lg transition cursor-pointer"
                 >
                   +
                 </button>
@@ -586,7 +634,7 @@ export default function KeychainGenerator() {
 
               <button
                 type="button"
-                disabled={addingToCart}
+                disabled={addingToCart || isProcessingImg}
                 onClick={handleAddToCart}
                 className="w-full py-3.5 px-4 bg-gradient-to-r from-[#00E5FF] to-[#2563EB] hover:opacity-95 text-[#0B0F17] font-bold text-sm uppercase tracking-wider rounded-xl shadow-[0_0_25px_rgba(0,229,255,0.25)] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >

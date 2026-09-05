@@ -1,8 +1,10 @@
 """
 Drukstacja - backend API
 Obsluguje: upload pliku CAD (STL/STEP/OBJ) -> konwersja STEP -> cięcie slicerem -> zapis w R2 -> wycena druku 3D
+oraz wektoryzację obrazów na SVG za pomocą Gemini AI pod generator breloków.
 """
 import os
+import re
 import shutil
 import tempfile
 import uuid
@@ -12,7 +14,8 @@ from pathlib import Path
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
+from google import genai
+from google.genai import types
 import trimesh
 
 from analysis import analyze_file, UnsupportedFileType
@@ -21,6 +24,7 @@ from storage import upload_file_to_r2, get_file_url
 from slicer import convert_step_to_stl, run_slicer
 from orientation import auto_orient_mesh
 
+# Inicjalizacja aplikacji FastAPI
 app = FastAPI(title="Drukstacja API", version="0.2.0")
 
 app.add_middleware(
@@ -30,6 +34,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Inicjalizacja klienta Gemini AI
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key else None
 
 MAX_FILE_SIZE_MB = 100
 ALLOWED_EXTENSIONS = {".stl", ".step", ".stp", ".obj"}
@@ -52,6 +60,60 @@ def root():
 def get_materials():
     """Lista dostepnych materialow i ich cen za kg."""
     return MATERIALS
+
+
+@app.post("/vectorize-ai")
+async def vectorize_image_ai(file: UploadFile = File(...)):
+    """Wektoryzuje przesłany plik graficzny (PNG/JPG) do czystego formatu SVG pod wytłoczenie 3D."""
+    if not gemini_client:
+        raise HTTPException(
+            status_code=500,
+            detail="Brak skonfigurowanego klucza GEMINI_API_KEY w zmiennych środowiskowych serwera.",
+        )
+
+    contents = await file.read()
+    mime_type = file.content_type or "image/png"
+
+    prompt = """
+    Jesteś inżynierem CAD i projektantem grafiki pod druk 3D FDM.
+    Przeanalizuj przesłany obraz i wyodrębnij główny motyw/logo/rysunek/kontur.
+    Zignoruj tło zdjęcia, cienie i szum otoczenia.
+    
+    Wygeneruj wyłącznie poprawny, uproszczony kod SVG o wymiarach viewBox="0 0 100 100".
+    Wymagania techniczne SVG:
+    1. Tylko zamknięte ścieżki <path d="..." fill="black" /> bez obramowań (stroke="none").
+    2. Zero zbędnych elementów typu <rect> tła, ramki, cienie czy gradienty.
+    3. Współrzędne muszą mieścić się w przedziale 0-100 i być wyśrodkowane.
+    4. Odpowiedz TYLKO czystym kodem SVG (od <svg> do </svg>), bez znaczników markdown (```xml / ```svg).
+    """
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                types.Part.from_bytes(data=contents, mime_type=mime_type),
+                prompt,
+            ],
+        )
+
+        svg_text = response.text.strip()
+
+        # Oczyszczenie z ewentualnych znaczników markdown ```svg ... ```
+        svg_clean = re.sub(r"^```(?:svg|xml)?", "", svg_text, flags=re.IGNORECASE)
+        svg_clean = re.sub(r"```$", "", svg_clean).strip()
+
+        start_idx = svg_clean.find("<svg")
+        end_idx = svg_clean.rfind("</svg>")
+        if start_idx != -1 and end_idx != -1:
+            svg_clean = svg_clean[start_idx : end_idx + 6]
+        else:
+            raise ValueError("Model nie zwrócił poprawnego znacznika SVG.")
+
+        return {"svg": svg_clean}
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Błąd wektoryzacji Gemini AI: {str(e)}")
 
 
 @app.post("/analyze")
@@ -77,11 +139,9 @@ async def analyze(file: UploadFile = File(...)):
     r2_key = f"models/{unique_id}_{file.filename}"
 
     try:
-        # Zapisz plik lokalnie na dysku kontenera
         with open(tmp_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
-        # Kontrola rozmiaru
         size_mb = os.path.getsize(tmp_path) / (1024 * 1024)
         if size_mb > MAX_FILE_SIZE_MB:
             raise HTTPException(
@@ -89,7 +149,7 @@ async def analyze(file: UploadFile = File(...)):
                 detail=f"Plik za duzy ({size_mb:.1f}MB). Limit: {MAX_FILE_SIZE_MB}MB",
             )
 
-        # 1. Wysyłka oryginalnego pliku do Cloudflare R2
+        # 1. Wysyłka do R2
         with open(tmp_path, "rb") as f_upload:
             upload_file_to_r2(
                 file_obj=f_upload,
@@ -97,7 +157,7 @@ async def analyze(file: UploadFile = File(...)):
                 content_type=file.content_type or "application/octet-stream",
             )
 
-        # 2. Zamiana wejscia na siatke STL (STEP wymaga konwersji, STL/OBJ juz sa siatka)
+        # 2. Konwersja STEP jeśli trzeba
         if ext in [".step", ".stp"]:
             converted_stl_path = os.path.join(tmp_dir, f"{unique_id}_converted.stl")
             convert_step_to_stl(tmp_path, converted_stl_path)
@@ -105,21 +165,14 @@ async def analyze(file: UploadFile = File(...)):
         else:
             mesh_source_path = tmp_path
 
-        # 3. AUTO-ORIENTACJA: PrusaSlicer w trybie CLI nie ma wbudowanej
-        # optymalizacji ustawienia modelu (w przeciwienstwie do GUI), wiec
-        # robimy to sami PRZED cieciem - dokladnie tak jak "Optimize
-        # orientation" w prawdziwym slicerze: szukamy obrotu minimalizujacego
-        # powierzchnie nawisow, a wiec ilosc potrzebnych podpor.
+        # 3. Auto-orientacja
         raw_mesh = trimesh.load(mesh_source_path, force="mesh")
         oriented_mesh, orientation_info = auto_orient_mesh(raw_mesh)
 
         oriented_stl_path = os.path.join(tmp_dir, f"{unique_id}_oriented.stl")
         oriented_mesh.export(oriented_stl_path)
 
-        # 4. Ten SAM zorientowany plik jest uzywany do: analizy geometrii,
-        # ciecia slicerem ORAZ podgladu w przegladarce - dzieki temu model
-        # widoczny na stronie zawsze idealnie pokrywa sie z wygenerowanymi
-        # podporami (obie rzeczy licza sie z tych samych, juz obroconych osi).
+        # 4. Upload zorientowanego STL
         preview_stl_key = f"models/{unique_id}_oriented.stl"
         with open(oriented_stl_path, "rb") as f_stl:
             upload_file_to_r2(
@@ -129,12 +182,10 @@ async def analyze(file: UploadFile = File(...)):
             )
         preview_stl_url = get_file_url(preview_stl_key)
 
-        # 5. Analiza geometrii na juz zorientowanym modelu (bbox odzwierciedla
-        # realny gabaryt na stole roboczym, nie oryginalna orientacje z CAD-a)
+        # 5. Analiza geometrii
         result = analyze_file(oriented_stl_path, ".stl")
 
-        # 6. Ciecie silnikiem slicera CLI na zorientowanym pliku (dokladny
-        # czas, zuzycie i wspolrzedne podpor)
+        # 6. Slicing
         try:
             slice_data = run_slicer(oriented_stl_path, infill=20, layer_height=0.2)
             result["print_time_exact"] = slice_data["print_time"]
@@ -148,7 +199,7 @@ async def analyze(file: UploadFile = File(...)):
             result["has_supports"] = False
             result["support_lines"] = []
 
-        # 7. Dolaczamy metadane do odpowiedzi dla frontendu
+        # 7. Zwrócenie wyniku
         result["file_key"] = r2_key
         result["preview_stl_key"] = preview_stl_key
         result["preview_stl_url"] = preview_stl_url
