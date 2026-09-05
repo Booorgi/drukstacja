@@ -12,7 +12,7 @@ export default function ModelViewer({
   const containerRef = useRef(null);
   const meshRef = useRef(null);
 
-  // Aktualizacja koloru i wykrywanie wyłącznie krytycznych zwisów
+  // Aktualizacja koloru bazowego i podświetlanie krytycznych zwisów (> 50°)
   useEffect(() => {
     if (!meshRef.current) return;
 
@@ -21,22 +21,19 @@ export default function ModelViewer({
       const normals = geom.attributes.normal;
       const colors = [];
       const normal = new THREE.Vector3();
-      // W Three.js stół jest w płaszczyźnie XZ, wektor grawitacji patrzy w dół (0, -1, 0)
       const downVector = new THREE.Vector3(0, -1, 0);
 
-      // Kąt krytyczny: dot > 0.65 oznacza zwis powyżej ~50 stopni (bezwzględnie wymaga podpory)
       const baseCol = new THREE.Color(color);
 
       for (let i = 0; i < normals.count; i++) {
         normal.fromBufferAttribute(normals, i);
         const dot = normal.dot(downVector);
 
+        // dot > 0.65 odpowiada kątowi zwisu powyżej ok. 50 stopni względem stołu
         if (dot > 0.65) {
-          // Tylko strefy krytyczne: jaskrawy czerwony
-          colors.push(0.93, 0.27, 0.27);
+          colors.push(0.93, 0.27, 0.27); // Czerwony: krytyczny zwis
         } else {
-          // Bezpieczna geometria zachowuje kolor wybrany przez użytkownika
-          colors.push(baseCol.r, baseCol.g, baseCol.b);
+          colors.push(baseCol.r, baseCol.g, baseCol.b); // Kolor klienta dla bezpiecznych ścianek
         }
       }
 
@@ -74,7 +71,7 @@ export default function ModelViewer({
     controls.dampingFactor = 0.06;
     controls.maxPolarAngle = Math.PI / 2 + 0.05;
 
-    // Oświetlenie studyjne
+    // Oświetlenie
     scene.add(new THREE.HemisphereLight(0xffffff, 0xe2e8f0, 0.9));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(150, 250, 150);
@@ -85,11 +82,11 @@ export default function ModelViewer({
     const buildSceneWithGeometry = (geometry) => {
       if (meshRef.current) scene.remove(meshRef.current);
 
-      // Obrót o 180 stopni w osi Z odwraca plecy na brzuch bez stawiania modelu w pionie
-      geometry.rotateZ(Math.PI);
+      // 1. Obrót w osi podłużnej (X) o 180 stopni - obraca model z pleców na brzuch
+      geometry.rotateX(Math.PI);
       geometry.computeVertexNormals();
 
-      // Centrowanie w (0, 0) i postawienie spodu na Y = 0
+      // 2. Centrowanie modelu w poziomie (X, Z) i oparcie spodu na stole (Y = 0)
       geometry.computeBoundingBox();
       const bbox = geometry.boundingBox;
       const centerX = (bbox.max.x + bbox.min.x) / 2;
@@ -111,16 +108,15 @@ export default function ModelViewer({
       const mesh = new THREE.Mesh(geometry, material);
       meshRef.current = mesh;
       scene.add(mesh);
-      // ... dalsza część bez zmian
 
-      // 2. Siatka stołu roboczego
+      // 3. Stół roboczy
       geometry.computeBoundingSphere();
       const radius = geometry.boundingSphere.radius || 60;
       const grid = new THREE.GridHelper(Math.max(radius * 3.5, 140), 20, 0x94a3b8, 0xe2e8f0);
       grid.position.y = 0;
       scene.add(grid);
 
-      // 3. Pozycja kamery
+      // 4. Pozycja kamery dopasowana do wielkości modelu
       camera.position.set(radius * 2.2, radius * 1.8, radius * 2.4);
       controls.target.set(0, modelHeight * 0.4, 0);
       controls.update();
@@ -132,11 +128,16 @@ export default function ModelViewer({
       };
       animate();
     };
-    
+
     const loader = new STLLoader();
 
     if (previewUrl) {
-      loader.load(previewUrl, (geom) => buildSceneWithGeometry(geom));
+      loader.load(
+        previewUrl,
+        (geom) => buildSceneWithGeometry(geom),
+        undefined,
+        (err) => console.error("Błąd pobierania pliku STL:", err)
+      );
     } else if (file) {
       const reader = new FileReader();
       reader.onload = (e) => {
