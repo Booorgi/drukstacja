@@ -100,7 +100,7 @@ export default function ModelViewer({
       grid.position.y = 0;
       scene.add(grid);
 
-      // 4. Podpory ze slicera
+     // 4. Podpory ze slicera
       if (supportLines && supportLines.length >= 6) {
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
@@ -111,11 +111,10 @@ export default function ModelViewer({
         // A. Konwersja osi STL Z-up -> Three.js Y-up
         lineGeo.rotateX(-Math.PI / 2);
 
-        // B. Korekta zwrotu osi Z wynikająca z przekształcenia kątowego
-       // B. Odbicie osi X (lewo <-> prawo), aby podpory płetw trafiły dokładnie pod płetwy
-        lineGeo.scale(-1, 1, 1);
+        // B. Obrót o 180 stopni w poziomie wokół osi Y (zamiana przód/tył i lewo/prawo)
+        lineGeo.rotateY(Math.PI);
 
-        // C. Centrowanie podpór w osiach X, Z i wyrównanie podstawy do Y = 0
+        // C. Precyzyjne centrowanie podpór w (X=0, Z=0) i oparcie na Y=0
         lineGeo.computeBoundingBox();
         const sBbox = lineGeo.boundingBox;
         const sCenterX = (sBbox.max.x + sBbox.min.x) / 2;
@@ -129,6 +128,12 @@ export default function ModelViewer({
           linewidth: 2,
         });
 
+        const supportMesh = new THREE.LineSegments(lineGeo, lineMat);
+        supportMesh.position.set(0, 0, 0);
+        supportMesh.visible = showSupports;
+        supportsGroupRef.current = supportMesh;
+        scene.add(supportMesh);
+      }
         const supportMesh = new THREE.LineSegments(lineGeo, lineMat);
         supportMesh.position.set(0, 0, 0);
         supportMesh.visible = showSupports;
