@@ -99,7 +99,7 @@ async def vectorize_image_ai(file: UploadFile = File(...)):
 
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.6-flash",
             contents=[
                 types.Part.from_bytes(data=contents, mime_type=mime_type),
                 prompt,
