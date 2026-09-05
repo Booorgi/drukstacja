@@ -162,22 +162,36 @@ export default function Home() {
             </div>
 
             <div className="viewer-analysis">
-              <div style={{ fontWeight: 700, marginBottom: "4px" }}>Analiza geometrii CAD</div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                <span>Szczelność bryły:</span>
-                <strong style={{ color: analysis?.watertight === false ? "#d97706" : "#10b981" }}>
-                  {analysis?.watertight === false ? "Nie" : "Tak"}
-                </strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                <span>Cienkie ścianki:</span>
-                <strong style={{ color: "#10b981" }}>OK</strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>Nawisy i podpory:</span>
-                <strong style={{ color: "#10b981" }}>Wykryto</strong>
-              </div>
-            </div>
+  <div style={{ fontWeight: 700, marginBottom: "6px" }}>Analiza geometrii CAD</div>
+  
+  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+    <span>Szczelność bryły:</span>
+    <strong style={{ color: analysis?.watertight === false ? "#d97706" : "#10b981" }}>
+      {analysis?.watertight === false ? "Nie" : "Tak"}
+    </strong>
+  </div>
+
+  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+    <span>Podpory:</span>
+    <strong style={{ color: analysis?.has_supports ? "#f59e0b" : "#10b981" }}>
+      {analysis?.has_supports ? "Wymagane" : "Brak"}
+    </strong>
+  </div>
+
+  {analysis?.print_time_exact && analysis.print_time_exact !== "N/A" && (
+    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+      <span>Czas druku:</span>
+      <strong style={{ color: "#2563eb" }}>{analysis.print_time_exact}</strong>
+    </div>
+  )}
+
+  {analysis?.filament_weight_g_exact ? (
+    <div style={{ display: "flex", justifyContent: "space-between" }}>
+      <span>Waga filamentu:</span>
+      <strong style={{ color: "#0f172a" }}>{analysis.filament_weight_g_exact} g</strong>
+    </div>
+  ) : null}
+</div>
 
             <div className="color-bar">
               {COLORS.map((col) => (
