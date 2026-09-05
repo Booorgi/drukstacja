@@ -122,11 +122,13 @@ async def analyze(file: UploadFile = File(...)):
             result["print_time_exact"] = slice_data["print_time"]
             result["filament_weight_g_exact"] = slice_data["filament_g"]
             result["has_supports"] = slice_data["has_supports"]
+            result["support_lines"] = slice_data.get("support_lines", [])  # <-- DODAJ TĘ LINIĘ
         except Exception as slice_err:
             print(f"[WARN] Slicer error: {slice_err}")
             result["print_time_exact"] = None
             result["filament_weight_g_exact"] = None
             result["has_supports"] = False
+            result["support_lines"] = []
 
         # 5. Dołączamy metadane do odpowiedzi dla frontendu
         result["file_key"] = r2_key
