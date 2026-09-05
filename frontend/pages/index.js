@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import Head from "next/head";
 import { supabase } from "../lib/supabaseClient";
 import AuthModal from "../components/AuthModal";
+import CartDrawer from "../components/CartDrawer";
 
 const ModelViewer = dynamic(() => import("../components/ModelViewer"), { ssr: false });
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -25,6 +26,10 @@ export default function Home() {
   const [user, setUser] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
 
+  // Stany koszyka
+  const [cartItems, setCartItems] = useState([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+
   // Stany konfiguratora druku
   const [file, setFile] = useState(null);
   const [analysis, setAnalysis] = useState(null);
@@ -43,14 +48,48 @@ export default function Home() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Pobieranie pozycji koszyka
+  async function fetchCart(userId) {
+    if (!userId) {
+      setCartItems([]);
+      return;
+    }
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", "in_cart")
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      setCartItems(data);
+    }
+  }
+
+  // Usuwanie elementu z koszyka
+  async function handleRemoveCartItem(orderId) {
+    const { error } = await supabase.from("orders").delete().eq("id", orderId);
+    if (!error) {
+      setCartItems((prev) => prev.filter((item) => item.id !== orderId));
+    }
+  }
+
   // Nasłuchiwanie sesji z Supabase
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) fetchCart(currentUser.id);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        fetchCart(currentUser.id);
+      } else {
+        setCartItems([]);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -158,7 +197,8 @@ export default function Home() {
       });
 
       if (error) throw error;
-      alert("Element został pomyślnie dodany do Twojego koszyka!");
+      await fetchCart(user.id);
+      setIsCartOpen(true);
     } catch (err) {
       console.error("Błąd zapisu do koszyka:", err);
       alert("Nie udało się dodać do koszyka: " + err.message);
@@ -200,15 +240,30 @@ export default function Home() {
             <span className="hover:text-[#00E5FF] cursor-pointer transition">Części użytkowe</span>
           </nav>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Farm Status: 12/16 Wolne
             </span>
 
+            {/* PRZYCISK KOSZYKA */}
+            <button
+              type="button"
+              onClick={() => setIsCartOpen(true)}
+              className="px-3 py-1.5 text-xs font-mono bg-[#161F30] border border-[#24324A] hover:border-[#00E5FF] text-white rounded-lg transition flex items-center gap-2 cursor-pointer"
+            >
+              <svg className="w-4 h-4 text-[#00E5FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+              </svg>
+              <span>Koszyk</span>
+              <span className="px-1.5 py-0.5 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] text-[10px] font-bold">
+                {cartItems.length}
+              </span>
+            </button>
+
             {/* SEKCJA LOGOWANIA SUPABASE */}
             {user ? (
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-mono text-[#00E5FF] max-w-[120px] truncate">{user.email}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-[#00E5FF] max-w-[110px] truncate hidden md:inline">{user.email}</span>
                 <button
                   type="button"
                   onClick={() => supabase.auth.signOut()}
@@ -221,9 +276,9 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setIsAuthOpen(true)}
-                className="px-3.5 py-1.5 text-xs font-mono font-bold bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30 hover:bg-[#00E5FF]/20 rounded-lg transition cursor-pointer"
+                className="px-3 py-1.5 text-xs font-mono font-bold bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30 hover:bg-[#00E5FF]/20 rounded-lg transition cursor-pointer"
               >
-                Zaloguj się
+                Zaloguj
               </button>
             )}
           </div>
@@ -537,6 +592,14 @@ export default function Home() {
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
         onLoginSuccess={(loggedUser) => setUser(loggedUser)}
+      />
+
+      {/* WYSUWANY PANEL KOSZYKA (DRAWER) */}
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        items={cartItems}
+        onRemoveItem={handleRemoveCartItem}
       />
     </div>
   );
