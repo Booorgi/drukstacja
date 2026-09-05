@@ -90,12 +90,15 @@ const KeychainViewer3D = dynamic(
         const uniformScale = targetDim / 100;
 
         return (
-          <group position={[0, 0, (baseThickness || 3) / 2 + 0.01]}>
+          <group key={svgString} position={[0, 0, (baseThickness || 3) / 2 + 0.01]}>
             <Center position={[0, 0, 0]}>
               <group scale={[uniformScale, -uniformScale, 1]}>
-                {groups.map((grp, gIdx) =>
-                  grp.shapes.map((shape, sIdx) => (
-                    <mesh key={`g-${gIdx}-s-${sIdx}`} position={[0, 0, 0]}>
+                {groups.map((grp, gIdx) => {
+                  // Mikro-offset eliminujący Z-fighting bez tworzenia widocznych schodów
+                  const microZ = gIdx * 0.02;
+
+                  return grp.shapes.map((shape, sIdx) => (
+                    <mesh key={`g-${gIdx}-s-${sIdx}`} position={[0, 0, microZ]}>
                       <extrudeGeometry
                         args={[
                           shape,
@@ -111,8 +114,8 @@ const KeychainViewer3D = dynamic(
                         metalness={0.05}
                       />
                     </mesh>
-                  ))
-                )}
+                  ));
+                })}
               </group>
             </Center>
           </group>
