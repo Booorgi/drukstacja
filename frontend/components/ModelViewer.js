@@ -61,40 +61,49 @@ export default function ModelViewer({
 
     let animationFrameId;
 
-    const buildSceneWithGeometry = (geometry) => {
-      // 1. Standaryzacja orientacji: STL ma Z do góry, Three.js ma Y do góry
+   const buildScene = (geometry) => {
+      // 1. Czyścimy poprzednie obiekty, jeśli były wczytane z lokalnego pliku
+      if (meshRef.current) scene.remove(meshRef.current);
+      if (supportsGroupRef.current) scene.remove(supportsGroupRef.current);
+
+      // 2. Wyrównanie osi STL (Z-up) do Three.js (Y-up)
       geometry.rotateX(-Math.PI / 2);
       geometry.computeVertexNormals();
 
-      // 2. Centrujemy na stole (X=0, Z=0) i stawiamy spód na poziomie Y=0
+      // 3. Połóż model idealnie na stole roboczym (Y = 0) i wycentruj w (X=0, Z=0)
       geometry.computeBoundingBox();
       const bbox = geometry.boundingBox;
       const centerX = (bbox.max.x + bbox.min.x) / 2;
       const centerZ = (bbox.max.z + bbox.min.z) / 2;
       const minY = bbox.min.y;
+
       geometry.translate(-centerX, -minY, -centerZ);
 
-      // Model bryły
+      // Ponowne przeliczenie po przesunięciu
+      geometry.computeBoundingBox();
+      const finalBbox = geometry.boundingBox;
+      const height = finalBbox.max.y - finalBbox.min.y;
+
       const material = new THREE.MeshStandardMaterial({
         color: new THREE.Color(color),
         roughness: 0.35,
         metalness: 0.1,
         transparent: showSupports,
-        opacity: showSupports ? 0.8 : 1.0,
+        opacity: showSupports ? 0.75 : 1.0,
       });
 
       const mesh = new THREE.Mesh(geometry, material);
       meshRef.current = mesh;
       scene.add(mesh);
 
-      // Siatka stołu roboczego
+      // 4. Stół roboczy
       geometry.computeBoundingSphere();
-      const radius = geometry.boundingSphere.radius || 50;
-      const grid = new THREE.GridHelper(Math.max(radius * 3.5, 120), 20, 0x94a3b8, 0xe2e8f0);
+      const radius = geometry.boundingSphere.radius || 60;
+      const grid = new THREE.GridHelper(Math.max(radius * 3.5, 140), 20, 0x94a3b8, 0xe2e8f0);
       grid.position.y = 0;
       scene.add(grid);
 
-      // Siatka podpór wygenerowanych przez slicer
+      // 5. Podpory ze slicera
       if (supportLines && supportLines.length >= 6) {
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
@@ -102,32 +111,29 @@ export default function ModelViewer({
           new THREE.Float32BufferAttribute(supportLines, 3)
         );
 
+        lineGeo.computeBoundingBox();
+        const sBbox = lineGeo.boundingBox;
+        const sMinY = sBbox.min.y;
+
         const lineMat = new THREE.LineBasicMaterial({
           color: 0x10b981,
-          linewidth: 1.8,
+          linewidth: 2,
         });
 
         const supportMesh = new THREE.LineSegments(lineGeo, lineMat);
-        supportMesh.position.set(0, 0, 0);
+        
+        // Jeśli podpory są obrócone w poprzek o 90 stopni, odwracamy oś Z
+        supportMesh.position.set(0, -sMinY, 0);
         supportMesh.visible = showSupports;
         supportsGroupRef.current = supportMesh;
         scene.add(supportMesh);
       }
 
       // Kamera
-      const modelHeight = bbox.max.y - bbox.min.y;
-      camera.position.set(radius * 2.2, radius * 2.0, radius * 2.5);
-      controls.target.set(0, modelHeight * 0.5, 0);
+      camera.position.set(radius * 2.2, radius * 1.8, radius * 2.4);
+      controls.target.set(0, height * 0.4, 0);
       controls.update();
-
-      const animate = () => {
-        animationFrameId = requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
-      };
-      animate();
     };
-
     const loader = new STLLoader();
 
     if (url) {
