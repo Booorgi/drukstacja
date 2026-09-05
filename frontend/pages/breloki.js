@@ -44,7 +44,11 @@ const KeychainViewer3D = dynamic(
       import("@react-three/fiber"),
       import("@react-three/drei"),
       import("three-stdlib"),
-    ]).then(([{ Canvas }, { OrbitControls, Center, RoundedBox }, { SVGLoader }]) => {
+    ]).then(([fiber, drei, stdlib]) => {
+      const { Canvas } = fiber;
+      const { OrbitControls, Center, RoundedBox } = drei;
+      const { SVGLoader } = stdlib;
+
       function SvgMakerWorldLayers({ svgString, layersConfig, graphicScale, baseBounds, baseThickness }) {
         const parsedGroups = useMemo(() => {
           if (!svgString) return { c1: [], c2: [], c3: [], c4: [] };
@@ -82,7 +86,7 @@ const KeychainViewer3D = dynamic(
           { shapes: parsedGroups.c4, cfg: layersConfig[3] },
         ];
 
-        const targetDim = Math.min(baseBounds.width || 60, baseBounds.height || 60) * ((graphicScale || 80) / 100);
+        const targetDim = Math.min(baseBounds?.width || 60, baseBounds?.height || 60) * ((graphicScale || 80) / 100);
         const uniformScale = targetDim / 100;
 
         return (
@@ -113,6 +117,7 @@ const KeychainViewer3D = dynamic(
             </Center>
           </group>
         );
+      }
 
       function KeychainMesh({
         shapeType,
