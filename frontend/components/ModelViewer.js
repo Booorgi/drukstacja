@@ -13,13 +13,12 @@ export default function ModelViewer({
   const meshRef = useRef(null);
   const supportsGroupRef = useRef(null);
 
-  // Dynamiczna zmiana koloru i przezroczystości modelu
+  // Dynamiczna zmiana koloru i przezroczystości bryły
   useEffect(() => {
     if (meshRef.current) {
       meshRef.current.material.color.set(color);
-      // Gdy podpory są włączone, lekko ułatwiamy podgląd wewnętrzny
       meshRef.current.material.transparent = showSupports;
-      meshRef.current.material.opacity = showSupports ? 0.85 : 1.0;
+      meshRef.current.material.opacity = showSupports ? 0.8 : 1.0;
     }
   }, [color, showSupports]);
 
@@ -53,7 +52,7 @@ export default function ModelViewer({
     controls.dampingFactor = 0.06;
     controls.maxPolarAngle = Math.PI / 2 + 0.05;
 
-    // Oświetlenie
+    // Oświetlenie studyjne
     scene.add(new THREE.HemisphereLight(0xffffff, 0xe2e8f0, 0.9));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(150, 250, 150);
@@ -67,7 +66,7 @@ export default function ModelViewer({
       const geometry = loader.parse(e.target.result);
 
       geometry.computeVertexNormals();
-      geometry.center();
+      geometry.center(); // Centruje w (0, 0, 0)
 
       geometry.computeBoundingBox();
       const bbox = geometry.boundingBox;
@@ -79,11 +78,11 @@ export default function ModelViewer({
         roughness: 0.35,
         metalness: 0.1,
         transparent: showSupports,
-        opacity: showSupports ? 0.85 : 1.0
+        opacity: showSupports ? 0.8 : 1.0,
       });
 
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.y = heightOffset;
+      mesh.position.y = heightOffset; // Podstawa na Y = 0
       meshRef.current = mesh;
       scene.add(mesh);
 
@@ -94,27 +93,35 @@ export default function ModelViewer({
       grid.position.y = 0;
       scene.add(grid);
 
-      // Siatka wygenerowanych podpór G-Code
-      if (supportLines && supportLines.length > 0) {
+      // --- DODANIE PODPÓR I PRECYZYJNE WYRÓWNANIE ---
+      if (supportLines && supportLines.length >= 6) {
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
           "position",
           new THREE.Float32BufferAttribute(supportLines, 3)
         );
 
+        // 1. Centrujemy podpory tak samo jak model w osiach X i Z
+        lineGeo.computeBoundingBox();
+        const sBbox = lineGeo.boundingBox;
+        const sCenterX = (sBbox.max.x + sBbox.min.x) / 2;
+        const sCenterZ = (sBbox.max.z + sBbox.min.z) / 2;
+        const sMinY = sBbox.min.y;
+
         const lineMat = new THREE.LineBasicMaterial({
-          color: 0x10b981, // Szmaragdowy kolor struktur supportu
-          linewidth: 2,
+          color: 0x10b981, // Wyrazista zieleń podpór
+          linewidth: 1.5,
         });
 
         const supportMesh = new THREE.LineSegments(lineGeo, lineMat);
-        supportMesh.position.y = 0;
+        // Dopasowujemy środek podpór do (0, 0) i wyrównujemy podstawę do poziomu stołu (Y = 0)
+        supportMesh.position.set(-sCenterX, -sMinY, -sCenterZ);
         supportMesh.visible = showSupports;
         supportsGroupRef.current = supportMesh;
         scene.add(supportMesh);
       }
 
-      // Pozycja kamery
+      // Kamera
       camera.position.set(radius * 2.2, radius * 2.0, radius * 2.5);
       controls.target.set(0, heightOffset * 0.8, 0);
       controls.update();
