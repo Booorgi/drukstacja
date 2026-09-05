@@ -121,12 +121,13 @@ export default function ModelViewer({
         const sMinY = sBbox.min.y;
         lineGeo.translate(0, -sMinY, 0);
 
-        // D. Centrowanie podpór do środka układu współrzędnych (X=0, Z=0)
+        // D. Usuwamy sztuczne ściąganie środka i wyrównujemy z modelem
         lineGeo.computeBoundingBox();
         const curBbox = lineGeo.boundingBox;
-        const curCenterX = (curBbox.max.x + curBbox.min.x) / 2;
         const curCenterZ = (curBbox.max.z + curBbox.min.z) / 2;
-        lineGeo.translate(-curCenterX, 0, -curCenterZ);
+        
+        // Przesuwamy Z do środka modelu, a w osi X kompensujemy asymetrię gałęzi
+        lineGeo.translate(14, 0, -curCenterZ);
 
         const lineMat = new THREE.LineBasicMaterial({
           color: 0x10b981,
