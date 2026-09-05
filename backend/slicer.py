@@ -18,19 +18,26 @@ def run_slicer(stl_path: str, infill: int = 20, layer_height: float = 0.2) -> di
         gcode_path = tmp_gcode.name
 
     try:
-        # Wywołanie slicera w trybie headless
+        # Prawidłowe argumenty CLI dla PrusaSlicer w trybie headless
         cmd = [
             "prusa-slicer",
-            "--slice",
-            f"--fill-density={infill}%",
-            f"--layer-height={layer_height}",
             "--export-gcode",
+            "--support-material",                       # Włącza kalkulację podpór pod nawisy
+            f"--fill-density={int(infill)}%",
+            f"--layer-height={layer_height}",
             "--output", gcode_path,
             stl_path
         ]
 
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(
+            cmd, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE, 
+            text=True
+        )
+
         if result.returncode != 0:
+            print(f"[SLICER STDERR]: {result.stderr}")
             raise RuntimeError(f"Blad slicera: {result.stderr}")
 
         # Parsowanie wygenerowanego G-Code
@@ -38,23 +45,24 @@ def run_slicer(stl_path: str, infill: int = 20, layer_height: float = 0.2) -> di
         filament_g = 0.0
         has_supports = False
 
-        with open(gcode_path, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                # Czas druku
-                if "estimated printing time (normal mode)" in line:
-                    match = re.search(r"=\s*(.*)", line)
-                    if match:
-                        print_time_str = match.group(1).strip()
-                
-                # Zużyty filament w gramach
-                elif "filament used [g]" in line:
-                    match = re.search(r"=\s*([\d\.]+)", line)
-                    if match:
-                        filament_g = round(float(match.group(1)), 2)
+        if os.path.exists(gcode_path):
+            with open(gcode_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    # Szukanie czasu druku (np. 1h 14m 20s)
+                    if "estimated printing time" in line:
+                        match = re.search(r"=\s*(.*)", line)
+                        if match:
+                            print_time_str = match.group(1).strip()
 
-                # Wykrycie nałożonych podpór
-                elif "TYPE:Support material" in line:
-                    has_supports = True
+                    # Szukanie wagi filamentu w gramach
+                    elif "filament used [g]" in line:
+                        match = re.search(r"=\s*([\d\.]+)", line)
+                        if match:
+                            filament_g = round(float(match.group(1)), 2)
+
+                    # Wykrycie, czy slicer wygenerował linie podpór
+                    elif "TYPE:Support material" in line:
+                        has_supports = True
 
         return {
             "print_time": print_time_str,
