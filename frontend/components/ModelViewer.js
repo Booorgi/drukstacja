@@ -112,7 +112,8 @@ export default function ModelViewer({
         lineGeo.rotateX(-Math.PI / 2);
 
         // B. Korekta zwrotu osi Z wynikająca z przekształcenia kątowego
-        lineGeo.scale(1, 1, -1);
+       // B. Odbicie osi X (lewo <-> prawo), aby podpory płetw trafiły dokładnie pod płetwy
+        lineGeo.scale(-1, 1, 1);
 
         // C. Centrowanie podpór w osiach X, Z i wyrównanie podstawy do Y = 0
         lineGeo.computeBoundingBox();
