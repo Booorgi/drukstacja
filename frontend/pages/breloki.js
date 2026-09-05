@@ -210,7 +210,7 @@ const KeychainViewer3D = dynamic(
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
                 {hasHole && (
-                  <mesh position={[0, (radius * Math.sqrt(3)) / 2 + 4.5, 0]}>
+                  <mesh position={[0, radius + 4.5, 0]}>
                     <torusGeometry args={[5, 1.6, 16, 32]} />
                     <meshStandardMaterial color={baseColor} roughness={0.5} />
                   </mesh>
