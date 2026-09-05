@@ -100,7 +100,7 @@ export default function ModelViewer({
       grid.position.y = 0;
       scene.add(grid);
 
-      // 4. Podpory organiczne ze slicera
+ // 4. Podpory organiczne ze slicera
       if (supportLines && supportLines.length >= 6) {
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
@@ -108,17 +108,21 @@ export default function ModelViewer({
           new THREE.Float32BufferAttribute(supportLines, 3)
         );
 
-        // A. Identyczna konwersja osi: Z-up -> Y-up
+        // A. Konwersja osi STL Z-up -> Three.js Y-up
         lineGeo.rotateX(-Math.PI / 2);
 
-        // B. Wyrównanie orientacji ze slicera
+        // B. Wyrównanie osi w poziomie
         lineGeo.rotateY(Math.PI);
-        lineGeo.scale(-1, 1, 1);
 
-        // C. Wyrównanie podstawy podpór do poziomu stołu (Y = 0)
+        // C. Centrowanie podpór w osiach X, Z i oparcie na stole Y = 0
         lineGeo.computeBoundingBox();
-        const sMinY = lineGeo.boundingBox.min.y;
-        lineGeo.translate(0, -sMinY, 0);
+        const sBbox = lineGeo.boundingBox;
+        const sCenterX = (sBbox.max.x + sBbox.min.x) / 2;
+        const sCenterZ = (sBbox.max.z + sBbox.min.z) / 2;
+        const sMinY = sBbox.min.y;
+
+        // Przesuwamy podpory dokładnie do środka układu (0, 0, 0)
+        lineGeo.translate(-sCenterX, -sMinY, -sCenterZ);
 
         const lineMat = new THREE.LineBasicMaterial({
           color: 0x10b981,
