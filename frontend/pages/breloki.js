@@ -8,33 +8,46 @@ import CartDrawer from "../components/CartDrawer";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-// Domyślny wielowarstwowy SVG (piesek z podziałem na sylwetkę i detale)
+// Domyślny SVG z 4 poziomami głębokości (Sylwetka -> Pysk/Uszy -> Oczy -> Nos/Źrenice)
 const DEFAULT_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-  <g id="layer_mid">
+  <g id="layer_1">
     <path d="M22 25 C10 35 10 65 24 72 C28 65 30 50 30 38 Z" fill="#111111" />
     <path d="M78 25 C90 35 90 65 76 72 C72 65 70 50 70 38 Z" fill="#111111" />
-    <path d="M32 30 C32 20 68 20 68 30 C72 45 70 65 50 70 C30 65 28 45 32 30 Z" fill="#111111" />
+    <path d="M30 25 C30 15 70 15 70 25 C75 45 72 70 50 75 C28 70 25 45 30 25 Z" fill="#111111" />
+    <path d="M38 75 L62 75 L66 92 L34 92 Z" fill="#111111" />
   </g>
-  <g id="layer_top">
-    <path d="M44 48 C44 44 56 44 56 48 C56 54 44 54 44 48 Z" fill="#222222" />
-    <path d="M38 38 C38 34 44 34 44 38 C44 41 38 41 38 38 Z" fill="#222222" />
-    <path d="M56 38 C56 34 62 34 62 38 C62 41 56 41 56 38 Z" fill="#222222" />
-    <path d="M46 55 C46 58 54 58 54 55 Z" fill="#222222" />
+  <g id="layer_2">
+    <path d="M18 36 C14 44 14 60 22 66 C24 60 25 48 24 40 Z" fill="#222222" />
+    <path d="M82 36 C86 44 86 60 78 66 C76 60 75 48 76 40 Z" fill="#222222" />
+    <path d="M50 20 C42 35 36 55 36 65 C36 72 64 72 64 65 C64 55 58 35 50 20 Z" fill="#222222" />
+    <path d="M42 77 L58 77 L62 90 L38 90 Z" fill="#222222" />
+  </g>
+  <g id="layer_3">
+    <path d="M34 38 C34 33 42 33 42 38 C42 42 34 42 34 38 Z" fill="#333333" />
+    <path d="M58 38 C58 33 66 33 66 38 C66 42 58 42 58 38 Z" fill="#333333" />
+    <path d="M34 31 C38 29 44 31 44 33 Z" fill="#333333" />
+    <path d="M66 31 C62 29 56 31 56 33 Z" fill="#333333" />
+  </g>
+  <g id="layer_4">
+    <path d="M46 56 C46 50 54 50 54 56 C54 62 46 62 46 56 Z" fill="#444444" />
+    <path d="M47 65 C47 67 53 67 53 65 Z" fill="#444444" />
+    <path d="M37 38 C37 36 40 36 40 38 C40 40 37 40 37 38 Z" fill="#444444" />
+    <path d="M61 38 C61 36 64 36 64 38 C64 40 61 40 61 38 Z" fill="#444444" />
   </g>
 </svg>`;
 
 const COLORS = [
   { id: "#0B0F17", name: "Czerń Głęboka" },
   { id: "#FFFFFF", name: "Biel Czysta" },
-  { id: "#00E5FF", name: "Cyjan / Neon" },
-  { id: "#2563EB", name: "Kobaltowy Błękit" },
+  { id: "#1E40AF", name: "Kobalt Ciemny" },
+  { id: "#00E5FF", name: "Cyjan Neon" },
+  { id: "#D1D5DB", name: "Jasnoszary / Beż" },
   { id: "#DC2626", name: "Czerwień Ostra" },
   { id: "#F59E0B", name: "Bursztyn / Złoty" },
-  { id: "#10B981", name: "Szmaragdowa Zieleń" },
   { id: "#EC4899", name: "Neonowy Róż" },
 ];
 
-// Komponent 3D Three.js z wyłączonym SSR
+// Three.js Canvas Viewer z wyłączonym SSR
 const KeychainViewer3D = dynamic(
   () =>
     Promise.all([
@@ -42,82 +55,94 @@ const KeychainViewer3D = dynamic(
       import("@react-three/drei"),
       import("three-stdlib"),
     ]).then(([{ Canvas }, { OrbitControls, Center, RoundedBox }, { SVGLoader }]) => {
-      function SvgExtrusionMultiLayer({ svgString, midDepth, midColor, topDepth, topColor }) {
-        const { midShapes, topShapes } = useMemo(() => {
-          if (!svgString) return { midShapes: [], topShapes: [] };
+      function SvgExtrusion4Layers({
+        svgString,
+        l1Depth,
+        l1Color,
+        l2Depth,
+        l2Color,
+        l3Depth,
+        l3Color,
+        l4Depth,
+        l4Color,
+      }) {
+        const layers = useMemo(() => {
+          if (!svgString) return { l1: [], l2: [], l3: [], l4: [] };
           try {
             const loader = new SVGLoader();
             const svgData = loader.parse(svgString);
 
-            const mid = [];
-            const top = [];
+            const l1 = [];
+            const l2 = [];
+            const l3 = [];
+            const l4 = [];
 
             svgData.paths.forEach((path) => {
               const hex = path.color?.getHexString()?.toLowerCase();
               const parentId = path.userData?.node?.parentElement?.id;
-
-              // Rozpoznawanie warstwy po id grupy lub kolorze heksadecymalnym z Gemini
-              const isTopLayer = parentId === "layer_top" || hex === "222222";
               const shapes = path.toShapes(true);
 
-              if (isTopLayer) {
-                top.push(...shapes);
+              if (parentId === "layer_4" || hex === "444444") {
+                l4.push(...shapes);
+              } else if (parentId === "layer_3" || hex === "333333") {
+                l3.push(...shapes);
+              } else if (parentId === "layer_2" || hex === "222222") {
+                l2.push(...shapes);
               } else {
-                mid.push(...shapes);
+                l1.push(...shapes);
               }
             });
 
-            // Awaryjnie, jeśli model AI nie nadał grup ani kolorów
-            if (mid.length === 0 && top.length === 0) {
-              const allShapes = svgData.paths.flatMap((p) => p.toShapes(true));
-              mid.push(...allShapes);
+            // Awaryjnie, gdyby SVG nie miał podziału
+            if (l1.length === 0 && l2.length === 0 && l3.length === 0 && l4.length === 0) {
+              l1.push(...svgData.paths.flatMap((p) => p.toShapes(true)));
             }
 
-            return { midShapes: mid, topShapes: top };
+            return { l1, l2, l3, l4 };
           } catch (err) {
             console.error("Błąd parsowania SVG:", err);
-            return { midShapes: [], topShapes: [] };
+            return { l1: [], l2: [], l3: [], l4: [] };
           }
         }, [svgString]);
 
+        // Pozycje Z (kaskadowe nakładanie)
+        const z1 = 0;
+        const z2 = l1Depth;
+        const z3 = l1Depth + l2Depth;
+        const z4 = l1Depth + l2Depth + l3Depth;
+
         return (
           <Center position={[0, 0, 0]}>
-            <group scale={[0.38, -0.38, 1]}>
-              {/* Warstwa 1: Główna sylwetka */}
-              {midShapes.map((shape, idx) => (
-                <mesh key={`mid-${idx}`}>
-                  <extrudeGeometry
-                    args={[
-                      shape,
-                      {
-                        depth: midDepth,
-                        bevelEnabled: true,
-                        bevelThickness: 0.2,
-                        bevelSize: 0.15,
-                        bevelSegments: 2,
-                      },
-                    ]}
-                  />
-                  <meshStandardMaterial color={midColor} roughness={0.35} metalness={0.05} />
+            <group scale={[0.4, -0.4, 1]}>
+              {/* Warstwa 1: Główna bryła */}
+              {layers.l1.map((shape, idx) => (
+                <mesh key={`l1-${idx}`} position={[0, 0, z1]}>
+                  <extrudeGeometry args={[shape, { depth: l1Depth, bevelEnabled: false }]} />
+                  <meshStandardMaterial color={l1Color} roughness={0.35} />
                 </mesh>
               ))}
 
-              {/* Warstwa 2: Detale i akcenty wysunięte wyżej */}
-              {topShapes.map((shape, idx) => (
-                <mesh key={`top-${idx}`} position={[0, 0, midDepth]}>
-                  <extrudeGeometry
-                    args={[
-                      shape,
-                      {
-                        depth: topDepth,
-                        bevelEnabled: true,
-                        bevelThickness: 0.15,
-                        bevelSize: 0.1,
-                        bevelSegments: 2,
-                      },
-                    ]}
-                  />
-                  <meshStandardMaterial color={topColor} roughness={0.25} metalness={0.1} />
+              {/* Warstwa 2: Drugi plan (pyszczek, łapy) */}
+              {layers.l2.map((shape, idx) => (
+                <mesh key={`l2-${idx}`} position={[0, 0, z2]}>
+                  <extrudeGeometry args={[shape, { depth: l2Depth, bevelEnabled: false }]} />
+                  <meshStandardMaterial color={l2Color} roughness={0.35} />
+                </mesh>
+              ))}
+
+              {/* Warstwa 3: Akcenty (oczy, obwódki) */}
+              {layers.l3.map((shape, idx) => (
+                <mesh key={`l3-${idx}`} position={[0, 0, z3]}>
+                  <extrudeGeometry args={[shape, { depth: l3Depth, bevelEnabled: false }]} />
+                  <meshStandardMaterial color={l3Color} roughness={0.3} />
+                </mesh>
+              ))}
+
+              {/* Warstwa 4: Mikro-detale (czubek nosa, źrenice) */}
+              {layers.l4.map((shape, idx) => (
+                <mesh key={`l4-${idx}`} position={[0, 0, z4]}>
+                  <extrudeGeometry args={[shape, { depth: l4Depth, bevelEnabled: false }]} />
+                  <meshStandardMaterial color={l4Color} roughness={0.25} />
                 </mesh>
               ))}
             </group>
@@ -125,53 +150,37 @@ const KeychainViewer3D = dynamic(
         );
       }
 
-      function KeychainMesh({
-        shapeType,
-        baseColor,
-        reliefSvg,
-        midDepth,
-        midColor,
-        topDepth,
-        topColor,
-      }) {
+      function KeychainMesh({ shapeType, baseColor, reliefSvg, ...props }) {
         return (
           <group>
-            {/* Baza: Prostokąt */}
             {shapeType === "rect" && (
               <group>
-                <RoundedBox args={[66, 48, 4]} radius={4} smoothness={4} position={[0, 0, 0]}>
+                <RoundedBox args={[68, 50, 4]} radius={4} smoothness={4} position={[0, 0, 0]}>
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </RoundedBox>
-                <mesh position={[-37, 0, 0]}>
+                <mesh position={[-38, 0, 0]}>
                   <torusGeometry args={[6.5, 2, 16, 32]} />
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
               </group>
             )}
 
-            {/* Baza: Okrąg */}
             {shapeType === "circle" && (
               <group>
                 <mesh rotation={[Math.PI / 2, 0, 0]}>
-                  <cylinderGeometry args={[27, 27, 4, 48]} />
+                  <cylinderGeometry args={[28, 28, 4, 48]} />
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
-                <mesh position={[0, 31, 0]}>
+                <mesh position={[0, 32, 0]}>
                   <torusGeometry args={[6.5, 2, 16, 32]} />
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
               </group>
             )}
 
-            {/* Wytłoczenia leżące na powierzchni bazy (Z = +2.01) */}
+            {/* Powierzchnia bazy breloka Z = +2.01 */}
             <group position={[0, 0, 2.01]}>
-              <SvgExtrusionMultiLayer
-                svgString={reliefSvg}
-                midDepth={midDepth}
-                midColor={midColor}
-                topDepth={topDepth}
-                topColor={topColor}
-              />
+              <SvgExtrusion4Layers svgString={reliefSvg} {...props} />
             </group>
           </group>
         );
@@ -179,7 +188,7 @@ const KeychainViewer3D = dynamic(
 
       return function Viewer(props) {
         return (
-          <Canvas camera={{ position: [0, 45, 90], fov: 45 }}>
+          <Canvas camera={{ position: [0, 45, 95], fov: 45 }}>
             <ambientLight intensity={0.75} />
             <directionalLight position={[25, 50, 35]} intensity={1.5} />
             <directionalLight position={[-25, 20, -25]} intensity={0.5} />
@@ -202,24 +211,31 @@ export default function KeychainGenerator() {
   const genMenuRef = useRef(null);
   const userMenuRef = useRef(null);
 
-  // Konfiguracja geometrii i 3 warstw kolorystycznych
+  // Kształt bazy
   const [shapeType, setShapeType] = useState("rect");
-  const [baseColor, setBaseColor] = useState("#0B0F17"); // Warstwa 0: Płytka bazy
-  const [midColor, setMidColor] = useState("#00E5FF");   // Warstwa 1: Główna sylwetka
-  const [topColor, setTopColor] = useState("#FFFFFF");   // Warstwa 2: Detale / Akcenty
 
-  const [midDepth, setMidDepth] = useState(1.2); // mm
-  const [topDepth, setTopDepth] = useState(1.0); // mm
+  // 4 poziomy kolorów + Baza
+  const [baseColor, setBaseColor] = useState("#0B0F17"); // Baza
+  const [l1Color, setL1Color] = useState("#1E40AF");     // W1: Sylwetka / Uszy
+  const [l2Color, setL2Color] = useState("#D1D5DB");     // W2: Pysk / Czoło
+  const [l3Color, setL3Color] = useState("#FFFFFF");     // W3: Oczy / Brwi
+  const [l4Color, setL4Color] = useState("#0B0F17");     // W4: Nos / Źrenice
+
+  // Wysokości poszczególnych warstw (w mm)
+  const [l1Depth, setL1Depth] = useState(1.0);
+  const [l2Depth, setL2Depth] = useState(0.8);
+  const [l3Depth, setL3Depth] = useState(0.6);
+  const [l4Depth, setL4Depth] = useState(0.6);
 
   const [uploadedSvg, setUploadedSvg] = useState(DEFAULT_SVG);
-  const [imageFileName, setImageFileName] = useState("Domyślny Piesek 3D");
+  const [imageFileName, setImageFileName] = useState("Piesek 4-Kolorowy");
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
   const [useAI, setUseAI] = useState(true);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
   const fileInputRef = useRef(null);
 
-  const unitPrice = 21.0; // Wycena za zaawansowany druk 3-kolorowy
+  const unitPrice = 24.0; // Wycena FDM 4-Color AMS
   const totalPrice = (unitPrice * quantity).toFixed(2);
 
   async function handleImageUpload(e) {
@@ -255,55 +271,11 @@ export default function KeychainGenerator() {
         setUploadedSvg(data.svg);
       } catch (err) {
         console.error("Błąd AI:", err);
-        alert("Błąd Gemini AI: " + err.message + ". Używam wektoryzacji awaryjnej.");
-        fallbackCanvasVectorize(selectedFile);
+        alert("Błąd Gemini AI: " + err.message);
       } finally {
         setIsProcessingImg(false);
       }
-    } else {
-      fallbackCanvasVectorize(selectedFile);
     }
-  }
-
-  function fallbackCanvasVectorize(file) {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        canvas.width = 100;
-        canvas.height = 100;
-        ctx.drawImage(img, 0, 0, 100, 100);
-        const data = ctx.getImageData(0, 0, 100, 100).data;
-
-        let midPoints = "";
-        let topPoints = "";
-        for (let y = 0; y < 100; y += 4) {
-          for (let x = 0; x < 100; x += 4) {
-            const i = (y * 100 + x) * 4;
-            const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-            if (data[i + 3] > 50) {
-              if (brightness < 60) {
-                topPoints += `M${x},${y} h3 v3 h-3 z `;
-              } else if (brightness < 160) {
-                midPoints += `M${x},${y} h3 v3 h-3 z `;
-              }
-            }
-          }
-        }
-
-        if (!midPoints && !topPoints) midPoints = "M20,20 h60 v60 h-60 z";
-        setUploadedSvg(
-          `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-            <g id="layer_mid"><path d="${midPoints}" fill="#111111" /></g>
-            <g id="layer_top"><path d="${topPoints}" fill="#222222" /></g>
-          </svg>`
-        );
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
   }
 
   async function fetchCart(userId) {
@@ -352,9 +324,9 @@ export default function KeychainGenerator() {
     try {
       const { error } = await supabase.from("orders").insert({
         user_id: user.id,
-        file_name: `Brelok AI Tri-Color: [${imageFileName}]`,
-        material: "PLA Multi-Color (3 barwy)",
-        technology: "FDM Multi-Color 3-Layers",
+        file_name: `Brelok 4-Color Relief: [${imageFileName}]`,
+        material: "PLA Multi-Color (4 barwy)",
+        technology: "FDM Multi-Color 4-Layers",
         layer_height: "0.20 mm",
         infill: 100,
         clean_supports: false,
@@ -362,9 +334,9 @@ export default function KeychainGenerator() {
         quantity: quantity,
         total_price: parseFloat(totalPrice),
         dimensions_mm: [
-          shapeType === "rect" ? 66 : 54,
-          48,
-          4 + Number(midDepth) + Number(topDepth),
+          shapeType === "rect" ? 68 : 56,
+          50,
+          4 + Number(l1Depth) + Number(l2Depth) + Number(l3Depth) + Number(l4Depth),
         ],
         status: "in_cart",
       });
@@ -382,33 +354,30 @@ export default function KeychainGenerator() {
   return (
     <div className="min-h-screen flex flex-col bg-[#0B0F17] text-[#F8FAFC] font-sans">
       <Head>
-        <title>Generator Breloków 3D Multi-Color — Drukstacja</title>
+        <title>Generator Breloków 4-Kolorowych AI — Drukstacja</title>
       </Head>
 
       {/* NAVBAR */}
       <header className="border-b border-[#24324A] bg-[#0B0F17]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-[#00E5FF] to-[#2563EB] flex items-center justify-center p-0.5 shadow-[0_0_15px_rgba(0,229,255,0.3)]">
-                <div className="w-full h-full bg-[#0B0F17] rounded-[7px] flex items-center justify-center">
-                  <span className="font-bold text-lg text-[#00E5FF]">D</span>
-                </div>
+          <Link href="/" className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-[#00E5FF] to-[#2563EB] flex items-center justify-center p-0.5 shadow-[0_0_15px_rgba(0,229,255,0.3)]">
+              <div className="w-full h-full bg-[#0B0F17] rounded-[7px] flex items-center justify-center">
+                <span className="font-bold text-lg text-[#00E5FF]">D</span>
               </div>
-              <div>
-                <span className="text-xl font-bold tracking-tight text-white">
-                  DRUK<span className="text-[#00E5FF]">STACJA</span>
-                </span>
-                <span className="text-[10px] text-[#94A3B8] block -mt-1 tracking-widest font-mono">LABS 3D</span>
-              </div>
-            </Link>
-          </div>
+            </div>
+            <div>
+              <span className="text-xl font-bold tracking-tight text-white">
+                DRUK<span className="text-[#00E5FF]">STACJA</span>
+              </span>
+              <span className="text-[10px] text-[#94A3B8] block -mt-1 tracking-widest font-mono">LABS 3D</span>
+            </div>
+          </Link>
 
           <nav className="hidden md:flex items-center gap-6 text-sm text-[#94A3B8]">
             <Link href="/" className="hover:text-[#00E5FF] transition">
               Wyceniarka STL
             </Link>
-
             <div className="relative" ref={genMenuRef}>
               <button
                 type="button"
@@ -449,7 +418,6 @@ export default function KeychainGenerator() {
                 </div>
               )}
             </div>
-
             <span className="hover:text-[#00E5FF] cursor-pointer transition">Części użytkowe</span>
           </nav>
 
@@ -518,58 +486,44 @@ export default function KeychainGenerator() {
         </div>
       </header>
 
-      {/* PANEL ROBOCZY */}
+      {/* VIEWPORT & FORMULARZ */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
         {/* LEWA STRONA: VIEWPORT 3D */}
         <section className="lg:col-span-7 flex flex-col gap-4">
-          <div className="relative w-full h-[580px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
+          <div className="relative w-full h-[620px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
             <div className="absolute top-4 left-4 z-10 font-mono text-xs text-[#94A3B8] bg-[#0B0F17]/80 px-3 py-1.5 rounded-lg border border-[#24324A] backdrop-blur-md flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[#00E5FF] animate-pulse" />
-              Podgląd 3D Multi-Color (3 poziomy Z) • Obracaj myszką
+              Podgląd 4-Kolorowy Kaskadowy (Baza + 4 Poziomy Z)
             </div>
 
             <KeychainViewer3D
               shapeType={shapeType}
               baseColor={baseColor}
               reliefSvg={uploadedSvg}
-              midDepth={midDepth}
-              midColor={midColor}
-              topDepth={topDepth}
-              topColor={topColor}
+              l1Depth={l1Depth}
+              l1Color={l1Color}
+              l2Depth={l2Depth}
+              l2Color={l2Color}
+              l3Depth={l3Depth}
+              l3Color={l3Color}
+              l4Depth={l4Depth}
+              l4Color={l4Color}
             />
           </div>
         </section>
 
-        {/* PRAWA STRONA: KONTROLKI 3 POZIOMÓW */}
+        {/* PRAWA STRONA: KONTROLKI 4 WARSTW */}
         <section className="lg:col-span-5 flex flex-col gap-4">
-          <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-6 shadow-xl space-y-4">
-            <div className="border-b border-[#24324A] pb-3">
-              <h1 className="text-lg font-bold text-white tracking-wide">BRELOK ZE ZDJĘCIA MULTI-COLOR</h1>
-              <p className="text-xs font-mono text-[#94A3B8] mt-0.5">
-                Kaskadowy relief 3D (3 niezależne kolory i wysokości filamentu)
+          <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-5 shadow-xl space-y-3.5 max-h-[620px] overflow-y-auto custom-scrollbar">
+            <div className="border-b border-[#24324A] pb-2.5">
+              <h1 className="text-base font-bold text-white tracking-wide">BRELOK 4-KOLOROWY ZE ZDJĘCIA</h1>
+              <p className="text-[11px] font-mono text-[#94A3B8]">
+                Pełne zachowanie oczu, nosa i detali pyszczka na osobnych poziomach
               </p>
             </div>
 
-            {/* 1. Upload grafiki */}
+            {/* Upload */}
             <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-medium text-[#94A3B8] uppercase tracking-wider">
-                  1. Obraz / Grafika (PNG, JPG, SVG)
-                </label>
-                <label className="flex items-center gap-1.5 text-xs font-mono cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={useAI}
-                    onChange={(e) => setUseAI(e.target.checked)}
-                    className="w-3.5 h-3.5 accent-[#00E5FF] rounded cursor-pointer"
-                  />
-                  <span className={useAI ? "text-[#00E5FF] font-bold" : "text-[#94A3B8]"}>
-                    ✨ Gemini AI (2 Warstwy)
-                  </span>
-                </label>
-              </div>
-
               <input
                 ref={fileInputRef}
                 type="file"
@@ -579,179 +533,212 @@ export default function KeychainGenerator() {
               />
               <div
                 onClick={() => !isProcessingImg && fileInputRef.current?.click()}
-                className={`border border-dashed rounded-xl p-3 flex items-center justify-between transition cursor-pointer ${
+                className={`border border-dashed rounded-xl p-2.5 flex items-center justify-between transition cursor-pointer ${
                   isProcessingImg
                     ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white animate-pulse"
                     : "border-[#24324A] hover:border-[#00E5FF] bg-[#0B0F17]"
                 }`}
               >
                 <div className="flex items-center gap-2 text-xs">
-                  <svg className="w-5 h-5 text-[#00E5FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span className="font-mono text-white truncate max-w-[200px]">
-                    {isProcessingImg ? "AI rozdziela sylwetkę od detali..." : imageFileName}
+                  <span className="font-mono text-white truncate max-w-[210px]">
+                    {isProcessingImg ? "AI rozdziela 4 warstwy z nosem i oczami..." : imageFileName}
                   </span>
                 </div>
                 <span className="px-2.5 py-1 rounded bg-[#161F30] text-[#00E5FF] border border-[#24324A] text-xs font-mono">
-                  {isProcessingImg ? "Przetwarzanie..." : "Wybierz"}
+                  {isProcessingImg ? "Przetwarzam..." : "Wgraj"}
                 </span>
               </div>
             </div>
 
-            {/* 2. Kształt bazy */}
-            <div>
-              <label className="block text-xs font-medium text-[#94A3B8] mb-1.5 uppercase tracking-wider">
-                2. Kształt bazy breloka
-              </label>
-              <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                <button
-                  type="button"
-                  onClick={() => setShapeType("rect")}
-                  className={`py-2 px-3 rounded-lg border font-bold transition cursor-pointer ${
-                    shapeType === "rect"
-                      ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
-                      : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
-                  }`}
-                >
-                  Prostokątny
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShapeType("circle")}
-                  className={`py-2 px-3 rounded-lg border font-bold transition cursor-pointer ${
-                    shapeType === "circle"
-                      ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
-                      : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
-                  }`}
-                >
-                  Okrągły
-                </button>
-              </div>
+            {/* Kształt bazy */}
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+              <button
+                type="button"
+                onClick={() => setShapeType("rect")}
+                className={`py-1.5 px-3 rounded-lg border font-bold transition cursor-pointer ${
+                  shapeType === "rect" ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white" : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
+                }`}
+              >
+                Baza Prostokątna
+              </button>
+              <button
+                type="button"
+                onClick={() => setShapeType("circle")}
+                className={`py-1.5 px-3 rounded-lg border font-bold transition cursor-pointer ${
+                  shapeType === "circle" ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white" : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
+                }`}
+              >
+                Baza Okrągła
+              </button>
             </div>
 
-            {/* 3. WARSTWA 0: BAZA PŁYTKI */}
-            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-2">
-              <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
-                Warstwa 0: Płytka bazy breloka (grubość 4 mm)
+            {/* Warstwa 0: Płytka Bazy */}
+            <div className="bg-[#0B0F17]/60 p-2 rounded-lg border border-[#24324A]">
+              <span className="text-[10px] font-mono text-[#94A3B8] uppercase block mb-1">
+                Poziom 0: Baza breloka
               </span>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1">
                 {COLORS.map((col) => (
                   <button
-                    key={`base-${col.id}`}
+                    key={`b-${col.id}`}
                     type="button"
                     onClick={() => setBaseColor(col.id)}
-                    className={`w-6 h-6 rounded border transition cursor-pointer ${
-                      baseColor === col.id ? "border-[#00E5FF] scale-110 shadow-[0_0_8px_#00E5FF]" : "border-[#24324A]"
-                    }`}
+                    className={`w-5 h-5 rounded border transition ${baseColor === col.id ? "border-[#00E5FF] scale-110" : "border-[#24324A]"}`}
                     style={{ backgroundColor: col.id }}
                   />
                 ))}
               </div>
             </div>
 
-            {/* 4. WARSTWA 1: GŁÓWNA SYLWETKA */}
-            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-2">
-              <div className="flex justify-between items-center text-xs font-mono">
-                <span className="text-[#00E5FF] uppercase font-bold">Warstwa 1: Główny motyw</span>
-                <span className="text-white">+{midDepth} mm</span>
+            {/* Warstwa 1: Główna sylwetka */}
+            <div className="bg-[#0B0F17]/60 p-2 rounded-lg border border-[#24324A] space-y-1">
+              <div className="flex justify-between text-[11px] font-mono text-[#1E40AF]">
+                <span className="font-bold">Poziom 1: Sylwetka / Uszy</span>
+                <span className="text-white">+{l1Depth}mm</span>
               </div>
               <input
                 type="range"
                 min="0.6"
-                max="2.4"
+                max="2.0"
                 step="0.2"
-                value={midDepth}
-                onChange={(e) => setMidDepth(Number(e.target.value))}
-                className="w-full h-1.5 bg-[#161F30] rounded-lg appearance-none cursor-pointer accent-[#00E5FF]"
+                value={l1Depth}
+                onChange={(e) => setL1Depth(Number(e.target.value))}
+                className="w-full h-1 bg-[#161F30] rounded appearance-none cursor-pointer accent-blue-600"
               />
-              <div className="flex flex-wrap gap-1.5 pt-1">
+              <div className="flex flex-wrap gap-1">
                 {COLORS.map((col) => (
                   <button
-                    key={`mid-${col.id}`}
+                    key={`l1-${col.id}`}
                     type="button"
-                    onClick={() => setMidColor(col.id)}
-                    className={`w-6 h-6 rounded border transition cursor-pointer ${
-                      midColor === col.id ? "border-[#00E5FF] scale-110 shadow-[0_0_8px_#00E5FF]" : "border-[#24324A]"
-                    }`}
+                    onClick={() => setL1Color(col.id)}
+                    className={`w-5 h-5 rounded border transition ${l1Color === col.id ? "border-blue-500 scale-110" : "border-[#24324A]"}`}
                     style={{ backgroundColor: col.id }}
                   />
                 ))}
               </div>
             </div>
 
-            {/* 5. WARSTWA 2: DETALE I AKCENTY */}
-            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-2">
-              <div className="flex justify-between items-center text-xs font-mono">
-                <span className="text-pink-400 uppercase font-bold">Warstwa 2: Detale (Oczy, nos, akcenty)</span>
-                <span className="text-white">+{topDepth} mm</span>
+            {/* Warstwa 2: Pysk i wnętrza uszu */}
+            <div className="bg-[#0B0F17]/60 p-2 rounded-lg border border-[#24324A] space-y-1">
+              <div className="flex justify-between text-[11px] font-mono text-slate-300">
+                <span className="font-bold">Poziom 2: Pysk / Czoło</span>
+                <span className="text-white">+{l2Depth}mm</span>
               </div>
               <input
                 type="range"
                 min="0.4"
-                max="2.0"
+                max="1.6"
                 step="0.2"
-                value={topDepth}
-                onChange={(e) => setTopDepth(Number(e.target.value))}
-                className="w-full h-1.5 bg-[#161F30] rounded-lg appearance-none cursor-pointer accent-pink-500"
+                value={l2Depth}
+                onChange={(e) => setL2Depth(Number(e.target.value))}
+                className="w-full h-1 bg-[#161F30] rounded appearance-none cursor-pointer accent-slate-300"
               />
-              <div className="flex flex-wrap gap-1.5 pt-1">
+              <div className="flex flex-wrap gap-1">
                 {COLORS.map((col) => (
                   <button
-                    key={`top-${col.id}`}
+                    key={`l2-${col.id}`}
                     type="button"
-                    onClick={() => setTopColor(col.id)}
-                    className={`w-6 h-6 rounded border transition cursor-pointer ${
-                      topColor === col.id ? "border-pink-400 scale-110 shadow-[0_0_8px_#ec4899]" : "border-[#24324A]"
-                    }`}
+                    onClick={() => setL2Color(col.id)}
+                    className={`w-5 h-5 rounded border transition ${l2Color === col.id ? "border-white scale-110" : "border-[#24324A]"}`}
                     style={{ backgroundColor: col.id }}
                   />
                 ))}
               </div>
             </div>
 
-            {/* Liczba sztuk & Koszyk */}
-            <div className="pt-2 border-t border-[#24324A] space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-[#94A3B8] uppercase font-mono">Liczba sztuk:</span>
-                <div className="flex items-center gap-2">
+            {/* Warstwa 3: Oczy i brwi */}
+            <div className="bg-[#0B0F17]/60 p-2 rounded-lg border border-[#24324A] space-y-1">
+              <div className="flex justify-between text-[11px] font-mono text-[#00E5FF]">
+                <span className="font-bold">Poziom 3: Oczy / Brwi</span>
+                <span className="text-white">+{l3Depth}mm</span>
+              </div>
+              <input
+                type="range"
+                min="0.4"
+                max="1.2"
+                step="0.2"
+                value={l3Depth}
+                onChange={(e) => setL3Depth(Number(e.target.value))}
+                className="w-full h-1 bg-[#161F30] rounded appearance-none cursor-pointer accent-[#00E5FF]"
+              />
+              <div className="flex flex-wrap gap-1">
+                {COLORS.map((col) => (
+                  <button
+                    key={`l3-${col.id}`}
+                    type="button"
+                    onClick={() => setL3Color(col.id)}
+                    className={`w-5 h-5 rounded border transition ${l3Color === col.id ? "border-[#00E5FF] scale-110" : "border-[#24324A]"}`}
+                    style={{ backgroundColor: col.id }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Warstwa 4: Czubek nosa, źrenice, pyszczek */}
+            <div className="bg-[#0B0F17]/60 p-2 rounded-lg border border-[#24324A] space-y-1">
+              <div className="flex justify-between text-[11px] font-mono text-pink-400">
+                <span className="font-bold">Poziom 4: Czubek nosa / Źrenice</span>
+                <span className="text-white">+{l4Depth}mm</span>
+              </div>
+              <input
+                type="range"
+                min="0.4"
+                max="1.2"
+                step="0.2"
+                value={l4Depth}
+                onChange={(e) => setL4Depth(Number(e.target.value))}
+                className="w-full h-1 bg-[#161F30] rounded appearance-none cursor-pointer accent-pink-500"
+              />
+              <div className="flex flex-wrap gap-1">
+                {COLORS.map((col) => (
+                  <button
+                    key={`l4-${col.id}`}
+                    type="button"
+                    onClick={() => setL4Color(col.id)}
+                    className={`w-5 h-5 rounded border transition ${l4Color === col.id ? "border-pink-500 scale-110" : "border-[#24324A]"}`}
+                    style={{ backgroundColor: col.id }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Koszyk */}
+            <div className="pt-2 border-t border-[#24324A] space-y-2">
+              <div className="flex items-baseline justify-between font-mono">
+                <div>
+                  <span className="text-[10px] text-[#94A3B8] block uppercase">Cena (4 Kolory AMS)</span>
+                  <span className="text-2xl font-bold text-[#00E5FF]">{totalPrice}</span>
+                  <span className="text-xs text-[#94A3B8] ml-1">PLN</span>
+                </div>
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="w-8 h-8 bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono rounded-lg transition cursor-pointer"
+                    className="w-7 h-7 bg-[#0B0F17] border border-[#24324A] text-white font-mono rounded"
                   >
                     -
                   </button>
-                  <span className="font-mono text-white text-sm font-bold w-8 text-center">{quantity}</span>
+                  <span className="font-mono text-white text-xs font-bold w-6 text-center">{quantity}</span>
                   <button
                     type="button"
                     onClick={() => setQuantity(quantity + 1)}
-                    className="w-8 h-8 bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono rounded-lg transition cursor-pointer"
+                    className="w-7 h-7 bg-[#0B0F17] border border-[#24324A] text-white font-mono rounded"
                   >
                     +
                   </button>
                 </div>
               </div>
 
-              <div className="flex items-baseline justify-between font-mono pt-1">
-                <div>
-                  <span className="text-[10px] text-[#94A3B8] block uppercase">Cena całkowita brutto</span>
-                  <span className="text-3xl font-bold text-[#00E5FF]">{totalPrice}</span>
-                  <span className="text-xs text-[#94A3B8] ml-1">PLN</span>
-                </div>
-                <span className="text-xs text-emerald-400 font-mono">Druk FDM Tri-Color</span>
-              </div>
-
               <button
                 type="button"
                 disabled={addingToCart || isProcessingImg}
                 onClick={handleAddToCart}
-                className="w-full py-3.5 px-4 bg-gradient-to-r from-[#00E5FF] to-[#2563EB] hover:opacity-95 text-[#0B0F17] font-bold text-sm uppercase tracking-wider rounded-xl shadow-[0_0_25px_rgba(0,229,255,0.25)] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="w-full py-3 px-4 bg-gradient-to-r from-[#00E5FF] to-[#2563EB] text-[#0B0F17] font-bold text-xs uppercase tracking-wider rounded-xl shadow-[0_0_20px_rgba(0,229,255,0.25)] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
                 </svg>
-                {addingToCart ? "Zapisuję..." : "Dodaj brelok Multi-Color do koszyka"}
+                {addingToCart ? "Zapisuję..." : "Dodaj 4-kolorowy brelok do koszyka"}
               </button>
             </div>
           </div>

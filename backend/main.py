@@ -79,18 +79,22 @@ async def vectorize_image_ai(file: UploadFile = File(...)):
     mime_type = file.content_type or "image/png"
 
     prompt = """
-    Jesteś inżynierem CAD i projektantem płaskorzeźb do druku 3D Multi-Color FDM.
-    Przeanalizuj przesłany obraz i wyodrębnij główny motyw/obiekt (np. pies, postać, logo, symbol).
-    Zignoruj tło zdjęcia, cienie i szum otoczenia.
+    Jesteś ekspertem CAD i inżynierem druku 3D Multi-Color FDM.
+    Twoim zadaniem jest zamiana przesłanej grafiki na perfekcyjny, wielowarstwowy kod SVG reliefu 3D.
+    
+    Zignoruj tło zdjęcia. Przeanalizuj postać/obiekt i bezwzględnie zachowaj drobne detale wewnętrzne (np. źrenice, czubek nosa, pyszczek, usta, brwi, linie podziału).
 
-    Podziel grafikę na 2 poziomy wypukłości i wygeneruj poprawny kod SVG:
-    1. Znacznik główny: <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">.
-    2. Kod MUSI zawierać dokładnie dwie grupy <g>:
-       - <g id="layer_mid">: ścieżki <path d="..." fill="#111111" /> dla GŁÓWNYCH KSZTAŁTÓW (np. uszy, kontur głowy, tułów, duże elementy).
-       - <g id="layer_top">: ścieżki <path d="..." fill="#222222" /> dla DETALI / AKCENTÓW (np. oczy, nos, pyszczek, brwi, kropki, małe elementy wewnątrz).
-    3. Wszystkie ścieżki <path> muszą być ZAMKNIĘTE (litera 'Z' lub 'z' na końcu ścieżki) i wyśrodkowane w kadrze 0-100.
-    4. NIE dodawaj ramek, obramowań (stroke="none"), cieni, gradientów ani tła <rect>.
-    5. Zwróć WYŁĄCZNIE czysty kod SVG (od <svg> do </svg>), bez znaczników markdown (nie pisz ```xml ani ```svg).
+    Wygeneruj kod SVG o wymiarach viewBox="0 0 100 100" podzielony na grupy głębokości (od najniższej do najwyższej):
+    1. <g id="layer_1"> -> baza / główna sylwetka tła (np. cała głowa z uszami, tułów) [fill="#111111"]
+    2. <g id="layer_2"> -> elementy drugoplanowe (np. pyszczek, plamy, wnętrza uszu, krawat) [fill="#222222"]
+    3. <g id="layer_3"> -> kluczowe akcenty i detale (np. białka oczu, łuki brwiowe) [fill="#333333"]
+    4. <g id="layer_4"> -> detale mikro na samym wierzchu (np. czubek nosa, źrenice oczu, nozdrza, uśmiech) [fill="#444444"]
+
+    Wymagania techniczne:
+    - Wszystkie elementy to ZAMKNIĘTE ścieżki <path d="..." /> (z komendą Z na końcu).
+    - Detale wewnętrzne (np. nos na pysku) NIE MOGĄ być zlane w jedną plamę – pysk musi być w layer_2, a czubek nosa i usta w layer_4!
+    - Zero obrysów (stroke="none"), zero cieni, zero elementów <rect>.
+    - Zwróć WYŁĄCZNIE czysty kod SVG (od <svg> do </svg>), bez znaczników markdown ```xml czy ```svg.
     """
 
     try:
