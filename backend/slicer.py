@@ -56,7 +56,7 @@ def extract_support_segments(gcode_path: str) -> list[float]:
                 # Segment dodajemy tylko, gdy:
                 # 1. Jesteśmy w sekcji Support material
                 # 2. Filament jest wytłaczany (parametr E)
-                # 3. Znamy pozycję startową i wystąpiło faktyczne przesunięcie XY
+                # 3. Znamy pozycję startową i nastąpił ruch w osi XY
                 if (
                     is_support
                     and e_m
@@ -106,6 +106,7 @@ def run_slicer(stl_path: str, infill: int = 20, layer_height: float = 0.2) -> di
             "--export-gcode",
             "--support-material",
             "--support-material-auto",
+            "--support-material-style=organic",  # Styl drzewiasty / organiczny
             f"--fill-density={int(infill)}%",
             f"--layer-height={layer_height}",
             "--output", gcode_path,
