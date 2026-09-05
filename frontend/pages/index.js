@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import Head from "next/head";
+import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
@@ -260,14 +261,22 @@ export default function Home() {
               </span>
             </button>
 
-            {/* SEKCJA LOGOWANIA SUPABASE */}
+            {/* SEKCJA LOGOWANIA I ZLECEŃ SUPABASE */}
             {user ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-[#00E5FF] max-w-[110px] truncate hidden md:inline">{user.email}</span>
+                <Link
+                  href="/orders"
+                  className="px-2.5 py-1.5 text-xs font-mono bg-[#161F30] border border-[#24324A] hover:border-[#00E5FF] text-[#00E5FF] rounded-lg transition"
+                >
+                  Moje zlecenia
+                </Link>
+                <span className="text-xs font-mono text-[#94A3B8] max-w-[110px] truncate hidden md:inline">
+                  {user.email}
+                </span>
                 <button
                   type="button"
                   onClick={() => supabase.auth.signOut()}
-                  className="px-2.5 py-1 text-xs font-mono border border-[#24324A] hover:border-red-500 hover:text-red-400 rounded-lg transition cursor-pointer"
+                  className="px-2.5 py-1.5 text-xs font-mono border border-[#24324A] hover:border-red-500 hover:text-red-400 rounded-lg transition cursor-pointer"
                 >
                   Wyloguj
                 </button>
