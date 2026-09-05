@@ -45,76 +45,169 @@ const KeychainViewer3D = dynamic(
       import("@react-three/drei"),
       import("three-stdlib"),
     ]).then(([{ Canvas }, { OrbitControls, Center, RoundedBox }, { SVGLoader }]) => {
-      function SvgMakerWorldLayers({ svgString, layersConfig, graphicScale }) {
-        const parsedGroups = useMemo(() => {
-          if (!svgString) return { c1: [], c2: [], c3: [], c4: [] };
-          try {
-            const loader = new SVGLoader();
-            const svgData = loader.parse(svgString);
+      function SvgMakerWorldLayers({ svgString, layersConfig, graphicScale, baseBounds, baseThickness }) {
+  const parsedGroups = useMemo(() => {
+    if (!svgString) return { c1: [], c2: [], c3: [], c4: [] };
+    try {
+      const loader = new SVGLoader();
+      const svgData = loader.parse(svgString);
 
-            const c1 = [];
-            const c2 = [];
-            const c3 = [];
-            const c4 = [];
+      const c1 = [];
+      const c2 = [];
+      const c3 = [];
+      const c4 = [];
 
-            svgData.paths.forEach((path) => {
-              const parentId = path.userData?.node?.parentElement?.id;
-              const shapes = path.toShapes(true);
+      svgData.paths.forEach((path) => {
+        const parentId = path.userData?.node?.parentElement?.id;
+        const shapes = path.toShapes(true);
 
-              if (parentId === "color_1") c1.push(...shapes);
-              else if (parentId === "color_2") c2.push(...shapes);
-              else if (parentId === "color_3") c3.push(...shapes);
-              else c4.push(...shapes);
-            });
+        if (parentId === "color_1") c1.push(...shapes);
+        else if (parentId === "color_2") c2.push(...shapes);
+        else if (parentId === "color_3") c3.push(...shapes);
+        else if (parentId === "color_4") c4.push(...shapes);
+        else c1.push(...shapes);
+      });
 
-            return { c1, c2, c3, c4 };
-          } catch (err) {
-            console.error("Błąd parsowania SVG:", err);
-            return { c1: [], c2: [], c3: [], c4: [] };
-          }
-        }, [svgString]);
+      return { c1, c2, c3, c4 };
+    } catch (err) {
+      console.error("Błąd parsowania SVG:", err);
+      return { c1: [], c2: [], c3: [], c4: [] };
+    }
+  }, [svgString]);
 
-        const groups = [
-          { shapes: parsedGroups.c1, cfg: layersConfig[0], order: 1 },
-          { shapes: parsedGroups.c2, cfg: layersConfig[1], order: 2 },
-          { shapes: parsedGroups.c3, cfg: layersConfig[2], order: 3 },
-          { shapes: parsedGroups.c4, cfg: layersConfig[3], order: 4 },
-        ];
+  const groups = [
+    { shapes: parsedGroups.c1, cfg: layersConfig[0] },
+    { shapes: parsedGroups.c2, cfg: layersConfig[1] },
+    { shapes: parsedGroups.c3, cfg: layersConfig[2] },
+    { shapes: parsedGroups.c4, cfg: layersConfig[3] },
+  ];
 
-        const s = 0.45 * (graphicScale / 100);
+  // Obliczenie proporcjonalnego skalowania:
+  // SVG ma viewBox 100x100. Dopasowujemy go ściśle do mniejszego wymiaru bazy (baseBounds)
+  // z uwzględnieniem suwaka graphicScale (np. 80% powierzchni użytkowej).
+  const targetDimension = Math.min(baseBounds.width, baseBounds.height) * (graphicScale / 100);
+  const uniformScale = targetDimension / 100;
 
-        return (
-          <Center position={[0, 0, 0]}>
-            <group scale={[s, -s, 1]}>
-              {groups.map((grp, gIdx) => {
-                const zOffset = gIdx * 0.05;
-                return grp.shapes.map((shape, sIdx) => (
-                  <mesh
-                    key={`g-${gIdx}-s-${sIdx}`}
-                    position={[0, 0, zOffset]}
-                    renderOrder={grp.order}
-                  >
-                    <extrudeGeometry
-                      args={[
-                        shape,
-                        {
-                          depth: grp.cfg.thickness,
-                          bevelEnabled: false,
-                        },
-                      ]}
-                    />
-                    <meshStandardMaterial
-                      color={grp.cfg.color}
-                      roughness={0.35}
-                      metalness={0.05}
-                    />
-                  </mesh>
-                ));
-              })}
-            </group>
-          </Center>
-        );
-      }
+  return (
+    <Center position={[0, 0, baseThickness / 2]}>
+      <group scale={[uniformScale, -uniformScale, 1]}>
+        {groups.map((grp, gIdx) =>
+          grp.shapes.map((shape, sIdx) => (
+            <mesh key={`g-${gIdx}-s-${sIdx}`} position={[0, 0, 0]}>
+              <extrudeGeometry
+                args={[
+                  shape,
+                  {
+                    depth: grp.cfg.thickness,
+                    bevelEnabled: false,
+                  },
+                ]}
+              />
+              <meshStandardMaterial
+                color={grp.cfg.color}
+                roughness={0.4}
+                metalness={0.05}
+              />
+            </mesh>
+          ))
+        )}
+      </group>
+    </Center>
+  );
+}
+
+function KeychainMesh({
+  shapeType,
+  baseColor,
+  baseWidth,
+  baseHeight,
+  baseDiameter,
+  baseThickness,
+  hasHole,
+  graphicScale,
+  reliefSvg,
+  layersConfig,
+}) {
+  const radius = baseDiameter / 2;
+
+  // Realne wymiary robocze dla równego skalowania motywu
+  // Dla sześciokąta foremnego odległość między płaskimi bokami (inradius) to radius * sqrt(3)
+  const baseBounds = useMemo(() => {
+    if (shapeType === "rect") {
+      return { width: baseWidth, height: baseHeight };
+    }
+    if (shapeType === "hexagon") {
+      const innerWidth = radius * Math.sqrt(3);
+      return { width: innerWidth, height: innerWidth };
+    }
+    return { width: baseDiameter, height: baseDiameter };
+  }, [shapeType, baseWidth, baseHeight, baseDiameter, radius]);
+
+  return (
+    <group>
+      {/* 1. BAZA PROSTOKĄTNA */}
+      {shapeType === "rect" && (
+        <group>
+          <RoundedBox
+            args={[baseWidth, baseHeight, baseThickness]}
+            radius={3}
+            smoothness={4}
+            position={[0, 0, 0]}
+          >
+            <meshStandardMaterial color={baseColor} roughness={0.5} />
+          </RoundedBox>
+          {hasHole && (
+            <mesh position={[-baseWidth / 2 - 4.5, 0, 0]}>
+              <torusGeometry args={[5, 1.6, 16, 32]} />
+              <meshStandardMaterial color={baseColor} roughness={0.5} />
+            </mesh>
+          )}
+        </group>
+      )}
+
+      {/* 2. BAZA OKRĄGŁA */}
+      {shapeType === "circle" && (
+        <group>
+          <mesh rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[radius, radius, baseThickness, 64]} />
+            <meshStandardMaterial color={baseColor} roughness={0.5} />
+          </mesh>
+          {hasHole && (
+            <mesh position={[0, radius + 4.5, 0]}>
+              <torusGeometry args={[5, 1.6, 16, 32]} />
+              <meshStandardMaterial color={baseColor} roughness={0.5} />
+            </mesh>
+          )}
+        </group>
+      )}
+
+      {/* 3. BAZA HEXAGON (WYPROSTOWANA: płaskie krawędzie góra/dół, ucho centralnie na płaskim boku) */}
+      {shapeType === "hexagon" && (
+        <group>
+          <mesh rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[radius, radius, baseThickness, 6]} />
+            <meshStandardMaterial color={baseColor} roughness={0.5} />
+          </mesh>
+          {hasHole && (
+            <mesh position={[0, (radius * Math.sqrt(3)) / 2 + 4.5, 0]}>
+              <torusGeometry args={[5, 1.6, 16, 32]} />
+              <meshStandardMaterial color={baseColor} roughness={0.5} />
+            </mesh>
+          )}
+        </group>
+      )}
+
+      {/* Płaskorzeźba z równym skalowaniem 1:1 */}
+      <SvgMakerWorldLayers
+        svgString={reliefSvg}
+        layersConfig={layersConfig}
+        graphicScale={graphicScale}
+        baseBounds={baseBounds}
+        baseThickness={baseThickness}
+      />
+    </group>
+  );
+}
 
       function KeychainMesh({
         shapeType,
