@@ -46,168 +46,72 @@ const KeychainViewer3D = dynamic(
       import("three-stdlib"),
     ]).then(([{ Canvas }, { OrbitControls, Center, RoundedBox }, { SVGLoader }]) => {
       function SvgMakerWorldLayers({ svgString, layersConfig, graphicScale, baseBounds, baseThickness }) {
-  const parsedGroups = useMemo(() => {
-    if (!svgString) return { c1: [], c2: [], c3: [], c4: [] };
-    try {
-      const loader = new SVGLoader();
-      const svgData = loader.parse(svgString);
+        const parsedGroups = useMemo(() => {
+          if (!svgString) return { c1: [], c2: [], c3: [], c4: [] };
+          try {
+            const loader = new SVGLoader();
+            const svgData = loader.parse(svgString);
 
-      const c1 = [];
-      const c2 = [];
-      const c3 = [];
-      const c4 = [];
+            const c1 = [];
+            const c2 = [];
+            const c3 = [];
+            const c4 = [];
 
-      svgData.paths.forEach((path) => {
-        const parentId = path.userData?.node?.parentElement?.id;
-        const shapes = path.toShapes(true);
+            svgData.paths.forEach((path) => {
+              const parentId = path.userData?.node?.parentElement?.id;
+              const shapes = path.toShapes(true);
 
-        if (parentId === "color_1") c1.push(...shapes);
-        else if (parentId === "color_2") c2.push(...shapes);
-        else if (parentId === "color_3") c3.push(...shapes);
-        else if (parentId === "color_4") c4.push(...shapes);
-        else c1.push(...shapes);
-      });
+              if (parentId === "color_1") c1.push(...shapes);
+              else if (parentId === "color_2") c2.push(...shapes);
+              else if (parentId === "color_3") c3.push(...shapes);
+              else if (parentId === "color_4") c4.push(...shapes);
+              else c1.push(...shapes);
+            });
 
-      return { c1, c2, c3, c4 };
-    } catch (err) {
-      console.error("Błąd parsowania SVG:", err);
-      return { c1: [], c2: [], c3: [], c4: [] };
-    }
-  }, [svgString]);
+            return { c1, c2, c3, c4 };
+          } catch (err) {
+            console.error("Błąd parsowania SVG:", err);
+            return { c1: [], c2: [], c3: [], c4: [] };
+          }
+        }, [svgString]);
 
-  const groups = [
-    { shapes: parsedGroups.c1, cfg: layersConfig[0] },
-    { shapes: parsedGroups.c2, cfg: layersConfig[1] },
-    { shapes: parsedGroups.c3, cfg: layersConfig[2] },
-    { shapes: parsedGroups.c4, cfg: layersConfig[3] },
-  ];
+        const groups = [
+          { shapes: parsedGroups.c1, cfg: layersConfig[0] },
+          { shapes: parsedGroups.c2, cfg: layersConfig[1] },
+          { shapes: parsedGroups.c3, cfg: layersConfig[2] },
+          { shapes: parsedGroups.c4, cfg: layersConfig[3] },
+        ];
 
-  // Obliczenie proporcjonalnego skalowania:
-  // SVG ma viewBox 100x100. Dopasowujemy go ściśle do mniejszego wymiaru bazy (baseBounds)
-  // z uwzględnieniem suwaka graphicScale (np. 80% powierzchni użytkowej).
-  const targetDimension = Math.min(baseBounds.width, baseBounds.height) * (graphicScale / 100);
-  const uniformScale = targetDimension / 100;
+        const targetDim = Math.min(baseBounds.width || 60, baseBounds.height || 60) * ((graphicScale || 80) / 100);
+        const uniformScale = targetDim / 100;
 
-  return (
-    <Center position={[0, 0, baseThickness / 2]}>
-      <group scale={[uniformScale, -uniformScale, 1]}>
-        {groups.map((grp, gIdx) =>
-          grp.shapes.map((shape, sIdx) => (
-            <mesh key={`g-${gIdx}-s-${sIdx}`} position={[0, 0, 0]}>
-              <extrudeGeometry
-                args={[
-                  shape,
-                  {
-                    depth: grp.cfg.thickness,
-                    bevelEnabled: false,
-                  },
-                ]}
-              />
-              <meshStandardMaterial
-                color={grp.cfg.color}
-                roughness={0.4}
-                metalness={0.05}
-              />
-            </mesh>
-          ))
-        )}
-      </group>
-    </Center>
-  );
-}
-
-function KeychainMesh({
-  shapeType,
-  baseColor,
-  baseWidth,
-  baseHeight,
-  baseDiameter,
-  baseThickness,
-  hasHole,
-  graphicScale,
-  reliefSvg,
-  layersConfig,
-}) {
-  const radius = baseDiameter / 2;
-
-  // Realne wymiary robocze dla równego skalowania motywu
-  // Dla sześciokąta foremnego odległość między płaskimi bokami (inradius) to radius * sqrt(3)
-  const baseBounds = useMemo(() => {
-    if (shapeType === "rect") {
-      return { width: baseWidth, height: baseHeight };
-    }
-    if (shapeType === "hexagon") {
-      const innerWidth = radius * Math.sqrt(3);
-      return { width: innerWidth, height: innerWidth };
-    }
-    return { width: baseDiameter, height: baseDiameter };
-  }, [shapeType, baseWidth, baseHeight, baseDiameter, radius]);
-
-  return (
-    <group>
-      {/* 1. BAZA PROSTOKĄTNA */}
-      {shapeType === "rect" && (
-        <group>
-          <RoundedBox
-            args={[baseWidth, baseHeight, baseThickness]}
-            radius={3}
-            smoothness={4}
-            position={[0, 0, 0]}
-          >
-            <meshStandardMaterial color={baseColor} roughness={0.5} />
-          </RoundedBox>
-          {hasHole && (
-            <mesh position={[-baseWidth / 2 - 4.5, 0, 0]}>
-              <torusGeometry args={[5, 1.6, 16, 32]} />
-              <meshStandardMaterial color={baseColor} roughness={0.5} />
-            </mesh>
-          )}
-        </group>
-      )}
-
-      {/* 2. BAZA OKRĄGŁA */}
-      {shapeType === "circle" && (
-        <group>
-          <mesh rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[radius, radius, baseThickness, 64]} />
-            <meshStandardMaterial color={baseColor} roughness={0.5} />
-          </mesh>
-          {hasHole && (
-            <mesh position={[0, radius + 4.5, 0]}>
-              <torusGeometry args={[5, 1.6, 16, 32]} />
-              <meshStandardMaterial color={baseColor} roughness={0.5} />
-            </mesh>
-          )}
-        </group>
-      )}
-
-      {/* 3. BAZA HEXAGON (WYPROSTOWANA: płaskie krawędzie góra/dół, ucho centralnie na płaskim boku) */}
-      {shapeType === "hexagon" && (
-        <group>
-          <mesh rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[radius, radius, baseThickness, 6]} />
-            <meshStandardMaterial color={baseColor} roughness={0.5} />
-          </mesh>
-          {hasHole && (
-            <mesh position={[0, (radius * Math.sqrt(3)) / 2 + 4.5, 0]}>
-              <torusGeometry args={[5, 1.6, 16, 32]} />
-              <meshStandardMaterial color={baseColor} roughness={0.5} />
-            </mesh>
-          )}
-        </group>
-      )}
-
-      {/* Płaskorzeźba z równym skalowaniem 1:1 */}
-      <SvgMakerWorldLayers
-        svgString={reliefSvg}
-        layersConfig={layersConfig}
-        graphicScale={graphicScale}
-        baseBounds={baseBounds}
-        baseThickness={baseThickness}
-      />
-    </group>
-  );
-}
+        return (
+          <Center position={[0, 0, (baseThickness || 3) / 2]}>
+            <group scale={[uniformScale, -uniformScale, 1]}>
+              {groups.map((grp, gIdx) =>
+                grp.shapes.map((shape, sIdx) => (
+                  <mesh key={`g-${gIdx}-s-${sIdx}`} position={[0, 0, 0]}>
+                    <extrudeGeometry
+                      args={[
+                        shape,
+                        {
+                          depth: grp.cfg.thickness,
+                          bevelEnabled: false,
+                        },
+                      ]}
+                    />
+                    <meshStandardMaterial
+                      color={grp.cfg.color}
+                      roughness={0.4}
+                      metalness={0.05}
+                    />
+                  </mesh>
+                ))
+              )}
+            </group>
+          </Center>
+        );
+      }
 
       function KeychainMesh({
         shapeType,
@@ -221,7 +125,18 @@ function KeychainMesh({
         reliefSvg,
         layersConfig,
       }) {
-        const radius = baseDiameter / 2;
+        const radius = (baseDiameter || 60) / 2;
+
+        const baseBounds = useMemo(() => {
+          if (shapeType === "rect") {
+            return { width: baseWidth, height: baseHeight };
+          }
+          if (shapeType === "hexagon") {
+            const innerWidth = radius * Math.sqrt(3);
+            return { width: innerWidth, height: innerWidth };
+          }
+          return { width: baseDiameter, height: baseDiameter };
+        }, [shapeType, baseWidth, baseHeight, baseDiameter, radius]);
 
         return (
           <group>
@@ -230,15 +145,15 @@ function KeychainMesh({
               <group>
                 <RoundedBox
                   args={[baseWidth, baseHeight, baseThickness]}
-                  radius={4}
+                  radius={3}
                   smoothness={4}
                   position={[0, 0, 0]}
                 >
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </RoundedBox>
                 {hasHole && (
-                  <mesh position={[-baseWidth / 2 - 5, 0, 0]}>
-                    <torusGeometry args={[5.5, 1.8, 16, 32]} />
+                  <mesh position={[-baseWidth / 2 - 4.5, 0, 0]}>
+                    <torusGeometry args={[5, 1.6, 16, 32]} />
                     <meshStandardMaterial color={baseColor} roughness={0.5} />
                   </mesh>
                 )}
@@ -253,38 +168,38 @@ function KeychainMesh({
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
                 {hasHole && (
-                  <mesh position={[0, radius + 5, 0]}>
-                    <torusGeometry args={[5.5, 1.8, 16, 32]} />
+                  <mesh position={[0, radius + 4.5, 0]}>
+                    <torusGeometry args={[5, 1.6, 16, 32]} />
                     <meshStandardMaterial color={baseColor} roughness={0.5} />
                   </mesh>
                 )}
               </group>
             )}
 
-            {/* 3. BAZA HEXAGON (SZEŚCIOKĄT) */}
+            {/* 3. BAZA HEXAGON */}
             {shapeType === "hexagon" && (
               <group>
-                <mesh rotation={[Math.PI / 2, 0, Math.PI / 6]}>
+                <mesh rotation={[Math.PI / 2, 0, 0]}>
                   <cylinderGeometry args={[radius, radius, baseThickness, 6]} />
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
                 {hasHole && (
-                  <mesh position={[0, radius + 5, 0]}>
-                    <torusGeometry args={[5.5, 1.8, 16, 32]} />
+                  <mesh position={[0, (radius * Math.sqrt(3)) / 2 + 4.5, 0]}>
+                    <torusGeometry args={[5, 1.6, 16, 32]} />
                     <meshStandardMaterial color={baseColor} roughness={0.5} />
                   </mesh>
                 )}
               </group>
             )}
 
-            {/* Płaskorzeźba ułożona na bazie */}
-            <group position={[0, 0, baseThickness / 2 + 0.01]}>
-              <SvgMakerWorldLayers
-                svgString={reliefSvg}
-                layersConfig={layersConfig}
-                graphicScale={graphicScale}
-              />
-            </group>
+            {/* Płaskorzeźba */}
+            <SvgMakerWorldLayers
+              svgString={reliefSvg}
+              layersConfig={layersConfig}
+              graphicScale={graphicScale}
+              baseBounds={baseBounds}
+              baseThickness={baseThickness}
+            />
           </group>
         );
       }
@@ -314,7 +229,7 @@ export default function KeychainGenerator() {
   const genMenuRef = useRef(null);
   const userMenuRef = useRef(null);
 
-  // Kształt bazy i wymiary (stół max 256 mm)
+  // Kształt bazy i wymiary
   const [shapeType, setShapeType] = useState("rect");
   const [baseColor, setBaseColor] = useState("#0B0F17");
   const [baseWidth, setBaseWidth] = useState(65);
@@ -326,12 +241,12 @@ export default function KeychainGenerator() {
   // Skalowanie grafiki
   const [graphicScale, setGraphicScale] = useState(80);
 
-  // Konfiguracja 4 warstw filamentu
+  // Warstwy
   const [layersConfig, setLayersConfig] = useState([
     { id: 1, name: "Warstwa 1", color: "#0B0F17", thickness: 0.8 },
-    { id: 2, name: "Warstwa 2", color: "#00E5FF", thickness: 1.0 },
-    { id: 3, name: "Warstwa 3", color: "#2563EB", thickness: 1.2 },
-    { id: 4, name: "Warstwa 4", color: "#FFFFFF", thickness: 1.4 },
+    { id: 2, name: "Warstwa 2", color: "#00E5FF", thickness: 0.8 },
+    { id: 3, name: "Warstwa 3", color: "#2563EB", thickness: 0.8 },
+    { id: 4, name: "Warstwa 4", color: "#FFFFFF", thickness: 0.8 },
   ]);
 
   const [originalColors, setOriginalColors] = useState([]);
@@ -356,7 +271,6 @@ export default function KeychainGenerator() {
   const [isProcessingImg, setIsProcessingImg] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Dynamiczna kalkulacja ceny według powierzchni
   const areaCm2 =
     shapeType === "rect"
       ? (baseWidth * baseHeight) / 100
@@ -482,6 +396,7 @@ export default function KeychainGenerator() {
         prev.map((layer, idx) => ({
           ...layer,
           color: detectedColors[idx] || layer.color,
+          thickness: 0.8,
         }))
       );
     }
@@ -799,7 +714,6 @@ export default function KeychainGenerator() {
                 2. Kształt i wymiary bazy (do 245 mm)
               </span>
 
-              {/* Wybór geometrii */}
               <div className="grid grid-cols-3 gap-1.5 text-xs font-mono">
                 <button
                   type="button"
@@ -836,7 +750,7 @@ export default function KeychainGenerator() {
                 </button>
               </div>
 
-              {/* Przełącznik ucha: Brelok vs Tabliczka */}
+              {/* Przełącznik ucha */}
               <div className="flex items-center justify-between py-1.5 border-y border-[#24324A]/60 text-xs font-mono">
                 <div>
                   <span className="text-white block">Ucho do zawieszenia</span>
@@ -948,7 +862,7 @@ export default function KeychainGenerator() {
               </div>
             </div>
 
-            {/* 3. Skalowanie grafiki na breloku */}
+            {/* 3. Skalowanie grafiki */}
             <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-1.5">
               <div className="flex justify-between text-xs font-mono">
                 <span className="text-white font-bold">Skalowanie motywu na bazie</span>
@@ -964,7 +878,7 @@ export default function KeychainGenerator() {
                 className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
               />
               <span className="text-[10px] font-mono text-[#94A3B8] block">
-                Zmniejsz skalę, aby zachować większy margines wokół grafiki.
+                Zmniejsz skalę, aby zachować margines wokół grafiki.
               </span>
             </div>
 
@@ -1053,7 +967,7 @@ export default function KeychainGenerator() {
               ))}
             </div>
 
-            {/* Podsumowanie i Koszyk */}
+            {/* Koszyk */}
             <div className="pt-2 border-t border-[#24324A] space-y-2">
               <div className="flex items-baseline justify-between font-mono">
                 <div>
@@ -1131,9 +1045,7 @@ export default function KeychainGenerator() {
               <div className="md:col-span-5 flex flex-col justify-between space-y-4 font-mono text-xs">
                 <div className="space-y-4">
                   <div>
-                    <label className="text-[#94A3B8] uppercase block mb-1.5 font-bold">
-                      Crop Ratio
-                    </label>
+                    <label className="text-[#94A3B8] uppercase block mb-1.5 font-bold">Crop Ratio</label>
                     <div className="flex items-center gap-1.5">
                       {["Free", "1:1", "4:3", "3:2"].map((ratio) => (
                         <button
@@ -1166,9 +1078,7 @@ export default function KeychainGenerator() {
                   </div>
 
                   <div className="space-y-3 pt-1">
-                    <span className="text-[#00E5FF] uppercase font-bold block text-[11px]">
-                      Image Adjustment
-                    </span>
+                    <span className="text-[#00E5FF] uppercase font-bold block text-[11px]">Image Adjustment</span>
                     <div>
                       <div className="flex justify-between text-[#94A3B8] mb-1">
                         <span>Exposure (Jasność)</span>
@@ -1244,9 +1154,7 @@ export default function KeychainGenerator() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
           <div className="bg-[#0E1524] border border-[#24324A] rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-[#24324A] flex items-center justify-between">
-              <h2 className="text-base font-bold text-white tracking-wide">
-                Image Conversion Preview
-              </h2>
+              <h2 className="text-base font-bold text-white tracking-wide">Image Conversion Preview</h2>
               <button
                 onClick={() => setIsConversionPreviewOpen(false)}
                 className="text-[#94A3B8] hover:text-white transition cursor-pointer text-sm"
