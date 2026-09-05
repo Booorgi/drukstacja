@@ -95,7 +95,7 @@ async def vectorize_image_ai(file: UploadFile = File(...)):
 
     try:
         # Najnowszy i najbardziej wydajny model multimodalny Gemini Flash
-        model_name = "gemini-2.5-flash"
+        model_name = "gemini-3.6-flash"
         
         response = gemini_client.models.generate_content(
             model=model_name,
