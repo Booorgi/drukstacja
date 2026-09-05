@@ -100,7 +100,7 @@ export default function ModelViewer({
       grid.position.y = 0;
       scene.add(grid);
 
-      // 4. Podpory ze slicera
+// 4. Podpory ze slicera
       if (supportLines && supportLines.length >= 6) {
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
@@ -108,23 +108,17 @@ export default function ModelViewer({
           new THREE.Float32BufferAttribute(supportLines, 3)
         );
 
-        // A. Konwersja osi STL Z-up -> Three.js Y-up
+        // A. Standaryzacja orientacji: STL Z-up -> Three.js Y-up
         lineGeo.rotateX(-Math.PI / 2);
 
-        // B. Obrót w osi podłużnej (przód/tył)
+        // B. Obrót i dopasowanie zwrotu osi ze slicera
         lineGeo.rotateY(Math.PI);
-
-        // C. Lustrzane odbicie lewo/prawo (oś X)
         lineGeo.scale(-1, 1, 1);
 
-        // D. Centrowanie podpór w osiach X, Z i oparcie podstawy na stole Y = 0
+        // C. Opieramy podstawę podpór na stole Y = 0 (bez ruszania X i Z!)
         lineGeo.computeBoundingBox();
-        const sBbox = lineGeo.boundingBox;
-        const sCenterX = (sBbox.max.x + sBbox.min.x) / 2;
-        const sCenterZ = (sBbox.max.z + sBbox.min.z) / 2;
-        const sMinY = sBbox.min.y;
-
-        lineGeo.translate(-sCenterX, -sMinY, -sCenterZ);
+        const sMinY = lineGeo.boundingBox.min.y;
+        lineGeo.translate(0, -sMinY, 0);
 
         const lineMat = new THREE.LineBasicMaterial({
           color: 0x10b981,
