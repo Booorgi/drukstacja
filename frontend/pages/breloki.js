@@ -182,10 +182,10 @@ export default function KeychainGenerator() {
   const [baseColor, setBaseColor] = useState("#0B0F17");
 
   const [layersConfig, setLayersConfig] = useState([
-    { id: 1, name: "Filament 1: Kontury / Detale", color: "#0B0F17", thickness: 2.0 },
-    { id: 2, name: "Filament 2: Główna bryła", color: "#8B4513", thickness: 1.4 },
-    { id: 3, name: "Filament 3: Tony średnie", color: "#E5E7EB", thickness: 1.0 },
-    { id: 4, name: "Filament 4: Jasne akcenty", color: "#FFFFFF", thickness: 0.8 },
+    { id: 1, name: "Warstwa 1", color: "#0B0F17", thickness: 2.0 },
+    { id: 2, name: "Warstwa 2", color: "#00E5FF", thickness: 1.4 },
+    { id: 3, name: "Warstwa 3", color: "#2563EB", thickness: 1.0 },
+    { id: 4, name: "Warstwa 4", color: "#FFFFFF", thickness: 0.8 },
   ]);
 
   // ETAP 1: PREPROCESSING MODAL
@@ -197,9 +197,10 @@ export default function KeychainGenerator() {
   const [cropRatio, setCropRatio] = useState("1:1");
   const [keepBg, setKeepBg] = useState(false);
 
-  // ETAP 2: CONVERSION PREVIEW MODAL
+  // ETAP 2: CONVERSION PREVIEW MODAL & AUTO-PALETTE
   const [isConversionPreviewOpen, setIsConversionPreviewOpen] = useState(false);
   const [generatedSvgPreview, setGeneratedSvgPreview] = useState(null);
+  const [detectedColors, setDetectedColors] = useState([]);
 
   const [uploadedSvg, setUploadedSvg] = useState(DEFAULT_SVG);
   const [imageFileName, setImageFileName] = useState("Wybierz plik");
@@ -243,7 +244,6 @@ export default function KeychainGenerator() {
     reader.readAsDataURL(file);
   }
 
-  // Zakończenie Preprocessingu -> Generowanie Wektora i otwarcie okna Preview
   async function handleConfirmPreprocessing() {
     setIsPreprocessingOpen(false);
     setIsProcessingImg(true);
@@ -253,7 +253,7 @@ export default function KeychainGenerator() {
       img.onload = async () => {
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
-        
+
         canvas.width = img.width;
         canvas.height = img.height;
 
@@ -279,9 +279,12 @@ export default function KeychainGenerator() {
 
             const data = await res.json();
             setGeneratedSvgPreview(data.svg);
-            setIsConversionPreviewOpen(true); // Otwieramy okno podglądu konwersji!
+            if (data.detected_colors && Array.isArray(data.detected_colors)) {
+              setDetectedColors(data.detected_colors);
+            }
+            setIsConversionPreviewOpen(true);
           } catch (err) {
-            alert("Błąd Gemini AI: " + err.message);
+            alert("Błąd wektoryzacji: " + err.message);
           } finally {
             setIsProcessingImg(false);
           }
@@ -294,17 +297,25 @@ export default function KeychainGenerator() {
     }
   }
 
-  // Kliknięcie "Try Again" w podglądzie konwersji
   function handleTryAgain() {
     setIsConversionPreviewOpen(false);
     setIsPreprocessingOpen(true);
   }
 
-  // Kliknięcie "Confirm" w oknie konwersji -> Przeniesienie do stołu 3D
   function handleConfirmConversion() {
     if (generatedSvgPreview) {
       setUploadedSvg(generatedSvgPreview);
     }
+
+    if (detectedColors.length > 0) {
+      setLayersConfig((prev) =>
+        prev.map((layer, idx) => ({
+          ...layer,
+          color: detectedColors[idx] || layer.color,
+        }))
+      );
+    }
+
     setIsConversionPreviewOpen(false);
   }
 
@@ -513,7 +524,7 @@ export default function KeychainGenerator() {
         </div>
       </header>
 
-      {/* VIEWPORT & FORMULARZ */}
+      {/* GŁÓWNY VIEWPORT 3D & KONTROLKI */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
         <section className="lg:col-span-7 flex flex-col gap-4">
           <div className="relative w-full h-[620px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
@@ -541,7 +552,7 @@ export default function KeychainGenerator() {
                 </span>
               </div>
               <p className="text-[11px] font-mono text-[#94A3B8] mt-0.5">
-                MakerWorld Pipeline: Preprocessing & Weryfikacja wektora
+                Auto-pobieranie palety kolorów z obrazu i niezależne grubości Z
               </p>
             </div>
 
@@ -622,7 +633,7 @@ export default function KeychainGenerator() {
               </div>
             </div>
 
-            {/* Warstwy filamentu */}
+            {/* Warstwy filamentu (z automatycznie pobranymi kolorami z K-Means) */}
             <div className="space-y-2.5">
               <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
                 2. Warstwy filamentu & Grubość Z (mm)
@@ -635,7 +646,13 @@ export default function KeychainGenerator() {
                       <span className="w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] bg-[#161F30] text-white border border-[#24324A]">
                         {layer.id}
                       </span>
-                      <span className="text-white text-[11px] truncate max-w-[170px]">{layer.name}</span>
+                      <div
+                        className="w-3.5 h-3.5 rounded border border-white/20"
+                        style={{ backgroundColor: layer.color }}
+                      />
+                      <span className="text-white text-[11px] truncate max-w-[150px]">
+                        {layer.name} ({layer.color})
+                      </span>
                     </div>
                     <span className="text-[#00E5FF] font-bold">{layer.thickness} mm</span>
                   </div>
@@ -864,17 +881,15 @@ export default function KeychainGenerator() {
               </button>
             </div>
 
-            {/* Obszar podglądu z siatką przezroczystości szachownicy */}
             <div className="p-8 flex items-center justify-center min-h-[380px] bg-[#070A10] bg-[radial-gradient(#1E293B_1.5px,transparent_1.5px)] [background-size:20px_20px] overflow-hidden">
               {generatedSvgPreview && (
                 <div
-                  className="w-72 h-72 flex items-center justify-center drop-shadow-2xl"
+                  className="w-80 h-80 flex items-center justify-center drop-shadow-2xl"
                   dangerouslySetInnerHTML={{ __html: generatedSvgPreview }}
                 />
               )}
             </div>
 
-            {/* Pasek akcji na dole: Try Again & Confirm */}
             <div className="px-6 py-4 border-t border-[#24324A] bg-[#0B0F17]/60 flex items-center justify-end gap-3 font-mono text-xs">
               <button
                 type="button"
