@@ -65,11 +65,11 @@ export default function ModelViewer({
       if (meshRef.current) scene.remove(meshRef.current);
       if (supportsGroupRef.current) scene.remove(supportsGroupRef.current);
 
-      // 1. Standaryzacja orientacji modelu: STL Z-up -> Three.js Y-up
+      // 1. Orientacja bryły: STL Z-up -> Three.js Y-up
       geometry.rotateX(-Math.PI / 2);
       geometry.computeVertexNormals();
 
-      // 2. Centrowanie modelu w osiach X, Z i postawienie na Y = 0
+      // 2. Centrowanie bryły w płaszczyźnie poziomej (X, Z) i oparcie podstawy na stole (Y = 0)
       geometry.computeBoundingBox();
       const bbox = geometry.boundingBox;
       const centerX = (bbox.max.x + bbox.min.x) / 2;
@@ -100,7 +100,7 @@ export default function ModelViewer({
       grid.position.y = 0;
       scene.add(grid);
 
-      // 4. Podpory ze slicera
+      // 4. Podpory organiczne ze slicera
       if (supportLines && supportLines.length >= 6) {
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
@@ -108,26 +108,17 @@ export default function ModelViewer({
           new THREE.Float32BufferAttribute(supportLines, 3)
         );
 
-        // A. Konwersja osi STL Z-up -> Three.js Y-up
+        // A. Identyczna konwersja osi: Z-up -> Y-up
         lineGeo.rotateX(-Math.PI / 2);
 
-        // B. Wyrównanie zwrotu przód/tył i lewo/prawo
+        // B. Wyrównanie orientacji ze slicera
         lineGeo.rotateY(Math.PI);
         lineGeo.scale(-1, 1, 1);
 
         // C. Wyrównanie podstawy podpór do poziomu stołu (Y = 0)
         lineGeo.computeBoundingBox();
-        const sBbox = lineGeo.boundingBox;
-        const sMinY = sBbox.min.y;
+        const sMinY = lineGeo.boundingBox.min.y;
         lineGeo.translate(0, -sMinY, 0);
-
-        // D. Usuwamy sztuczne ściąganie środka i wyrównujemy z modelem
-        lineGeo.computeBoundingBox();
-        const curBbox = lineGeo.boundingBox;
-        const curCenterZ = (curBbox.max.z + curBbox.min.z) / 2;
-        
-        // Przesuwamy Z do środka modelu, a w osi X kompensujemy asymetrię gałęzi
-        lineGeo.translate(14, 0, -curCenterZ);
 
         const lineMat = new THREE.LineBasicMaterial({
           color: 0x10b981,
@@ -141,7 +132,7 @@ export default function ModelViewer({
         scene.add(supportMesh);
       }
 
-      // Kamera
+      // Pozycja kamery i celowanie w środek bryły
       camera.position.set(radius * 2.2, radius * 1.8, radius * 2.4);
       controls.target.set(0, modelHeight * 0.4, 0);
       controls.update();
