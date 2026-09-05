@@ -49,18 +49,12 @@ class QuoteRequest(BaseModel):
 
 
 def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
-    """
-    Kwantyzacja a'la MakerWorld:
-    - Precyzyjny Flood-Fill od krawędzi usuwa TYLKO tło zewnętrzne.
-    - Oczy, źrenice, nozdrza i wewnętrzne czernie NIE są usuwane.
-    - K-Means zachowuje pełną siatkę detali.
-    """
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
     if img is None:
-        raise ValueError("Nie udało się zdekodować przesłanego pliku graficznego.")
+        raise ValueError("Nie udało się zdekodować obrazu.")
 
-    # 1. Obsługa przezroczystości (alfa)
+    # 1. Obsługa przezroczystości
     has_alpha = False
     if len(img.shape) == 3 and img.shape[2] == 4:
         has_alpha = True
@@ -69,36 +63,33 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
     else:
         bgr = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
-    target_dim = 420
+    target_dim = 380
     h, w = bgr.shape[:2]
     scale = target_dim / max(h, w)
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
     bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    # Likwidacja kratek, pasków i znaków wodnych z tła
+    bgr_clean = cv2.bilateralFilter(bgr_resized, d=7, sigmaColor=75, sigmaSpace=75)
 
     if has_alpha:
         alpha_resized = cv2.resize(
             alpha_mask.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
         ).astype(bool)
     else:
-        # PRAWIDŁOWY FLOOD-FILL OD BRZEGÓW:
-        # Usuwamy tylko tło, które styka się z ramką kadru.
-        # Wnętrze psa (nawet jeśli ma ten sam kolor co tło) zostaje nienaruszone!
         flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
-        bgr_flood = bgr_resized.copy()
-
-        # Próbkujemy 4 rogi kadru
-        diff_tol = (18, 18, 18)
+        bgr_flood = bgr_clean.copy()
+        diff_tol = (20, 20, 20)
         cv2.floodFill(bgr_flood, flood_mask, (0, 0), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
         cv2.floodFill(bgr_flood, flood_mask, (new_w - 1, 0), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
         cv2.floodFill(bgr_flood, flood_mask, (0, new_h - 1), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
         cv2.floodFill(bgr_flood, flood_mask, (new_w - 1, new_h - 1), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
-
         bg_mask = (flood_mask[1:-1, 1:-1] == 1)
         alpha_resized = ~bg_mask
 
-    pixels = bgr_resized[alpha_resized].reshape(-1, 3)
+    pixels = bgr_clean[alpha_resized].reshape(-1, 3)
     if len(pixels) < n_colors:
-        pixels = bgr_resized.reshape(-1, 3)
+        pixels = bgr_clean.reshape(-1, 3)
         alpha_resized = np.ones((new_h, new_w), dtype=bool)
 
     # 2. Kwantyzacja K-Means
@@ -111,40 +102,62 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
     quantized_map = np.full((new_h, new_w), -1, dtype=int)
     quantized_map[alpha_resized] = kmeans.labels_
 
-    total_area = new_w * new_h
-    pad = 3.0
+    # 3. Wyznaczenie faktycznego Bounding Box motywu (centrowanie geometryczne)
+    y_indices, x_indices = np.where(alpha_resized)
+    if len(x_indices) > 0 and len(y_indices) > 0:
+        min_x, max_x = np.min(x_indices), np.max(x_indices)
+        min_y, max_y = np.min(y_indices), np.max(y_indices)
+    else:
+        min_x, max_x, min_y, max_y = 0, new_w, 0, new_h
+
+    bbox_w = max(max_x - min_x, 1)
+    bbox_h = max(max_y - min_y, 1)
+    max_side = max(bbox_w, bbox_h)
+
+    # Skalujemy motyw tak, by wypełniał obszar roboczy 0-100 z zachowaniem proporcji i środka
+    pad = 4.0
     usable_box = 100.0 - (2 * pad)
+    scale_fit = usable_box / max_side
+
+    # Przesunięcie środka motywu do (50, 50)
+    center_x = (min_x + max_x) / 2.0
+    center_y = (min_y + max_y) / 2.0
 
     collected_paths = []
     color_ids = ["color_1", "color_2", "color_3", "color_4"]
 
-    # 3. Ekstrakcja konturów
     for cluster_idx in range(n_colors):
         mask = (quantized_map == cluster_idx).astype(np.uint8) * 255
         if not np.any(mask):
             continue
 
-        # Delikatny blur zachowujący mikroskopijne bliki w oczach
-        mask = cv2.medianBlur(mask, 3)
+        # Usunięcie ząbków i pasków
+        mask = cv2.medianBlur(mask, 5)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS)
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            # Pomijamy tylko szum < 4px oraz zewnętrzne tło
-            if area < 4 or area > (0.92 * total_area):
+            if area < 8 or area > (0.90 * (new_w * new_h)):
                 continue
 
             pts = cnt.reshape(-1, 2)
             if len(pts) < 3:
                 continue
 
-            start_x = pad + (pts[0][0] / new_w) * usable_box
-            start_y = pad + (pts[0][1] / new_h) * usable_box
+            # Centrowanie punktów
+            def map_pt(pt):
+                nx = 50.0 + (pt[0] - center_x) * scale_fit
+                ny = 50.0 + (pt[1] - center_y) * scale_fit
+                return nx, ny
+
+            start_x, start_y = map_pt(pts[0])
             path_d = f"M {start_x:.2f} {start_y:.2f} "
 
             for pt in pts[1:]:
-                x = pad + (pt[0] / new_w) * usable_box
-                y = pad + (pt[1] / new_h) * usable_box
+                x, y = map_pt(pt)
                 path_d += f"L {x:.2f} {y:.2f} "
             path_d += "Z"
 
@@ -154,7 +167,6 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
                 "path_d": path_d
             })
 
-    # Sortowanie: największe elementy jako podkład, najdrobniejsze (oczy/bliki) na sam wierzch
     collected_paths.sort(key=lambda x: x["area"], reverse=True)
 
     svg_output = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
@@ -174,7 +186,6 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
 
     svg_output.append("</svg>")
     return "".join(svg_output), final_colors
-
 
 @app.get("/")
 def root():

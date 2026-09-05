@@ -86,32 +86,33 @@ const KeychainViewer3D = dynamic(
         const uniformScale = targetDim / 100;
 
         return (
-          <Center position={[0, 0, (baseThickness || 3) / 2]}>
-            <group scale={[uniformScale, -uniformScale, 1]}>
-              {groups.map((grp, gIdx) =>
-                grp.shapes.map((shape, sIdx) => (
-                  <mesh key={`g-${gIdx}-s-${sIdx}`} position={[0, 0, 0]}>
-                    <extrudeGeometry
-                      args={[
-                        shape,
-                        {
-                          depth: grp.cfg.thickness,
-                          bevelEnabled: false,
-                        },
-                      ]}
-                    />
-                    <meshStandardMaterial
-                      color={grp.cfg.color}
-                      roughness={0.4}
-                      metalness={0.05}
-                    />
-                  </mesh>
-                ))
-              )}
-            </group>
-          </Center>
+          <group position={[0, 0, (baseThickness || 3) / 2]}>
+            <Center position={[0, 0, 0]}>
+              <group scale={[uniformScale, -uniformScale, 1]}>
+                {groups.map((grp, gIdx) =>
+                  grp.shapes.map((shape, sIdx) => (
+                    <mesh key={`g-${gIdx}-s-${sIdx}`} position={[0, 0, 0]}>
+                      <extrudeGeometry
+                        args={[
+                          shape,
+                          {
+                            depth: grp.cfg.thickness,
+                            bevelEnabled: false,
+                          },
+                        ]}
+                      />
+                      <meshStandardMaterial
+                        color={grp.cfg.color}
+                        roughness={0.4}
+                        metalness={0.05}
+                      />
+                    </mesh>
+                  ))
+                )}
+              </group>
+            </Center>
+          </group>
         );
-      }
 
       function KeychainMesh({
         shapeType,
