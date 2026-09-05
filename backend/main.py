@@ -1,6 +1,6 @@
 """
 Drukstacja - backend API
-Obsluguje: upload pliku CAD -> analiza geometrii -> wycena druku 3D
+Obsluguje: upload pliku CAD -> zapis w R2 -> analiza geometrii -> wycena druku 3D
 """
 import os
 import shutil
@@ -14,10 +14,10 @@ from pydantic import BaseModel
 
 from analysis import analyze_file, UnsupportedFileType
 from pricing import calculate_price, MATERIALS
+from storage import upload_file_to_r2  # <-- IMPORT FUNKCJI DO R2
 
 app = FastAPI(title="Drukstacja API", version="0.1.0")
 
-# W produkcji zmien "*" na adres swojej domeny frontendu, np. https://drukstacja.pl
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
@@ -52,10 +52,10 @@ def get_materials():
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     """
-    Przyjmuje plik CAD (STL/STEP/OBJ), zwraca podstawowe dane geometrii:
-    objetosc, bounding box, powierzchnie.
-    Nie liczy jeszcze ceny - to osobny krok (/quote), zeby frontend mogl
-    pozwolic userowi zmienic material/ilosc bez ponownego wgrywania pliku.
+    Przyjmuje plik CAD (STL/STEP/OBJ):
+    1. Zapisuje w Cloudflare R2
+    2. Przeprowadza analize geometrii
+    3. Zwraca dane geometrii oraz file_key do zamowienia
     """
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -64,26 +64,45 @@ async def analyze(file: UploadFile = File(...)):
             detail=f"Nieobslugiwany format pliku: {ext}. Dozwolone: {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
-    # Zapisz tymczasowo na dysku, zeby biblioteki CAD mogly go wczytac
+    # Tymczasowy plik lokalny do analizy
     tmp_dir = tempfile.mkdtemp()
-    tmp_path = os.path.join(tmp_dir, f"{uuid.uuid4().hex}{ext}")
+    unique_id = uuid.uuid4().hex
+    tmp_path = os.path.join(tmp_dir, f"{unique_id}{ext}")
+    r2_key = f"models/{unique_id}_{file.filename}"
 
     try:
+        # Zapisz plik na dysku lokalnym
         with open(tmp_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
+        # Kontrola rozmiaru
         size_mb = os.path.getsize(tmp_path) / (1024 * 1024)
         if size_mb > MAX_FILE_SIZE_MB:
-            raise HTTPException(status_code=400, detail=f"Plik za duzy ({size_mb:.1f}MB). Limit: {MAX_FILE_SIZE_MB}MB")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Plik za duzy ({size_mb:.1f}MB). Limit: {MAX_FILE_SIZE_MB}MB"
+            )
 
+        # 1. Wysylka pliku do Cloudflare R2
+        with open(tmp_path, "rb") as f_upload:
+            upload_file_to_r2(
+                file_obj=f_upload, 
+                object_name=r2_key, 
+                content_type=file.content_type or "application/octet-stream"
+            )
+
+        # 2. Analiza geometrii
         result = analyze_file(tmp_path, ext)
+        
+        # 3. Dodajemy klucz R2 do odpowiedzi, zeby frontend mogl go powiazac ze zlozonym zamowieniem
+        result["file_key"] = r2_key
+        result["original_filename"] = file.filename
         return result
 
     except UnsupportedFileType as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        # W produkcji: loguj pelny traceback do systemu logow (np. Railway logs)
-        raise HTTPException(status_code=500, detail=f"Blad analizy pliku: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Blad analizy lub zapisu w R2: {str(e)}")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
