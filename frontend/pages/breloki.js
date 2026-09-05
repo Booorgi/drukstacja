@@ -45,7 +45,7 @@ const KeychainViewer3D = dynamic(
       import("@react-three/drei"),
       import("three-stdlib"),
     ]).then(([{ Canvas }, { OrbitControls, Center, RoundedBox }, { SVGLoader }]) => {
-      function SvgMakerWorldLayers({ svgString, layersConfig }) {
+      function SvgMakerWorldLayers({ svgString, layersConfig, graphicScale }) {
         const parsedGroups = useMemo(() => {
           if (!svgString) return { c1: [], c2: [], c3: [], c4: [] };
           try {
@@ -81,9 +81,12 @@ const KeychainViewer3D = dynamic(
           { shapes: parsedGroups.c4, cfg: layersConfig[3], order: 4 },
         ];
 
+        // dynamiczne skalowanie grafiki (np. 0.4 * scale)
+        const s = 0.45 * (graphicScale / 100);
+
         return (
           <Center position={[0, 0, 0]}>
-            <group scale={[0.4, -0.4, 1]}>
+            <group scale={[s, -s, 1]}>
               {groups.map((grp, gIdx) => {
                 const zOffset = gIdx * 0.05;
                 return grp.shapes.map((shape, sIdx) => (
@@ -114,36 +117,81 @@ const KeychainViewer3D = dynamic(
         );
       }
 
-      function KeychainMesh({ shapeType, baseColor, reliefSvg, layersConfig }) {
+      function KeychainMesh({
+        shapeType,
+        baseColor,
+        baseWidth,
+        baseHeight,
+        baseDiameter,
+        baseThickness,
+        graphicScale,
+        reliefSvg,
+        layersConfig,
+      }) {
+        const radius = baseDiameter / 2;
+
         return (
           <group>
+            {/* 1. BAZA PROSTOKĄTNA */}
             {shapeType === "rect" && (
               <group>
-                <RoundedBox args={[68, 50, 4]} radius={4} smoothness={4} position={[0, 0, 0]}>
+                <RoundedBox
+                  args={[baseWidth, baseHeight, baseThickness]}
+                  radius={4}
+                  smoothness={4}
+                  position={[0, 0, 0]}
+                >
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </RoundedBox>
-                <mesh position={[-38, 0, 0]}>
-                  <torusGeometry args={[6.5, 2, 16, 32]} />
+                {/* Ucho breloka po lewej */}
+                <mesh position={[-baseWidth / 2 - 5, 0, 0]}>
+                  <torusGeometry args={[5.5, 1.8, 16, 32]} />
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
               </group>
             )}
 
+            {/* 2. BAZA OKRĄGŁA */}
             {shapeType === "circle" && (
               <group>
                 <mesh rotation={[Math.PI / 2, 0, 0]}>
-                  <cylinderGeometry args={[28, 28, 4, 48]} />
+                  <cylinderGeometry
+                    args={[radius, radius, baseThickness, 64]}
+                  />
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
-                <mesh position={[0, 32, 0]}>
-                  <torusGeometry args={[6.5, 2, 16, 32]} />
+                {/* Ucho breloka na górze */}
+                <mesh position={[0, radius + 5, 0]}>
+                  <torusGeometry args={[5.5, 1.8, 16, 32]} />
                   <meshStandardMaterial color={baseColor} roughness={0.5} />
                 </mesh>
               </group>
             )}
 
-            <group position={[0, 0, 2.01]}>
-              <SvgMakerWorldLayers svgString={reliefSvg} layersConfig={layersConfig} />
+            {/* 3. BAZA HEXAGON (SZEŚCIOKĄT) */}
+            {shapeType === "hexagon" && (
+              <group>
+                <mesh rotation={[Math.PI / 2, 0, Math.PI / 6]}>
+                  <cylinderGeometry
+                    args={[radius, radius, baseThickness, 6]}
+                  />
+                  <meshStandardMaterial color={baseColor} roughness={0.5} />
+                </mesh>
+                {/* Ucho breloka na szczycie wierzchołka */}
+                <mesh position={[0, radius + 5, 0]}>
+                  <torusGeometry args={[5.5, 1.8, 16, 32]} />
+                  <meshStandardMaterial color={baseColor} roughness={0.5} />
+                </mesh>
+              </group>
+            )}
+
+            {/* Płaskorzeźba ułożona bezpośrednio na powierzchni bazy */}
+            <group position={[0, 0, baseThickness / 2 + 0.01]}>
+              <SvgMakerWorldLayers
+                svgString={reliefSvg}
+                layersConfig={layersConfig}
+                graphicScale={graphicScale}
+              />
             </group>
           </group>
         );
@@ -151,12 +199,12 @@ const KeychainViewer3D = dynamic(
 
       return function Viewer(props) {
         return (
-          <Canvas camera={{ position: [0, 45, 95], fov: 45 }}>
+          <Canvas camera={{ position: [0, 45, 105], fov: 45 }}>
             <ambientLight intensity={0.8} />
             <directionalLight position={[25, 50, 35]} intensity={1.5} />
             <directionalLight position={[-25, 20, -25]} intensity={0.5} />
             <KeychainMesh {...props} />
-            <OrbitControls makeDefault minDistance={30} maxDistance={170} />
+            <OrbitControls makeDefault minDistance={30} maxDistance={200} />
           </Canvas>
         );
       };
@@ -174,10 +222,18 @@ export default function KeychainGenerator() {
   const genMenuRef = useRef(null);
   const userMenuRef = useRef(null);
 
-  const [shapeType, setShapeType] = useState("rect");
+  // Kształt bazy i wymiary
+  const [shapeType, setShapeType] = useState("rect"); // 'rect' | 'circle' | 'hexagon'
   const [baseColor, setBaseColor] = useState("#0B0F17");
+  const [baseWidth, setBaseWidth] = useState(65); // mm dla prostokąta
+  const [baseHeight, setBaseHeight] = useState(50); // mm dla prostokąta
+  const [baseDiameter, setBaseDiameter] = useState(55); // mm dla koła i hexagonu
+  const [baseThickness, setBaseThickness] = useState(3.0); // mm grubość podkładki
 
-  // Konfiguracja warstw
+  // Skalowanie grafiki na breloku
+  const [graphicScale, setGraphicScale] = useState(80); // 40% - 100%
+
+  // Konfiguracja 4 warstw filamentu
   const [layersConfig, setLayersConfig] = useState([
     { id: 1, name: "Warstwa 1", color: "#0B0F17", thickness: 0.8 },
     { id: 2, name: "Warstwa 2", color: "#00E5FF", thickness: 1.0 },
@@ -185,10 +241,9 @@ export default function KeychainGenerator() {
     { id: 4, name: "Warstwa 4", color: "#FFFFFF", thickness: 1.4 },
   ]);
 
-  // Kopia zapasowa kolorów wykrytych ze zdjęcia (do resetowania)
   const [originalColors, setOriginalColors] = useState([]);
 
-  // ETAP 1: PREPROCESSING MODAL
+  // Modale
   const [isPreprocessingOpen, setIsPreprocessingOpen] = useState(false);
   const [modalImageSrc, setModalImageSrc] = useState(null);
   const [exposure, setExposure] = useState(1.0);
@@ -197,7 +252,6 @@ export default function KeychainGenerator() {
   const [cropRatio, setCropRatio] = useState("1:1");
   const [keepBg, setKeepBg] = useState(false);
 
-  // ETAP 2: CONVERSION PREVIEW MODAL
   const [isConversionPreviewOpen, setIsConversionPreviewOpen] = useState(false);
   const [generatedSvgPreview, setGeneratedSvgPreview] = useState(null);
   const [detectedColors, setDetectedColors] = useState([]);
@@ -220,14 +274,12 @@ export default function KeychainGenerator() {
     });
   }
 
-  // Przywrócenie pojedynczej warstwy do koloru z grafiki
   function resetSingleLayerColor(index) {
     if (originalColors[index]) {
       updateLayer(index, "color", originalColors[index]);
     }
   }
 
-  // Przywrócenie wszystkich warstw do kolorów z grafiki
   function resetAllColorsToOriginal() {
     if (originalColors.length > 0) {
       setLayersConfig((prev) =>
@@ -327,9 +379,7 @@ export default function KeychainGenerator() {
     }
 
     if (detectedColors.length > 0) {
-      // Zapisujemy kopię oryginalną
       setOriginalColors([...detectedColors]);
-      // Aplikujemy do aktywnych warstw
       setLayersConfig((prev) =>
         prev.map((layer, idx) => ({
           ...layer,
@@ -359,15 +409,19 @@ export default function KeychainGenerator() {
       if (u) fetchCart(u.id);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) fetchCart(u.id);
-    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_e, session) => {
+        const u = session?.user ?? null;
+        setUser(u);
+        if (u) fetchCart(u.id);
+      }
+    );
 
     function handleClickOutside(e) {
-      if (genMenuRef.current && !genMenuRef.current.contains(e.target)) setIsGeneratorsOpen(false);
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) setIsUserMenuOpen(false);
+      if (genMenuRef.current && !genMenuRef.current.contains(e.target))
+        setIsGeneratorsOpen(false);
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target))
+        setIsUserMenuOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
 
@@ -385,10 +439,17 @@ export default function KeychainGenerator() {
 
     setAddingToCart(true);
     try {
-      const maxThickness = Math.max(...layersConfig.map((l) => l.thickness));
+      const maxLayerThickness = Math.max(
+        ...layersConfig.map((l) => l.thickness)
+      );
+      const totalThickness = baseThickness + maxLayerThickness;
+
+      const dimX = shapeType === "rect" ? baseWidth : baseDiameter;
+      const dimY = shapeType === "rect" ? baseHeight : baseDiameter;
+
       const { error } = await supabase.from("orders").insert({
         user_id: user.id,
-        file_name: `Brelok 4-Color: [${imageFileName}]`,
+        file_name: `Brelok 4-Color [${shapeType.toUpperCase()}]: ${imageFileName}`,
         material: "PLA Multi-Color (4 barwy AMS)",
         technology: "FDM Multi-Color Quantized",
         layer_height: "0.20 mm",
@@ -397,7 +458,7 @@ export default function KeychainGenerator() {
         brass_inserts: false,
         quantity: quantity,
         total_price: parseFloat(totalPrice),
-        dimensions_mm: [shapeType === "rect" ? 68 : 56, 50, 4 + Number(maxThickness)],
+        dimensions_mm: [dimX, dimY, totalThickness],
         status: "in_cart",
       });
 
@@ -430,7 +491,9 @@ export default function KeychainGenerator() {
               <span className="text-xl font-bold tracking-tight text-white">
                 DRUK<span className="text-[#00E5FF]">STACJA</span>
               </span>
-              <span className="text-[10px] text-[#94A3B8] block -mt-1 tracking-widest font-mono">LABS 3D</span>
+              <span className="text-[10px] text-[#94A3B8] block -mt-1 tracking-widest font-mono">
+                LABS 3D
+              </span>
             </div>
           </Link>
 
@@ -446,12 +509,19 @@ export default function KeychainGenerator() {
               >
                 <span>Generatory</span>
                 <svg
-                  className={`w-3.5 h-3.5 transition-transform ${isGeneratorsOpen ? "rotate-180 text-[#00E5FF]" : ""}`}
+                  className={`w-3.5 h-3.5 transition-transform ${
+                    isGeneratorsOpen ? "rotate-180 text-[#00E5FF]" : ""
+                  }`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M19 9l-7 7-7-7"
+                  />
                 </svg>
               </button>
 
@@ -473,12 +543,16 @@ export default function KeychainGenerator() {
                     className="flex items-center justify-between px-4 py-2.5 text-xs font-mono text-[#94A3B8] hover:bg-[#161F30] hover:text-white cursor-pointer transition"
                   >
                     <span>Litofany (Zdjęcie 3D)</span>
-                    <span className="text-[9px] bg-[#24324A] px-1.5 py-0.5 rounded text-[#94A3B8]">Wkrótce</span>
+                    <span className="text-[9px] bg-[#24324A] px-1.5 py-0.5 rounded text-[#94A3B8]">
+                      Wkrótce
+                    </span>
                   </div>
                 </div>
               )}
             </div>
-            <span className="hover:text-[#00E5FF] cursor-pointer transition">Części użytkowe</span>
+            <span className="hover:text-[#00E5FF] cursor-pointer transition">
+              Części użytkowe
+            </span>
           </nav>
 
           <div className="flex items-center gap-3">
@@ -487,8 +561,18 @@ export default function KeychainGenerator() {
               onClick={() => setIsCartOpen(true)}
               className="px-3 py-1.5 text-xs font-mono bg-[#161F30] border border-[#24324A] hover:border-[#00E5FF] text-white rounded-lg transition flex items-center gap-2 cursor-pointer"
             >
-              <svg className="w-4 h-4 text-[#00E5FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+              <svg
+                className="w-4 h-4 text-[#00E5FF]"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
+                />
               </svg>
               <span>Koszyk</span>
               <span className="px-1.5 py-0.5 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] text-[10px] font-bold">
@@ -510,8 +594,12 @@ export default function KeychainGenerator() {
                 {isUserMenuOpen && (
                   <div className="absolute right-0 mt-2 w-56 bg-[#0E1524] border border-[#24324A] rounded-xl shadow-2xl py-2 z-50 backdrop-blur-md">
                     <div className="px-4 py-2 border-b border-[#24324A] mb-1">
-                      <span className="text-[10px] uppercase font-mono text-[#94A3B8] block">Zalogowano jako</span>
-                      <span className="text-xs font-mono text-[#00E5FF] truncate block font-bold">{user.email}</span>
+                      <span className="text-[10px] uppercase font-mono text-[#94A3B8] block">
+                        Zalogowano jako
+                      </span>
+                      <span className="text-xs font-mono text-[#00E5FF] truncate block font-bold">
+                        {user.email}
+                      </span>
                     </div>
                     <Link
                       href="/orders"
@@ -549,15 +637,24 @@ export default function KeychainGenerator() {
       {/* GŁÓWNY VIEWPORT 3D & KONTROLKI */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
         <section className="lg:col-span-7 flex flex-col gap-4">
-          <div className="relative w-full h-[620px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
+          <div className="relative w-full h-[640px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
             <div className="absolute top-4 left-4 z-10 font-mono text-xs text-[#94A3B8] bg-[#0B0F17]/80 px-3 py-1.5 rounded-lg border border-[#24324A] backdrop-blur-md flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-[#00E5FF] animate-pulse" />
-              Podgląd 3D Multi-Color • 4 Poziomy Wypukłości Z
+              Podgląd 3D • {shapeType.toUpperCase()}{" "}
+              {shapeType === "rect"
+                ? `${baseWidth}x${baseHeight}mm`
+                : `⌀${baseDiameter}mm`}{" "}
+              • Skala {graphicScale}%
             </div>
 
             <KeychainViewer3D
               shapeType={shapeType}
               baseColor={baseColor}
+              baseWidth={baseWidth}
+              baseHeight={baseHeight}
+              baseDiameter={baseDiameter}
+              baseThickness={baseThickness}
+              graphicScale={graphicScale}
               reliefSvg={uploadedSvg}
               layersConfig={layersConfig}
             />
@@ -565,20 +662,22 @@ export default function KeychainGenerator() {
         </section>
 
         <section className="lg:col-span-5 flex flex-col gap-4">
-          <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-5 shadow-xl space-y-4 max-h-[620px] overflow-y-auto custom-scrollbar">
+          <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-5 shadow-xl space-y-4 max-h-[640px] overflow-y-auto custom-scrollbar">
             <div className="border-b border-[#24324A] pb-2">
               <div className="flex items-center justify-between">
-                <h1 className="text-base font-bold text-white tracking-wide">GENERATOR BRELOKÓW 4-COLOR</h1>
+                <h1 className="text-base font-bold text-white tracking-wide">
+                  GENERATOR BRELOKÓW 4-COLOR
+                </h1>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30">
                   AMS 4-Filament
                 </span>
               </div>
               <p className="text-[11px] font-mono text-[#94A3B8] mt-0.5">
-                Auto-pobieranie palety kolorów z obrazu i niezależne grubości Z
+                Kształt bazy, wymiary i skalowanie motywu graficznego
               </p>
             </div>
 
-            {/* Wybór grafiki */}
+            {/* 1. Upload */}
             <div>
               <span className="text-[11px] font-mono text-[#00E5FF] uppercase font-bold block mb-1.5">
                 1. Wybierz grafikę
@@ -592,18 +691,30 @@ export default function KeychainGenerator() {
               />
               <div
                 onClick={() => !isProcessingImg && fileInputRef.current?.click()}
-                className={`border border-dashed rounded-xl p-3 flex items-center justify-between transition cursor-pointer ${
+                className={`border border-dashed rounded-xl p-2.5 flex items-center justify-between transition cursor-pointer ${
                   isProcessingImg
                     ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white animate-pulse"
                     : "border-[#24324A] hover:border-[#00E5FF] bg-[#0B0F17]"
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-[#00E5FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  <svg
+                    className="w-4 h-4 text-[#00E5FF]"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
                   </svg>
-                  <span className="font-mono text-xs text-white truncate max-w-[200px]">
-                    {isProcessingImg ? "AI analizuje klastry obrazu..." : imageFileName}
+                  <span className="font-mono text-xs text-white truncate max-w-[190px]">
+                    {isProcessingImg
+                      ? "AI analizuje klastry obrazu..."
+                      : imageFileName}
                   </span>
                 </div>
                 <span className="px-2.5 py-1 rounded bg-[#161F30] text-[#00E5FF] border border-[#24324A] text-xs font-mono">
@@ -612,54 +723,169 @@ export default function KeychainGenerator() {
               </div>
             </div>
 
-            {/* Kształt bazy */}
-            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-              <button
-                type="button"
-                onClick={() => setShapeType("rect")}
-                className={`py-1.5 px-3 rounded-lg border font-bold transition cursor-pointer ${
-                  shapeType === "rect" ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white" : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
-                }`}
-              >
-                Płytka Prostokątna
-              </button>
-              <button
-                type="button"
-                onClick={() => setShapeType("circle")}
-                className={`py-1.5 px-3 rounded-lg border font-bold transition cursor-pointer ${
-                  shapeType === "circle" ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white" : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
-                }`}
-              >
-                Płytka Okrągła
-              </button>
-            </div>
-
-            {/* Kolor bazy */}
-            <div className="bg-[#0B0F17]/60 p-2.5 rounded-xl border border-[#24324A] space-y-1.5">
-              <span className="text-[10px] font-mono text-[#94A3B8] uppercase block">
-                Poziom 0: Kolor podkładki breloka (grubość 4 mm)
+            {/* 2. Kształt bazy i wymiary */}
+            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-2.5">
+              <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
+                2. Kształt i wymiary bazy (Plate Dimensions)
               </span>
-              <div className="flex flex-wrap gap-1">
-                {PALETTE.map((pal) => (
-                  <button
-                    key={`base-${pal.id}`}
-                    type="button"
-                    onClick={() => setBaseColor(pal.id)}
-                    className={`w-5 h-5 rounded border transition cursor-pointer ${
-                      baseColor === pal.id ? "border-[#00E5FF] scale-110 shadow-[0_0_8px_#00E5FF]" : "border-[#24324A]"
-                    }`}
-                    style={{ backgroundColor: pal.id }}
-                    title={pal.name}
+
+              {/* Wybór: Prostokąt / Koło / Hexagon */}
+              <div className="grid grid-cols-3 gap-1.5 text-xs font-mono">
+                <button
+                  type="button"
+                  onClick={() => setShapeType("rect")}
+                  className={`py-1.5 rounded-lg border font-bold transition cursor-pointer ${
+                    shapeType === "rect"
+                      ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
+                      : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
+                  }`}
+                >
+                  Prostokąt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShapeType("circle")}
+                  className={`py-1.5 rounded-lg border font-bold transition cursor-pointer ${
+                    shapeType === "circle"
+                      ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
+                      : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
+                  }`}
+                >
+                  Okrąg
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShapeType("hexagon")}
+                  className={`py-1.5 rounded-lg border font-bold transition cursor-pointer ${
+                    shapeType === "hexagon"
+                      ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
+                      : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
+                  }`}
+                >
+                  Hexagon
+                </button>
+              </div>
+
+              {/* Suwaki wymiarów w zależności od kształtu */}
+              {shapeType === "rect" ? (
+                <div className="grid grid-cols-2 gap-3 text-[11px] font-mono">
+                  <div>
+                    <div className="flex justify-between text-[#94A3B8] mb-0.5">
+                      <span>Szerokość</span>
+                      <span className="text-white font-bold">{baseWidth} mm</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="40"
+                      max="100"
+                      step="2"
+                      value={baseWidth}
+                      onChange={(e) => setBaseWidth(parseInt(e.target.value))}
+                      className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[#94A3B8] mb-0.5">
+                      <span>Wysokość</span>
+                      <span className="text-white font-bold">{baseHeight} mm</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="35"
+                      max="85"
+                      step="2"
+                      value={baseHeight}
+                      onChange={(e) => setBaseHeight(parseInt(e.target.value))}
+                      className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="text-[11px] font-mono">
+                  <div className="flex justify-between text-[#94A3B8] mb-0.5">
+                    <span>Średnica / Rozmiar</span>
+                    <span className="text-white font-bold">{baseDiameter} mm</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="40"
+                    max="90"
+                    step="2"
+                    value={baseDiameter}
+                    onChange={(e) => setBaseDiameter(parseInt(e.target.value))}
+                    className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
                   />
-                ))}
+                </div>
+              )}
+
+              {/* Grubość samej bazy (podkładki) */}
+              <div className="text-[11px] font-mono pt-1 border-t border-[#24324A]/60">
+                <div className="flex justify-between text-[#94A3B8] mb-0.5">
+                  <span>Grubość płytki bazy (Z)</span>
+                  <span className="text-[#00E5FF] font-bold">{baseThickness} mm</span>
+                </div>
+                <input
+                  type="range"
+                  min="1.6"
+                  max="5.0"
+                  step="0.2"
+                  value={baseThickness}
+                  onChange={(e) => setBaseThickness(parseFloat(e.target.value))}
+                  className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
+                />
+              </div>
+
+              {/* Kolor bazy podkładki */}
+              <div>
+                <span className="text-[10px] font-mono text-[#94A3B8] uppercase block mb-1">
+                  Kolor bazy podkładki
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {PALETTE.map((pal) => (
+                    <button
+                      key={`base-${pal.id}`}
+                      type="button"
+                      onClick={() => setBaseColor(pal.id)}
+                      className={`w-4 h-4 rounded border transition cursor-pointer ${
+                        baseColor === pal.id
+                          ? "border-[#00E5FF] scale-110 shadow-[0_0_8px_#00E5FF]"
+                          : "border-[#24324A]"
+                      }`}
+                      style={{ backgroundColor: pal.id }}
+                      title={pal.name}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
 
-            {/* Warstwy filamentu z PRZYCISKIEM RESETU DO DOMYŚLNYCH KOLORÓW */}
+            {/* 3. Skalowanie grafiki na breloku */}
+            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-1.5">
+              <div className="flex justify-between text-xs font-mono">
+                <span className="text-white font-bold">
+                  Skalowanie grafiki na breloku
+                </span>
+                <span className="text-[#00E5FF] font-bold">{graphicScale}%</span>
+              </div>
+              <input
+                type="range"
+                min="40"
+                max="100"
+                step="2"
+                value={graphicScale}
+                onChange={(e) => setGraphicScale(parseInt(e.target.value))}
+                className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
+              />
+              <span className="text-[10px] font-mono text-[#94A3B8] block">
+                Zmniejsz skalę, aby uzyskać większy margines wokół grafiki.
+              </span>
+            </div>
+
+            {/* 4. Warstwy filamentu */}
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
-                  2. Warstwy filamentu & Grubość Z (mm)
+                  3. Warstwy filamentu & Wypukłość Z (mm)
                 </span>
                 {originalColors.length > 0 && (
                   <button
@@ -668,8 +894,18 @@ export default function KeychainGenerator() {
                     className="text-[10px] font-mono text-[#00E5FF] hover:underline flex items-center gap-1 cursor-pointer"
                     title="Przywróć oryginalne barwy wykryte z grafiki"
                   >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    <svg
+                      className="w-3 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                      />
                     </svg>
                     <span>↺ Przywróć oryginalne</span>
                   </button>
@@ -677,7 +913,10 @@ export default function KeychainGenerator() {
               </div>
 
               {layersConfig.map((layer, idx) => (
-                <div key={layer.id} className="bg-[#0B0F17]/70 p-2.5 rounded-xl border border-[#24324A] space-y-1.5">
+                <div
+                  key={layer.id}
+                  className="bg-[#0B0F17]/70 p-2.5 rounded-xl border border-[#24324A] space-y-1.5"
+                >
                   <div className="flex items-center justify-between text-xs font-mono">
                     <div className="flex items-center gap-2">
                       <span className="w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] bg-[#161F30] text-white border border-[#24324A]">
@@ -693,17 +932,20 @@ export default function KeychainGenerator() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {originalColors[idx] && originalColors[idx] !== layer.color && (
-                        <button
-                          type="button"
-                          onClick={() => resetSingleLayerColor(idx)}
-                          className="text-[10px] font-mono text-[#94A3B8] hover:text-[#00E5FF] border border-[#24324A] px-1.5 py-0.5 rounded transition"
-                          title={`Cofnij do koloru wykrytego: ${originalColors[idx]}`}
-                        >
-                          Cofnij
-                        </button>
-                      )}
-                      <span className="text-[#00E5FF] font-bold">{layer.thickness} mm</span>
+                      {originalColors[idx] &&
+                        originalColors[idx] !== layer.color && (
+                          <button
+                            type="button"
+                            onClick={() => resetSingleLayerColor(idx)}
+                            className="text-[10px] font-mono text-[#94A3B8] hover:text-[#00E5FF] border border-[#24324A] px-1.5 py-0.5 rounded transition"
+                            title={`Cofnij do koloru: ${originalColors[idx]}`}
+                          >
+                            Cofnij
+                          </button>
+                        )}
+                      <span className="text-[#00E5FF] font-bold">
+                        +{layer.thickness} mm
+                      </span>
                     </div>
                   </div>
 
@@ -713,7 +955,9 @@ export default function KeychainGenerator() {
                     max="3.0"
                     step="0.2"
                     value={layer.thickness}
-                    onChange={(e) => updateLayer(idx, "thickness", parseFloat(e.target.value))}
+                    onChange={(e) =>
+                      updateLayer(idx, "thickness", parseFloat(e.target.value))
+                    }
                     className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
                   />
 
@@ -723,8 +967,10 @@ export default function KeychainGenerator() {
                         key={pal.id}
                         type="button"
                         onClick={() => updateLayer(idx, "color", pal.id)}
-                        className={`w-5 h-5 rounded border transition cursor-pointer ${
-                          layer.color === pal.id ? "border-[#00E5FF] scale-110 shadow-[0_0_8px_#00E5FF]" : "border-[#24324A]"
+                        className={`w-4 h-4 rounded border transition cursor-pointer ${
+                          layer.color === pal.id
+                            ? "border-[#00E5FF] scale-110 shadow-[0_0_8px_#00E5FF]"
+                            : "border-[#24324A]"
                         }`}
                         style={{ backgroundColor: pal.id }}
                         title={pal.name}
@@ -739,8 +985,12 @@ export default function KeychainGenerator() {
             <div className="pt-2 border-t border-[#24324A] space-y-2">
               <div className="flex items-baseline justify-between font-mono">
                 <div>
-                  <span className="text-[10px] text-[#94A3B8] block uppercase">Cena FDM Multi-Color AMS</span>
-                  <span className="text-2xl font-bold text-[#00E5FF]">{totalPrice}</span>
+                  <span className="text-[10px] text-[#94A3B8] block uppercase">
+                    Cena FDM Multi-Color AMS
+                  </span>
+                  <span className="text-2xl font-bold text-[#00E5FF]">
+                    {totalPrice}
+                  </span>
                   <span className="text-xs text-[#94A3B8] ml-1">PLN</span>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -751,7 +1001,9 @@ export default function KeychainGenerator() {
                   >
                     -
                   </button>
-                  <span className="font-mono text-white text-xs font-bold w-6 text-center">{quantity}</span>
+                  <span className="font-mono text-white text-xs font-bold w-6 text-center">
+                    {quantity}
+                  </span>
                   <button
                     type="button"
                     onClick={() => setQuantity(quantity + 1)}
@@ -768,24 +1020,36 @@ export default function KeychainGenerator() {
                 onClick={handleAddToCart}
                 className="w-full py-3 px-4 bg-gradient-to-r from-[#00E5FF] to-[#2563EB] text-[#0B0F17] font-bold text-xs uppercase tracking-wider rounded-xl shadow-[0_0_20px_rgba(0,229,255,0.25)] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
+                  />
                 </svg>
-                {addingToCart ? "Zapisuję..." : "Dodaj brelok Multi-Color do koszyka"}
+                {addingToCart
+                  ? "Zapisuję..."
+                  : "Dodaj brelok Multi-Color do koszyka"}
               </button>
             </div>
           </div>
         </section>
       </main>
 
-      {/* ========================================================= */}
-      {/* MODAL 1: IMAGE PREPROCESSING                              */}
-      {/* ========================================================= */}
+      {/* MODAL 1: PREPROCESSING */}
       {isPreprocessingOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-[#0E1524] border border-[#24324A] rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-[#24324A] flex items-center justify-between">
-              <h2 className="text-base font-bold text-white tracking-wide">Image Preprocessing</h2>
+              <h2 className="text-base font-bold text-white tracking-wide">
+                Image Preprocessing
+              </h2>
               <button
                 onClick={() => setIsPreprocessingOpen(false)}
                 className="text-[#94A3B8] hover:text-white transition cursor-pointer text-sm"
@@ -811,7 +1075,9 @@ export default function KeychainGenerator() {
               <div className="md:col-span-5 flex flex-col justify-between space-y-4 font-mono text-xs">
                 <div className="space-y-4">
                   <div>
-                    <label className="text-[#94A3B8] uppercase block mb-1.5 font-bold">Crop Ratio</label>
+                    <label className="text-[#94A3B8] uppercase block mb-1.5 font-bold">
+                      Crop Ratio
+                    </label>
                     <div className="flex items-center gap-1.5">
                       {["Free", "1:1", "4:3", "3:2"].map((ratio) => (
                         <button
@@ -836,7 +1102,9 @@ export default function KeychainGenerator() {
                       type="button"
                       onClick={() => setKeepBg(!keepBg)}
                       className={`w-10 h-5 flex items-center rounded-full p-1 cursor-pointer transition ${
-                        keepBg ? "bg-emerald-500 justify-end" : "bg-[#1E293B] justify-start"
+                        keepBg
+                          ? "bg-emerald-500 justify-end"
+                          : "bg-[#1E293B] justify-start"
                       }`}
                     >
                       <div className="bg-white w-3.5 h-3.5 rounded-full shadow-md" />
@@ -844,7 +1112,9 @@ export default function KeychainGenerator() {
                   </div>
 
                   <div className="space-y-3 pt-1">
-                    <span className="text-[#00E5FF] uppercase font-bold block text-[11px]">Image Adjustment</span>
+                    <span className="text-[#00E5FF] uppercase font-bold block text-[11px]">
+                      Image Adjustment
+                    </span>
                     <div>
                       <div className="flex justify-between text-[#94A3B8] mb-1">
                         <span>Exposure (Jasność)</span>
@@ -856,7 +1126,9 @@ export default function KeychainGenerator() {
                         max="2.0"
                         step="0.1"
                         value={exposure}
-                        onChange={(e) => setExposure(parseFloat(e.target.value))}
+                        onChange={(e) =>
+                          setExposure(parseFloat(e.target.value))
+                        }
                         className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
                       />
                     </div>
@@ -871,14 +1143,18 @@ export default function KeychainGenerator() {
                         max="2.5"
                         step="0.1"
                         value={contrast}
-                        onChange={(e) => setContrast(parseFloat(e.target.value))}
+                        onChange={(e) =>
+                          setContrast(parseFloat(e.target.value))
+                        }
                         className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
                       />
                     </div>
                     <div>
                       <div className="flex justify-between text-[#94A3B8] mb-1">
                         <span>Saturation (Nasycenie)</span>
-                        <span className="text-white">{saturation.toFixed(1)}</span>
+                        <span className="text-white">
+                          {saturation.toFixed(1)}
+                        </span>
                       </div>
                       <input
                         type="range"
@@ -886,7 +1162,9 @@ export default function KeychainGenerator() {
                         max="2.5"
                         step="0.1"
                         value={saturation}
-                        onChange={(e) => setSaturation(parseFloat(e.target.value))}
+                        onChange={(e) =>
+                          setSaturation(parseFloat(e.target.value))
+                        }
                         className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
                       />
                     </div>
@@ -915,14 +1193,14 @@ export default function KeychainGenerator() {
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL 2: IMAGE CONVERSION PREVIEW (A'LA MAKERWORLD STEP 2) */}
-      {/* ========================================================= */}
+      {/* MODAL 2: CONVERSION PREVIEW */}
       {isConversionPreviewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
           <div className="bg-[#0E1524] border border-[#24324A] rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-[#24324A] flex items-center justify-between">
-              <h2 className="text-base font-bold text-white tracking-wide">Image Conversion Preview</h2>
+              <h2 className="text-base font-bold text-white tracking-wide">
+                Image Conversion Preview
+              </h2>
               <button
                 onClick={() => setIsConversionPreviewOpen(false)}
                 className="text-[#94A3B8] hover:text-white transition cursor-pointer text-sm"
@@ -946,8 +1224,18 @@ export default function KeychainGenerator() {
                 onClick={handleTryAgain}
                 className="px-4 py-2 rounded-lg border border-[#24324A] bg-[#161F30] text-slate-200 hover:text-white hover:border-[#00E5FF] transition flex items-center gap-2 cursor-pointer"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
                 </svg>
                 <span>Try Again</span>
               </button>
@@ -963,8 +1251,17 @@ export default function KeychainGenerator() {
         </div>
       )}
 
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onLoginSuccess={(u) => setUser(u)} />
-      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} items={cartItems} onRemoveItem={() => fetchCart(user?.id)} />
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onLoginSuccess={(u) => setUser(u)}
+      />
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        items={cartItems}
+        onRemoveItem={() => fetchCart(user?.id)}
+      />
     </div>
   );
 }
