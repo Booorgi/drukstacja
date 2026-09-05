@@ -113,7 +113,7 @@ export default function ModelViewer({
 
         // B. Obrót w poziomie wokół osi pionowej Y dopasowujący orientację podpór do bryły
         // B. Obrót w poziomie wokół osi pionowej Y dopasowujący orientację podpór do bryły
-        lineGeo.rotateY(-Math.PI / 2);
+        lineGeo.rotateY(Math.PI / 2);
 
         // C. Centrowanie w poziomie i wyrównanie podstawy do poziomu stołu (Y = 0)
         lineGeo.computeBoundingBox();
