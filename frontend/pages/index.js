@@ -23,17 +23,16 @@ const LAYERS = [
 ];
 
 export default function Home() {
-  // Stany logowania / użytkownika Supabase
   const [user, setUser] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isGeneratorsOpen, setIsGeneratorsOpen] = useState(false);
   const userMenuRef = useRef(null);
+  const genMenuRef = useRef(null);
 
-  // Stany koszyka
   const [cartItems, setCartItems] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
 
-  // Stany konfiguratora druku
   const [file, setFile] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [quote, setQuote] = useState(null);
@@ -51,7 +50,6 @@ export default function Home() {
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Pobieranie pozycji koszyka
   async function fetchCart(userId) {
     if (!userId) {
       setCartItems([]);
@@ -64,12 +62,9 @@ export default function Home() {
       .eq("status", "in_cart")
       .order("created_at", { ascending: false });
 
-    if (!error && data) {
-      setCartItems(data);
-    }
+    if (!error && data) setCartItems(data);
   }
 
-  // Usuwanie elementu z koszyka
   async function handleRemoveCartItem(orderId) {
     const { error } = await supabase.from("orders").delete().eq("id", orderId);
     if (!error) {
@@ -77,18 +72,19 @@ export default function Home() {
     }
   }
 
-  // Zamykanie dropdownu po kliknięciu poza niego
   useEffect(() => {
     function handleClickOutside(e) {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
         setIsUserMenuOpen(false);
+      }
+      if (genMenuRef.current && !genMenuRef.current.contains(e.target)) {
+        setIsGeneratorsOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Nasłuchiwanie sesji z Supabase
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const currentUser = session?.user ?? null;
@@ -158,9 +154,7 @@ export default function Home() {
         body: JSON.stringify(body),
       });
 
-      if (res.ok) {
-        setQuote(await res.json());
-      }
+      if (res.ok) setQuote(await res.json());
     } catch (e) {
       console.error("Błąd pobierania wyceny:", e);
     }
@@ -175,18 +169,15 @@ export default function Home() {
     }
   }
 
-  // Szacunki wagi i czasu
   const volume = analysis?.volume_cm3 ?? 35;
   const estimatedWeight = Math.round(volume * 1.24 * (0.5 + (infill / 100) * 0.7));
   const estimatedHours = Math.max(1, Math.round((estimatedWeight * 4.2) / 60));
   const estimatedMins = Math.round((estimatedWeight * 4.2) % 60);
 
-  // Kalkulacja ceny końcowej
   const basePrice = quote?.total_price_pln ? parseFloat(quote.total_price_pln) : 38.5;
   const insertCost = brassInserts ? 15.0 : 0.0;
   const finalPrice = ((basePrice + insertCost) * quantity).toFixed(2);
 
-  // Obsługa zapisu zamówienia do Supabase
   async function handleAddToCart() {
     if (!user) {
       setIsAuthOpen(true);
@@ -214,7 +205,6 @@ export default function Home() {
       await fetchCart(user.id);
       setIsCartOpen(true);
     } catch (err) {
-      console.error("Błąd zapisu do koszyka:", err);
       alert("Nie udało się dodać do koszyka: " + err.message);
     } finally {
       setAddingToCart(false);
@@ -234,28 +224,72 @@ export default function Home() {
       <header className="border-b border-[#24324A] bg-[#0B0F17]/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-[#00E5FF] to-[#2563EB] flex items-center justify-center p-0.5 shadow-[0_0_15px_rgba(0,229,255,0.3)]">
-              <div className="w-full h-full bg-[#0B0F17] rounded-[7px] flex items-center justify-center">
-                <span className="font-bold text-lg text-[#00E5FF]">D</span>
+            <Link href="/" className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-[#00E5FF] to-[#2563EB] flex items-center justify-center p-0.5 shadow-[0_0_15px_rgba(0,229,255,0.3)]">
+                <div className="w-full h-full bg-[#0B0F17] rounded-[7px] flex items-center justify-center">
+                  <span className="font-bold text-lg text-[#00E5FF]">D</span>
+                </div>
               </div>
-            </div>
-            <div>
-              <span className="text-xl font-bold tracking-tight text-white">
-                DRUK<span className="text-[#00E5FF]">STACJA</span>
-              </span>
-              <span className="text-[10px] text-[#94A3B8] block -mt-1 tracking-widest font-mono">LABS 3D</span>
-            </div>
+              <div>
+                <span className="text-xl font-bold tracking-tight text-white">
+                  DRUK<span className="text-[#00E5FF]">STACJA</span>
+                </span>
+                <span className="text-[10px] text-[#94A3B8] block -mt-1 tracking-widest font-mono">LABS 3D</span>
+              </div>
+            </Link>
           </div>
 
           <nav className="hidden md:flex items-center gap-6 text-sm text-[#94A3B8]">
-            <span className="text-white hover:text-[#00E5FF] cursor-pointer transition">Wyceniarka STL</span>
-            <span className="hover:text-[#00E5FF] cursor-pointer transition">Generator Breloków</span>
-            <span className="hover:text-[#00E5FF] cursor-pointer transition">Litofany</span>
+            <Link href="/" className="text-white hover:text-[#00E5FF] transition">
+              Wyceniarka STL
+            </Link>
+
+            {/* ROZWIJANA LISTA GENERATORY */}
+            <div className="relative" ref={genMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsGeneratorsOpen(!isGeneratorsOpen)}
+                className="hover:text-[#00E5FF] transition flex items-center gap-1.5 cursor-pointer text-slate-200"
+              >
+                <span>Generatory</span>
+                <svg
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${isGeneratorsOpen ? "rotate-180 text-[#00E5FF]" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {isGeneratorsOpen && (
+                <div className="absolute left-0 mt-2 w-52 bg-[#0E1524] border border-[#24324A] rounded-xl shadow-2xl py-2 z-50 backdrop-blur-md">
+                  <Link
+                    href="/breloki"
+                    onClick={() => setIsGeneratorsOpen(false)}
+                    className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-mono text-slate-200 hover:bg-[#161F30] hover:text-[#00E5FF] transition"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#00E5FF]" />
+                    Stwórz swój brelok
+                  </Link>
+                  <div
+                    onClick={() => {
+                      setIsGeneratorsOpen(false);
+                      alert("Generator Litofanów pojawi się wkrótce!");
+                    }}
+                    className="flex items-center justify-between px-4 py-2.5 text-xs font-mono text-[#94A3B8] hover:bg-[#161F30] hover:text-white cursor-pointer transition"
+                  >
+                    <span>Litofany (Zdjęcie 3D)</span>
+                    <span className="text-[9px] bg-[#24324A] px-1.5 py-0.5 rounded text-[#94A3B8]">Wkrótce</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <span className="hover:text-[#00E5FF] cursor-pointer transition">Części użytkowe</span>
           </nav>
 
           <div className="flex items-center gap-3">
-            {/* PRZYCISK KOSZYKA */}
             <button
               type="button"
               onClick={() => setIsCartOpen(true)}
@@ -270,7 +304,6 @@ export default function Home() {
               </span>
             </button>
 
-            {/* SEKCJA UŻYTKOWNIKA / DROPDOWN PANEL KLIENTA */}
             {user ? (
               <div className="relative" ref={userMenuRef}>
                 <button
@@ -292,7 +325,6 @@ export default function Home() {
                   </svg>
                 </button>
 
-                {/* ROZWIJANE MENU */}
                 {isUserMenuOpen && (
                   <div className="absolute right-0 mt-2 w-56 bg-[#0E1524] border border-[#24324A] rounded-xl shadow-2xl py-2 z-50 backdrop-blur-md">
                     <div className="px-4 py-2 border-b border-[#24324A] mb-1">
@@ -361,14 +393,10 @@ export default function Home() {
         </div>
       </header>
 
-      {/* GŁÓWNY PANEL KONFIGURATORA (60/40) */}
+      {/* VIEWPORT 3D & FORMULARZ */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-        {/* LEWA STRONA: VIEWPORT 3D (7 kolumn) */}
         <section className="lg:col-span-7 flex flex-col gap-4">
           <div className="relative w-full h-[520px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
-            
-            {/* Pasek narzędziowy viewportu */}
             <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
               <button
                 type="button"
@@ -383,7 +411,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Badges z wymiarami geometrii */}
             <div className="absolute bottom-4 left-4 z-10 flex gap-2 font-mono text-xs">
               <span className="px-2.5 py-1 rounded bg-[#0B0F17]/80 border border-[#24324A] text-[#94A3B8]">
                 X: {analysis?.bbox_mm?.[0] ?? "62"} mm
@@ -396,15 +423,6 @@ export default function Home() {
               </span>
             </div>
 
-            {/* Status bryły */}
-            <div className="absolute top-4 right-4 z-10 flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 backdrop-blur-md">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-              </svg>
-              {analysis ? (analysis.watertight === false ? "Bryła nieszczelna" : "Bryła zamknięta (Manifold)") : "Wzorzec testowy"}
-            </div>
-
-            {/* Three.js Viewer */}
             <div className="w-full h-full">
               {file ? (
                 <ModelViewer
@@ -427,7 +445,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Dropzone */}
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
@@ -473,17 +490,14 @@ export default function Home() {
           )}
         </section>
 
-        {/* PRAWA STRONA: FORMULARZ KONFIGURACJI & WYCENA (5 kolumn) */}
         <section className="lg:col-span-5 flex flex-col gap-4">
           <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-6 flex flex-col justify-between shadow-xl">
-            
             <div className="space-y-5">
               <div className="flex items-center justify-between border-b border-[#24324A] pb-3">
                 <h2 className="text-lg font-bold text-white tracking-wide">PARAMETRY DRUKU</h2>
                 <span className="text-xs font-mono text-[#00E5FF]">ID: #DS-{file ? "READY" : "DEMO"}</span>
               </div>
 
-              {/* 1. Technologia */}
               <div>
                 <label className="block text-xs font-medium text-[#94A3B8] mb-2 uppercase tracking-wider">Technologia</label>
                 <div className="grid grid-cols-2 gap-2 text-xs font-mono">
@@ -512,7 +526,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 2. Materiał */}
               <div>
                 <label className="block text-xs font-medium text-[#94A3B8] mb-2 uppercase tracking-wider">Materiał</label>
                 <select
@@ -521,14 +534,11 @@ export default function Home() {
                   className="w-full bg-[#0B0F17] border border-[#24324A] rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-[#00E5FF] transition"
                 >
                   {MATERIALS.map((mat) => (
-                    <option key={mat.id} value={mat.id}>
-                      {mat.name}
-                    </option>
+                    <option key={mat.id} value={mat.id}>{mat.name}</option>
                   ))}
                 </select>
               </div>
 
-              {/* 3. Wysokość warstwy */}
               <div>
                 <div className="flex justify-between text-xs mb-2">
                   <span className="text-[#94A3B8] uppercase tracking-wider">Wysokość warstwy</span>
@@ -552,7 +562,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 4. Wypełnienie (Infill) */}
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-[#94A3B8] uppercase tracking-wider">Gęstość wypełnienia (Infill)</span>
@@ -567,14 +576,8 @@ export default function Home() {
                   onChange={(e) => handleOptionChange(material, parseInt(e.target.value), quantity)}
                   className="w-full h-1.5 bg-[#0B0F17] rounded-lg appearance-none cursor-pointer accent-[#00E5FF]"
                 />
-                <div className="flex justify-between text-[10px] text-[#94A3B8] font-mono mt-1">
-                  <span>Lekkie (10%)</span>
-                  <span>Standard (20%)</span>
-                  <span>Mechaniczne (50%+)</span>
-                </div>
               </div>
 
-              {/* Ilość sztuk */}
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-[#94A3B8] uppercase tracking-wider">Liczba sztuk</span>
@@ -598,7 +601,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 5. Opcje dodatkowe */}
               <div className="pt-2 border-t border-[#24324A] space-y-2">
                 <label className="flex items-center gap-3 text-xs text-[#94A3B8] cursor-pointer">
                   <input
@@ -621,7 +623,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* PODSUMOWANIE CENY & CTA */}
             <div className="mt-6 pt-4 border-t border-[#24324A] bg-[#0B0F17]/50 -mx-6 -mb-6 p-6 rounded-b-2xl">
               <div className="grid grid-cols-2 gap-4 mb-4 text-xs font-mono">
                 <div>
@@ -657,26 +658,12 @@ export default function Home() {
                 {addingToCart ? "Zapisuję w koszyku..." : "Dodaj wydruk do koszyka"}
               </button>
             </div>
-
           </div>
         </section>
-
       </main>
 
-      {/* MODAL AUTORYZACJI SUPABASE */}
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        onLoginSuccess={(loggedUser) => setUser(loggedUser)}
-      />
-
-      {/* WYSUWANY PANEL KOSZYKA (DRAWER) */}
-      <CartDrawer
-        isOpen={isCartOpen}
-        onClose={() => setIsCartOpen(false)}
-        items={cartItems}
-        onRemoveItem={handleRemoveCartItem}
-      />
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onLoginSuccess={(loggedUser) => setUser(loggedUser)} />
+      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} items={cartItems} onRemoveItem={handleRemoveCartItem} />
     </div>
   );
 }
