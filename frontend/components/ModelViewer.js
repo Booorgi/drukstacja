@@ -4,7 +4,7 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 export default function ModelViewer({
-  url = null,
+  previewUrl = null,
   file = null,
   color = "#9CA3AF",
   supportLines = [],
@@ -14,7 +14,7 @@ export default function ModelViewer({
   const meshRef = useRef(null);
   const supportsGroupRef = useRef(null);
 
-  // Dynamiczna zmiana koloru oraz przezroczystości bryły
+  // Dynamiczna zmiana koloru i przezroczystości modelu
   useEffect(() => {
     if (meshRef.current) {
       meshRef.current.material.color.set(color);
@@ -23,7 +23,7 @@ export default function ModelViewer({
     }
   }, [color, showSupports]);
 
-  // Włączanie / ukrywanie podpór
+  // Włączanie / wyłączanie widoczności podpór
   useEffect(() => {
     if (supportsGroupRef.current) {
       supportsGroupRef.current.visible = showSupports;
@@ -31,7 +31,7 @@ export default function ModelViewer({
   }, [showSupports]);
 
   useEffect(() => {
-    if ((!url && !file) || !containerRef.current) return;
+    if ((!previewUrl && !file) || !containerRef.current) return;
 
     const container = containerRef.current;
     let width = container.clientWidth || 600;
@@ -62,24 +62,21 @@ export default function ModelViewer({
     let animationFrameId;
 
     const buildSceneWithGeometry = (geometry) => {
-      // 1. Czyścimy poprzednie obiekty, jeśli były wczytane
       if (meshRef.current) scene.remove(meshRef.current);
       if (supportsGroupRef.current) scene.remove(supportsGroupRef.current);
 
-      // 2. Wyrównanie osi STL (Z-up) do Three.js (Y-up)
+      // 1. Standaryzacja orientacji: STL Z-up -> Three.js Y-up
       geometry.rotateX(-Math.PI / 2);
       geometry.computeVertexNormals();
 
-      // 3. Połóż model idealnie na stole roboczym (Y = 0) i wycentruj w (X=0, Z=0)
+      // 2. Centrowanie modelu w osiach X, Z i postawienie na Y = 0
       geometry.computeBoundingBox();
       const bbox = geometry.boundingBox;
       const centerX = (bbox.max.x + bbox.min.x) / 2;
       const centerZ = (bbox.max.z + bbox.min.z) / 2;
       const minY = bbox.min.y;
-
       geometry.translate(-centerX, -minY, -centerZ);
 
-      // Ponowne przeliczenie po przesunięciu
       geometry.computeBoundingBox();
       const finalBbox = geometry.boundingBox;
       const modelHeight = finalBbox.max.y - finalBbox.min.y;
@@ -96,14 +93,14 @@ export default function ModelViewer({
       meshRef.current = mesh;
       scene.add(mesh);
 
-      // 4. Stół roboczy
+      // 3. Stół roboczy
       geometry.computeBoundingSphere();
       const radius = geometry.boundingSphere.radius || 60;
       const grid = new THREE.GridHelper(Math.max(radius * 3.5, 140), 20, 0x94a3b8, 0xe2e8f0);
       grid.position.y = 0;
       scene.add(grid);
 
-      // 5. Podpory ze slicera
+      // 4. Podpory ze slicera (dokładnie ten sam obrót i centrowanie co model)
       if (supportLines && supportLines.length >= 6) {
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
@@ -111,9 +108,13 @@ export default function ModelViewer({
           new THREE.Float32BufferAttribute(supportLines, 3)
         );
 
+        // Identyczna transformacja osi jak dla bryły STL
+        lineGeo.rotateX(-Math.PI / 2);
+
         lineGeo.computeBoundingBox();
         const sBbox = lineGeo.boundingBox;
         const sMinY = sBbox.min.y;
+        lineGeo.translate(0, -sMinY, 0);
 
         const lineMat = new THREE.LineBasicMaterial({
           color: 0x10b981,
@@ -121,7 +122,7 @@ export default function ModelViewer({
         });
 
         const supportMesh = new THREE.LineSegments(lineGeo, lineMat);
-        supportMesh.position.set(0, -sMinY, 0);
+        supportMesh.position.set(0, 0, 0);
         supportMesh.visible = showSupports;
         supportsGroupRef.current = supportMesh;
         scene.add(supportMesh);
@@ -142,12 +143,12 @@ export default function ModelViewer({
 
     const loader = new STLLoader();
 
-    if (url) {
+    if (previewUrl) {
       loader.load(
-        url,
+        previewUrl,
         (geom) => buildSceneWithGeometry(geom),
         undefined,
-        (err) => console.error("Błąd pobierania STL z R2:", err)
+        (err) => console.error("Błąd pobierania pliku STL z R2:", err)
       );
     } else if (file) {
       const reader = new FileReader();
@@ -175,7 +176,7 @@ export default function ModelViewer({
       resizeObserver.disconnect();
       renderer.dispose();
     };
-  }, [url, file, supportLines]);
+  }, [previewUrl, file, supportLines]);
 
   return (
     <div
