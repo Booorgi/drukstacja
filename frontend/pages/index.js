@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -14,20 +14,18 @@ const StlViewer3D = dynamic(
       import("@react-three/fiber"),
       import("@react-three/drei"),
       import("three-stdlib"),
-    ]).then(([fiber, drei, stdlib]) => {
+      import("three"),
+    ]).then(([fiber, drei, stdlib, THREE]) => {
       const { Canvas } = fiber;
-      const { OrbitControls, Center, Bounds } = drei;
+      const { OrbitControls, Center, Bounds, GizmoHelper, GizmoViewcube } = drei;
       const { STLLoader } = stdlib;
 
-      function StlModel({ url, color }) {
+      function StlModelWithSupports({ url, color, showSupports }) {
         const [geometry, setGeometry] = useState(null);
-        const [error, setError] = useState(false);
 
         useEffect(() => {
           if (!url) return;
-          setError(false);
           const loader = new STLLoader();
-
           loader.load(
             url,
             (geo) => {
@@ -36,42 +34,94 @@ const StlViewer3D = dynamic(
               setGeometry(geo);
             },
             undefined,
-            (err) => {
-              console.error("Błąd ładowania geometrii STL:", err);
-              setError(true);
-            }
+            (err) => console.error("Błąd ładowania STL:", err)
           );
         }, [url]);
 
-        if (error) {
-          return null;
-        }
+        // Wyliczanie krawędzi wymagających podpór (kąt nawisu > 45 stopni w dół)
+        const supportEdgesGeometry = useMemo(() => {
+          if (!geometry || !showSupports) return null;
+
+          const pos = geometry.attributes.position;
+          const norm = geometry.attributes.normal;
+          if (!pos || !norm) return null;
+
+          const lines = [];
+          for (let i = 0; i < pos.count; i += 3) {
+            // Średnia normalna trójkąta w osi Z (w dół)
+            const nz = (norm.getZ(i) + norm.getZ(i + 1) + norm.getZ(i + 2)) / 3;
+            // Kąt poniżej poziomu (zwis powyżej 45 stopni)
+            if (nz < -0.65) {
+              const ax = pos.getX(i), ay = pos.getY(i), az = pos.getZ(i);
+              const bx = pos.getX(i + 1), by = pos.getY(i + 1), bz = pos.getZ(i + 1);
+              const cx = pos.getX(i + 2), cy = pos.getY(i + 2), cz = pos.getZ(i + 2);
+
+              lines.push(ax, ay, az, bx, by, bz);
+              lines.push(bx, by, bz, cx, cy, cz);
+              lines.push(cx, cy, cz, ax, ay, az);
+            }
+          }
+
+          if (lines.length === 0) return null;
+
+          const edgeGeo = new THREE.BufferGeometry();
+          edgeGeo.setAttribute("position", new THREE.Float32BufferAttribute(lines, 3));
+          return edgeGeo;
+        }, [geometry, showSupports]);
 
         if (!geometry) return null;
 
         return (
           <Center top>
-            <mesh geometry={geometry}>
-              <meshStandardMaterial
-                color={color}
-                roughness={0.3}
-                metalness={0.1}
-              />
-            </mesh>
+            <group>
+              {/* Główny model */}
+              <mesh geometry={geometry}>
+                <meshStandardMaterial color={color} roughness={0.35} metalness={0.08} />
+              </mesh>
+
+              {/* Czerwone podświetlenie nawisów / podpór */}
+              {supportEdgesGeometry && (
+                <lineSegments geometry={supportEdgesGeometry}>
+                  <lineBasicMaterial color="#EF4444" linewidth={2} />
+                </lineSegments>
+              )}
+            </group>
           </Center>
         );
       }
 
-      return function Viewer({ modelUrl, color }) {
+      return function Viewer({ modelUrl, color, showSupports }) {
         return (
-          <Canvas camera={{ position: [0, 60, 120], fov: 45 }}>
-            <ambientLight intensity={1.2} />
-            <directionalLight position={[40, 80, 50]} intensity={1.8} />
-            <directionalLight position={[-40, 40, -40]} intensity={0.6} />
+          <Canvas camera={{ position: [90, 110, 140], fov: 45 }}>
+            <ambientLight intensity={1.1} />
+            <directionalLight position={[40, 80, 50]} intensity={1.6} />
+            <directionalLight position={[-40, 40, -40]} intensity={0.5} />
+
             <Bounds fit clip observe margin={1.2}>
-              <StlModel url={modelUrl} color={color} />
+              <StlModelWithSupports
+                url={modelUrl}
+                color={color}
+                showSupports={showSupports}
+              />
             </Bounds>
-            <OrbitControls makeDefault minDistance={10} maxDistance={400} />
+
+            {/* Siatka stołu roboczego 256x256 mm (Bambu Lab standard) */}
+            <gridHelper
+              args={[256, 25.6, "#94A3B8", "#E2E8F0"]}
+              position={[0, 0, 0]}
+            />
+
+            {/* Kostka orientacji widoku (Gizmo Cube) */}
+            <GizmoHelper alignment="bottom-right" margin={[70, 70]}>
+              <GizmoViewcube
+                color="#FFFFFF"
+                strokeColor="#CBD5E1"
+                textColor="#0F172A"
+                opacity={0.9}
+              />
+            </GizmoHelper>
+
+            <OrbitControls makeDefault minDistance={10} maxDistance={450} />
           </Canvas>
         );
       };
@@ -90,6 +140,8 @@ export default function Home() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState([]);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
 
   const [selectedFile, setSelectedFile] = useState(null);
   const [modelPreviewUrl, setModelPreviewUrl] = useState(null);
@@ -99,6 +151,7 @@ export default function Home() {
   const [selectedMaterial, setSelectedMaterial] = useState("PLA");
   const [selectedColor, setSelectedColor] = useState("#EF4444");
   const [infill, setInfill] = useState(20);
+  const [showSupports, setShowSupports] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
   const fileInputRef = useRef(null);
@@ -129,7 +182,17 @@ export default function Home() {
       if (u) fetchCart(u.id);
     });
 
-    return () => subscription.unsubscribe();
+    function handleClickOutside(e) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setIsUserMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      subscription.unsubscribe();
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, []);
 
   async function handleFileUpload(e) {
@@ -256,14 +319,57 @@ export default function Home() {
               </span>
             )}
           </button>
+
+          {/* PANEL KLIENTA Z ROZWIJANYM MENU */}
           {user ? (
-            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-slate-200 text-slate-800">
-              {user.email.split("@")[0]}
-            </span>
+            <div className="relative" ref={userMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm text-xs font-bold text-slate-800 hover:border-slate-400 transition"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span>{user.email.split("@")[0]}</span>
+                <svg
+                  className={`w-3.5 h-3.5 transition-transform ${isUserMenuOpen ? "rotate-180" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {isUserMenuOpen && (
+                <div className="absolute right-0 mt-2 w-52 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-50 animate-in fade-in zoom-in-95">
+                  <div className="px-4 py-2 border-b border-slate-100">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Zalogowano</span>
+                    <span className="text-xs font-bold text-slate-800 truncate block">{user.email}</span>
+                  </div>
+                  <Link
+                    href="/orders"
+                    onClick={() => setIsUserMenuOpen(false)}
+                    className="block px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    Moje zlecenia
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      supabase.auth.signOut();
+                    }}
+                    className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 transition"
+                  >
+                    Wyloguj
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <button
               onClick={() => setIsAuthOpen(true)}
-              className="text-xs font-bold px-4 py-2 rounded-full bg-slate-900 text-white hover:bg-slate-800 transition"
+              className="text-xs font-bold px-5 py-2 rounded-full bg-slate-900 text-white hover:bg-slate-800 transition"
             >
               Zaloguj
             </button>
@@ -271,7 +377,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* HERO & KONFIGURATOR CARD */}
+      {/* GŁÓWNA KARTA */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 pb-12 flex items-center justify-center">
         <div className="bg-white rounded-[32px] border border-slate-200/80 shadow-[0_25px_70px_rgba(0,0,0,0.06)] w-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-[640px]">
           
@@ -286,9 +392,22 @@ export default function Home() {
                   {selectedFile ? selectedFile.name : "Wgraj model 3D do wyceny"}
                 </h1>
               </div>
-              <span className="text-xs font-medium px-3 py-1 rounded-full bg-white border border-slate-200 shadow-sm text-slate-600">
-                Podgląd interaktywny
-              </span>
+
+              {/* Przełącznik podświetlania podpór */}
+              {modelPreviewUrl && (
+                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm text-xs font-bold">
+                  <span className="text-slate-600">Podpory:</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowSupports(!showSupports)}
+                    className={`px-2 py-0.5 rounded-full text-[10px] transition ${
+                      showSupports ? "bg-red-100 text-[#EF4444]" : "bg-slate-100 text-slate-400"
+                    }`}
+                  >
+                    {showSupports ? "Włączone" : "Wyłączone"}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Viewport 3D */}
@@ -297,11 +416,15 @@ export default function Home() {
                 <div className="flex flex-col items-center gap-3">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
                   <span className="text-xs font-bold text-slate-700">
-                    Konwertuję geometrię STEP i slicuję model...
+                    Konwertuję geometrię STEP i generuję podgląd...
                   </span>
                 </div>
               ) : modelPreviewUrl ? (
-                <StlViewer3D modelUrl={modelPreviewUrl} color={selectedColor} />
+                <StlViewer3D
+                  modelUrl={modelPreviewUrl}
+                  color={selectedColor}
+                  showSupports={showSupports}
+                />
               ) : (
                 <div
                   onClick={() => fileInputRef.current?.click()}
@@ -469,7 +592,7 @@ export default function Home() {
               <span>
                 {analysisData?.dimensions_mm
                   ? `Wymiary: ${analysisData.dimensions_mm[0]}×${analysisData.dimensions_mm[1]}×${analysisData.dimensions_mm[2]} mm`
-                  : "Pole robocze: 256×256×256 mm"}
+                  : "Stół: 256×256×256 mm"}
               </span>
               <span>Dokładność: ±0.1 mm</span>
             </div>

@@ -97,8 +97,9 @@ const KeychainViewer3D = dynamic(
             const rOut = baseDiameter / 2;
             const rIn = Math.max(1, rOut - strokeWidth);
 
+            // Obrys zewnętrzny - obrót o 30 stopni (Math.PI / 6) dopasowuje ramkę do cylindra Three.js
             for (let i = 0; i < 6; i++) {
-              const angle = (i * Math.PI) / 3;
+              const angle = (i * Math.PI) / 3 + Math.PI / 6;
               const x = rOut * Math.cos(angle);
               const y = rOut * Math.sin(angle);
               if (i === 0) shape.moveTo(x, y);
@@ -106,9 +107,10 @@ const KeychainViewer3D = dynamic(
             }
             shape.closePath();
 
+            // Otwór wewnętrzny
             const hole = new THREE.Path();
             for (let i = 0; i < 6; i++) {
-              const angle = (i * Math.PI) / 3;
+              const angle = (i * Math.PI) / 3 + Math.PI / 6;
               const x = rIn * Math.cos(angle);
               const y = rIn * Math.sin(angle);
               if (i === 0) hole.moveTo(x, y);
