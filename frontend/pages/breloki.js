@@ -960,9 +960,9 @@ export default function KeychainGenerator() {
         const filament = findClosestFilament(hex);
         let layerRole = `Warstwa ${idx + 1}`;
         if (idx === 0) layerRole = "Warstwa 1 (Baza / Podkład)";
-        else if (idx === total - 1) layerRole = `Warstwa ${idx + 1} (Błysk / Akcenty)`;
-        else if (idx === total - 2) layerRole = `Warstwa ${idx + 1} (Detale / Kontury)`;
-        else layerRole = `Warstwa ${idx + 1} (Ciało / Cienie)`;
+        else if (idx === total - 1) layerRole = `Warstwa ${idx + 1} (Detale / Źrenice / Obrys)`;
+        else if (idx === 1) layerRole = `Warstwa 2 (Ciało / Sierść)`;
+        else layerRole = `Warstwa ${idx + 1} (Cienie / Akcenty)`;
 
         return {
           id: idx + 1,
