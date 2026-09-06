@@ -80,9 +80,9 @@ const KeychainViewer3D = dynamic(
 
             const hole = new THREE.Path();
             hole.moveTo(-inW, -inH);
-            hole.lineTo(inW, -inH);
-            hole.lineTo(inW, inH);
             hole.lineTo(-inW, inH);
+            hole.lineTo(inW, inH);
+            hole.lineTo(inW, -inH);
             hole.closePath();
             shape.holes.push(hole);
           } else if (shapeType === "circle") {
@@ -97,7 +97,7 @@ const KeychainViewer3D = dynamic(
             const rOut = baseDiameter / 2;
             const rIn = Math.max(1, rOut - strokeWidth);
 
-            // Obrys zewnętrzny - obrót o 30 stopni (Math.PI / 6) dopasowuje ramkę do cylindra Three.js
+            // Obrys zewnętrzny (z obrotem o 30 stopni dla wyrównania z cylindrem)
             for (let i = 0; i < 6; i++) {
               const angle = (i * Math.PI) / 3 + Math.PI / 6;
               const x = rOut * Math.cos(angle);
@@ -159,6 +159,12 @@ const KeychainViewer3D = dynamic(
         offsetY,
         baseBounds,
         baseThickness,
+        shapeType,
+        baseWidth,
+        baseHeight,
+        baseDiameter,
+        strokeEnabled,
+        strokeWidth,
       }) {
         const parsedGroups = useMemo(() => {
           if (!svgString) return { c1: [], c2: [], c3: [], c4: [] };
@@ -188,6 +194,32 @@ const KeychainViewer3D = dynamic(
             return { c1: [], c2: [], c3: [], c4: [] };
           }
         }, [svgString]);
+
+        // Płaszczyzny obcinające (Clipping Planes) - obcinają grafikę równo z krawędzią/rantem
+        const clipPlanes = useMemo(() => {
+          const margin = strokeEnabled ? strokeWidth : 0.2;
+          if (shapeType === "rect") {
+            const hw = baseWidth / 2 - margin;
+            const hh = baseHeight / 2 - margin;
+            return [
+              new THREE.Plane(new THREE.Vector3(1, 0, 0), hw),
+              new THREE.Plane(new THREE.Vector3(-1, 0, 0), hw),
+              new THREE.Plane(new THREE.Vector3(0, 1, 0), hh),
+              new THREE.Plane(new THREE.Vector3(0, -1, 0), hh),
+            ];
+          }
+          if (shapeType === "hexagon") {
+            const r = (baseDiameter / 2 - margin) * 0.866; // r * cos(30°)
+            const planes = [];
+            for (let i = 0; i < 6; i++) {
+              const angle = (i * Math.PI) / 3 + Math.PI / 6;
+              const normal = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0);
+              planes.push(new THREE.Plane(normal, r));
+            }
+            return planes;
+          }
+          return [];
+        }, [shapeType, baseWidth, baseHeight, baseDiameter, strokeEnabled, strokeWidth]);
 
         const groups = [
           { shapes: parsedGroups.c1, cfg: layersConfig[0], level: 0 },
@@ -230,6 +262,8 @@ const KeychainViewer3D = dynamic(
                       color={grp.cfg.color}
                       roughness={0.35}
                       metalness={0.05}
+                      clippingPlanes={clipPlanes}
+                      clipIntersection={false}
                     />
                   </mesh>
                 ));
@@ -346,6 +380,12 @@ const KeychainViewer3D = dynamic(
               offsetY={offsetY}
               baseBounds={baseBounds}
               baseThickness={baseThickness}
+              shapeType={shapeType}
+              baseWidth={baseWidth}
+              baseHeight={baseHeight}
+              baseDiameter={baseDiameter}
+              strokeEnabled={strokeEnabled}
+              strokeWidth={strokeWidth}
             />
           </group>
         );
@@ -353,7 +393,10 @@ const KeychainViewer3D = dynamic(
 
       return function Viewer(props) {
         return (
-          <Canvas camera={{ position: [0, 35, 115], fov: 45 }}>
+          <Canvas
+            gl={{ localClippingEnabled: true }}
+            camera={{ position: [0, 35, 115], fov: 45 }}
+          >
             <ambientLight intensity={1.1} />
             <directionalLight position={[30, 60, 40]} intensity={1.8} />
             <directionalLight position={[-30, 30, -30]} intensity={0.6} />
@@ -490,7 +533,6 @@ export default function KeychainGenerator() {
 
           const formData = new FormData();
           formData.append("file", blob, "preprocessed.png");
-          // Przekazanie wyboru użytkownika do AI wycinania tła (rembg)
           formData.append("keep_bg", keepBg.toString());
 
           try {
@@ -873,7 +915,7 @@ export default function KeychainGenerator() {
                     </button>
                   </div>
 
-                  {/* KONTROLKA STROKE (OBRAMOWANIE W STYLU MAKERWORLD) */}
+                  {/* KONTROLKA STROKE (OBRAMOWANIE) */}
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1180,6 +1222,18 @@ export default function KeychainGenerator() {
                       onChange={(e) => setContrast(parseFloat(e.target.value))}
                       className="w-full h-1 bg-slate-200 rounded accent-[#EF4444]"
                     />
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="keepBgToggle"
+                      checked={keepBg}
+                      onChange={(e) => setKeepBg(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#EF4444] accent-[#EF4444] cursor-pointer"
+                    />
+                    <label htmlFor="keepBgToggle" className="text-xs font-bold text-slate-700 cursor-pointer">
+                      Zachowaj tło zdjęcia
+                    </label>
                   </div>
                 </div>
 
