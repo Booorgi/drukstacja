@@ -44,10 +44,110 @@ const KeychainViewer3D = dynamic(
       import("@react-three/fiber"),
       import("@react-three/drei"),
       import("three-stdlib"),
-    ]).then(([fiber, drei, stdlib]) => {
+      import("three"),
+    ]).then(([fiber, drei, stdlib, THREE]) => {
       const { Canvas } = fiber;
       const { OrbitControls, Center, RoundedBox } = drei;
       const { SVGLoader } = stdlib;
+
+      function PlateStrokeMesh({
+        shapeType,
+        baseWidth,
+        baseHeight,
+        baseDiameter,
+        baseThickness,
+        strokeEnabled,
+        strokeWidth,
+        strokeThickness,
+        strokeColor,
+      }) {
+        const strokeGeometry = useMemo(() => {
+          if (!strokeEnabled || strokeWidth <= 0) return null;
+
+          const shape = new THREE.Shape();
+
+          if (shapeType === "rect") {
+            const halfW = baseWidth / 2;
+            const halfH = baseHeight / 2;
+            const inW = Math.max(1, halfW - strokeWidth);
+            const inH = Math.max(1, halfH - strokeWidth);
+
+            shape.moveTo(-halfW, -halfH);
+            shape.lineTo(halfW, -halfH);
+            shape.lineTo(halfW, halfH);
+            shape.lineTo(-halfW, halfH);
+            shape.closePath();
+
+            const hole = new THREE.Path();
+            hole.moveTo(-inW, -inH);
+            hole.lineTo(inW, -inH);
+            hole.lineTo(inW, inH);
+            hole.lineTo(-inW, inH);
+            hole.closePath();
+            shape.holes.push(hole);
+          } else if (shapeType === "circle") {
+            const rOut = baseDiameter / 2;
+            const rIn = Math.max(1, rOut - strokeWidth);
+
+            shape.absarc(0, 0, rOut, 0, Math.PI * 2, false);
+            const hole = new THREE.Path();
+            hole.absarc(0, 0, rIn, 0, Math.PI * 2, true);
+            shape.holes.push(hole);
+          } else if (shapeType === "hexagon") {
+            const rOut = baseDiameter / 2;
+            const rIn = Math.max(1, rOut - strokeWidth);
+
+            for (let i = 0; i < 6; i++) {
+              const angle = (i * Math.PI) / 3;
+              const x = rOut * Math.cos(angle);
+              const y = rOut * Math.sin(angle);
+              if (i === 0) shape.moveTo(x, y);
+              else shape.lineTo(x, y);
+            }
+            shape.closePath();
+
+            const hole = new THREE.Path();
+            for (let i = 0; i < 6; i++) {
+              const angle = (i * Math.PI) / 3;
+              const x = rIn * Math.cos(angle);
+              const y = rIn * Math.sin(angle);
+              if (i === 0) hole.moveTo(x, y);
+              else hole.lineTo(x, y);
+            }
+            hole.closePath();
+            shape.holes.push(hole);
+          }
+
+          return new THREE.ExtrudeGeometry(shape, {
+            depth: strokeThickness,
+            bevelEnabled: false,
+          });
+        }, [
+          shapeType,
+          baseWidth,
+          baseHeight,
+          baseDiameter,
+          strokeEnabled,
+          strokeWidth,
+          strokeThickness,
+        ]);
+
+        if (!strokeEnabled || !strokeGeometry) return null;
+
+        return (
+          <mesh
+            geometry={strokeGeometry}
+            position={[0, 0, baseThickness / 2 + 0.01]}
+            renderOrder={10}
+          >
+            <meshStandardMaterial
+              color={strokeColor}
+              roughness={0.4}
+              metalness={0.05}
+            />
+          </mesh>
+        );
+      }
 
       function SvgMakerWorldLayers({
         svgString,
@@ -145,6 +245,10 @@ const KeychainViewer3D = dynamic(
         baseDiameter,
         baseThickness,
         hasHole,
+        strokeEnabled,
+        strokeWidth,
+        strokeThickness,
+        strokeColor,
         graphicScale,
         offsetX,
         offsetY,
@@ -218,7 +322,20 @@ const KeychainViewer3D = dynamic(
               </group>
             )}
 
-            {/* Płaskorzeźba */}
+            {/* 4. OBRAMOWANIE STROKE */}
+            <PlateStrokeMesh
+              shapeType={shapeType}
+              baseWidth={baseWidth}
+              baseHeight={baseHeight}
+              baseDiameter={baseDiameter}
+              baseThickness={baseThickness}
+              strokeEnabled={strokeEnabled}
+              strokeWidth={strokeWidth}
+              strokeThickness={strokeThickness}
+              strokeColor={strokeColor}
+            />
+
+            {/* 5. PŁASKORZEŹBA MOTYWU */}
             <SvgMakerWorldLayers
               svgString={reliefSvg}
               layersConfig={layersConfig}
@@ -254,7 +371,7 @@ export default function KeychainGenerator() {
   const [cartItems, setCartItems] = useState([]);
 
   // Kształt bazy i wymiary
-  const [shapeType, setShapeType] = useState("circle"); // 'rect' | 'circle' | 'hexagon'
+  const [shapeType, setShapeType] = useState("hexagon");
   const [baseColor, setBaseColor] = useState("#0B0F17");
   const [baseWidth, setBaseWidth] = useState(65);
   const [baseHeight, setBaseHeight] = useState(50);
@@ -262,15 +379,21 @@ export default function KeychainGenerator() {
   const [baseThickness, setBaseThickness] = useState(3.0);
   const [hasHole, setHasHole] = useState(true);
 
-  // Aktywna zakładka w konfiguratorze (jak w konfiguratorze Hondy)
-  const [activeTab, setActiveTab] = useState("shape"); // 'shape' | 'graphic' | 'layers'
+  // Parametry Stroke (Obramowanie)
+  const [strokeEnabled, setStrokeEnabled] = useState(true);
+  const [strokeWidth, setStrokeWidth] = useState(2.0);
+  const [strokeThickness, setStrokeThickness] = useState(1.0);
+  const [strokeColor, setStrokeColor] = useState("#0B0F17");
 
-  // Skalowanie oraz pozycja motywu
+  // Aktywny tab
+  const [activeTab, setActiveTab] = useState("shape");
+
+  // Skalowanie oraz offset grafiki
   const [graphicScale, setGraphicScale] = useState(75);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
 
-  // Warstwy (kaskada grubości)
+  // Warstwy motywu
   const [layersConfig, setLayersConfig] = useState([
     { id: 1, name: "Warstwa 1 (Baza)", color: "#0B0F17", thickness: 0.6 },
     { id: 2, name: "Warstwa 2 (Ciało)", color: "#00E5FF", thickness: 0.8 },
@@ -300,7 +423,7 @@ export default function KeychainGenerator() {
   const [isProcessingImg, setIsProcessingImg] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Cena dynamiczna
+  // Dynamiczna kalkulacja ceny
   const areaCm2 =
     shapeType === "rect"
       ? (baseWidth * baseHeight) / 100
@@ -488,7 +611,7 @@ export default function KeychainGenerator() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F3F4F6] text-[#0F172A] font-sans">
+    <div className="min-h-screen flex flex-col bg-[#F1F5F9] text-[#0F172A] font-sans">
       <Head>
         <title>Studio Konfiguratora 3D — Drukstacja</title>
       </Head>
@@ -546,7 +669,7 @@ export default function KeychainGenerator() {
         </div>
       </header>
 
-      {/* GŁÓWNA KARTA KONFIGURATORA (Styl Honda Configurator) */}
+      {/* GŁÓWNA KARTA KONFIGURATORA */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 pb-10 flex items-center justify-center">
         <div className="bg-white rounded-[32px] border border-slate-200/80 shadow-[0_25px_70px_rgba(0,0,0,0.06)] w-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-[640px]">
           
@@ -558,7 +681,11 @@ export default function KeychainGenerator() {
                   Studio 4-Color AMS
                 </span>
                 <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                  {shapeType === "circle" ? "Podkładka / Brelok Okrągły" : shapeType === "rect" ? "Tabliczka Prostokątna" : "Płaskorzeźba Hexagon"}
+                  {shapeType === "circle"
+                    ? "Podkładka / Brelok Okrągły"
+                    : shapeType === "rect"
+                    ? "Tabliczka Prostokątna"
+                    : "Płaskorzeźba Hexagon"}
                 </h1>
               </div>
               <span className="text-xs font-medium px-3 py-1 rounded-full bg-white border border-slate-200 shadow-sm text-slate-600">
@@ -576,6 +703,10 @@ export default function KeychainGenerator() {
                 baseDiameter={baseDiameter}
                 baseThickness={baseThickness}
                 hasHole={hasHole}
+                strokeEnabled={strokeEnabled}
+                strokeWidth={strokeWidth}
+                strokeThickness={strokeThickness}
+                strokeColor={strokeColor}
                 graphicScale={graphicScale}
                 offsetX={offsetX}
                 offsetY={offsetY}
@@ -584,7 +715,7 @@ export default function KeychainGenerator() {
               />
             </div>
 
-            {/* Dolny pasek podsumowania na Stage */}
+            {/* Dolny pasek podsumowania */}
             <div className="flex items-end justify-between z-10 pt-4 border-t border-slate-200/70">
               <div>
                 <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
@@ -628,14 +759,13 @@ export default function KeychainGenerator() {
             </div>
           </div>
 
-          {/* PRAWA STRONA: MODUŁ KONFIGURACJI (Styl Honda Tabs/Cards) */}
+          {/* PRAWA STRONA: MODUŁ KONFIGURACJI */}
           <div className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-white border-l border-slate-100">
-            
-            <div className="space-y-6">
-              {/* Wybór koloru bazy (Szybki selektor u góry jak w Hondzie) */}
+            <div className="space-y-5">
+              {/* Kolor bazy */}
               <div>
                 <span className="text-xs font-bold uppercase text-slate-400 block mb-2 tracking-wider">
-                  Kolor bazy:
+                  Kolor płyty bazowej:
                 </span>
                 <div className="flex items-center gap-2.5">
                   {PALETTE.slice(0, 7).map((pal) => (
@@ -655,7 +785,7 @@ export default function KeychainGenerator() {
                 </div>
               </div>
 
-              {/* Taby Customizacji: Geometria / Grafika / Warstwy */}
+              {/* Taby konfiguracji */}
               <div>
                 <span className="text-xs font-bold uppercase text-slate-400 block mb-3 tracking-wider">
                   Opcje konfiguracji:
@@ -670,7 +800,7 @@ export default function KeychainGenerator() {
                         : "text-slate-500 hover:text-slate-800"
                     }`}
                   >
-                    Kształt & Wymiary
+                    Kształt & Rant
                   </button>
                   <button
                     type="button"
@@ -692,16 +822,16 @@ export default function KeychainGenerator() {
                         : "text-slate-500 hover:text-slate-800"
                     }`}
                   >
-                    Kolory Warstw
+                    Kolory AMS
                   </button>
                 </div>
               </div>
 
-              {/* ZAWARTOŚĆ TABU 1: KSZTAŁT I WYMIARY */}
+              {/* TAB 1: KSZTAŁT, WYMIARY I STROKE */}
               {activeTab === "shape" && (
-                <div className="space-y-4">
-                  {/* Wybór kształtu w pionowych kapsułkach (Styl felg z Hondy) */}
-                  <div className="grid grid-cols-3 gap-2.5">
+                <div className="space-y-3.5 max-h-[340px] overflow-y-auto pr-1">
+                  {/* Wybór kształtu */}
+                  <div className="grid grid-cols-3 gap-2">
                     {[
                       { id: "circle", label: "Okrąg", sub: "⌀ 60mm" },
                       { id: "hexagon", label: "Hexagon", sub: "Modern" },
@@ -710,7 +840,7 @@ export default function KeychainGenerator() {
                       <div
                         key={s.id}
                         onClick={() => setShapeType(s.id)}
-                        className={`p-3.5 rounded-2xl border flex flex-col items-center justify-center text-center cursor-pointer transition ${
+                        className={`p-3 rounded-2xl border flex flex-col items-center justify-center text-center cursor-pointer transition ${
                           shapeType === s.id
                             ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm font-bold"
                             : "border-slate-200 hover:border-slate-300 text-slate-700"
@@ -723,10 +853,10 @@ export default function KeychainGenerator() {
                   </div>
 
                   {/* Przełącznik ucha */}
-                  <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80">
+                  <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
                     <div>
                       <span className="text-xs font-bold text-slate-800 block">Ucho do zawieszenia</span>
-                      <span className="text-[10px] text-slate-500">Brelok na klucze vs Tabliczka ścienna</span>
+                      <span className="text-[10px] text-slate-500">Brelok vs Tabliczka ścienna</span>
                     </div>
                     <button
                       type="button"
@@ -739,12 +869,86 @@ export default function KeychainGenerator() {
                     </button>
                   </div>
 
-                  {/* Suwaki wymiarów */}
-                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+                  {/* KONTROLKA STROKE (OBRAMOWANIE W STYLU MAKERWORLD) */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="strokeToggle"
+                          checked={strokeEnabled}
+                          onChange={(e) => setStrokeEnabled(e.target.checked)}
+                          className="w-4 h-4 rounded text-[#EF4444] accent-[#EF4444] cursor-pointer"
+                        />
+                        <label htmlFor="strokeToggle" className="text-xs font-bold text-slate-800 cursor-pointer">
+                          Stroke (Obramowanie bazy)
+                        </label>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-semibold">Ochrona rantu</span>
+                    </div>
+
+                    {strokeEnabled && (
+                      <div className="space-y-2.5 pt-2 border-t border-slate-200">
+                        <div>
+                          <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                            <span>Szerokość rantu (Width)</span>
+                            <span className="text-[#EF4444]">{strokeWidth} mm</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1.0"
+                            max="6.0"
+                            step="0.5"
+                            value={strokeWidth}
+                            onChange={(e) => setStrokeWidth(parseFloat(e.target.value))}
+                            className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                            <span>Wysokość rantu (Thickness)</span>
+                            <span className="text-[#EF4444]">{strokeThickness} mm</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0.4"
+                            max="2.5"
+                            step="0.2"
+                            value={strokeThickness}
+                            onChange={(e) => setStrokeThickness(parseFloat(e.target.value))}
+                            className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                          />
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                            Kolor obramowania
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {PALETTE.map((pal) => (
+                              <button
+                                key={`stroke-${pal.id}`}
+                                type="button"
+                                onClick={() => setStrokeColor(pal.id)}
+                                className={`w-4 h-4 rounded-full transition ${
+                                  strokeColor === pal.id ? "scale-125 ring-2 ring-[#EF4444]" : "border border-slate-300"
+                                }`}
+                                style={{ backgroundColor: pal.id }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Wymiary bazy */}
+                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
                     {shapeType === "rect" ? (
                       <div className="space-y-2">
                         <div>
-                          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+                          <div className="flex justify-between text-xs font-bold text-slate-700 mb-0.5">
                             <span>Szerokość (X)</span>
                             <span className="text-[#EF4444]">{baseWidth} mm</span>
                           </div>
@@ -759,7 +963,7 @@ export default function KeychainGenerator() {
                           />
                         </div>
                         <div>
-                          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+                          <div className="flex justify-between text-xs font-bold text-slate-700 mb-0.5">
                             <span>Wysokość (Y)</span>
                             <span className="text-[#EF4444]">{baseHeight} mm</span>
                           </div>
@@ -776,7 +980,7 @@ export default function KeychainGenerator() {
                       </div>
                     ) : (
                       <div>
-                        <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+                        <div className="flex justify-between text-xs font-bold text-slate-700 mb-0.5">
                           <span>Średnica / Rozmiar</span>
                           <span className="text-[#EF4444]">{baseDiameter} mm</span>
                         </div>
@@ -795,9 +999,9 @@ export default function KeychainGenerator() {
                 </div>
               )}
 
-              {/* ZAWARTOŚĆ TABU 2: GRAFIKA & POZYCJONOWANIE */}
+              {/* TAB 2: GRAFIKA & POZYCJA */}
               {activeTab === "graphic" && (
-                <div className="space-y-4">
+                <div className="space-y-3.5">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -807,7 +1011,7 @@ export default function KeychainGenerator() {
                   />
                   <div
                     onClick={() => !isProcessingImg && fileInputRef.current?.click()}
-                    className="p-4 rounded-2xl border-2 border-dashed border-slate-300 hover:border-[#EF4444] bg-slate-50 flex items-center justify-between cursor-pointer transition"
+                    className="p-3.5 rounded-2xl border-2 border-dashed border-slate-300 hover:border-[#EF4444] bg-slate-50 flex items-center justify-between cursor-pointer transition"
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-red-100 text-[#EF4444] flex items-center justify-center font-bold">
@@ -820,8 +1024,7 @@ export default function KeychainGenerator() {
                     <span className="text-xs font-bold text-[#EF4444]">Wybierz</span>
                   </div>
 
-                  {/* Skala i Offset */}
-                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
                     <div>
                       <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
                         <span>Skalowanie motywu</span>
@@ -874,9 +1077,9 @@ export default function KeychainGenerator() {
                 </div>
               )}
 
-              {/* ZAWARTOŚĆ TABU 3: KOLORY 4 WARSTW AMS */}
+              {/* TAB 3: WARSTWY FILAMENTU AMS */}
               {activeTab === "layers" && (
-                <div className="space-y-2.5 max-h-[290px] overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                   {layersConfig.map((layer, idx) => (
                     <div
                       key={layer.id}
