@@ -58,39 +58,29 @@ except Exception as _e:
 
 
 def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool = False):
-    # 1. Próba wycięcia przez rembg (jeśli nie wybrano keep_bg)
-    processed_bytes = image_bytes
-    if not keep_bg and REMBG_AVAILABLE:
-        try:
-            processed_bytes = rembg_remove(image_bytes)
-        except Exception:
-            processed_bytes = image_bytes
-
-    nparr = np.frombuffer(processed_bytes, np.uint8)
+    nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
     if img is None:
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+        raise ValueError("Błąd odczytu pliku graficznego.")
 
-    if img is None:
-        raise ValueError("Błąd odczytu pliku obrazu.")
-
+    # 1. Obsługa przezroczystości alfa
     has_alpha = False
     if len(img.shape) == 3 and img.shape[2] == 4:
-        alpha_raw = img[:, :, 3] > 25
-        if np.sum(alpha_raw) > (0.10 * alpha_raw.size):
+        alpha_raw = img[:, :, 3] > 20
+        if np.sum(alpha_raw) > 0.05 * alpha_raw.size:
             has_alpha = True
             alpha_mask = alpha_raw
         bgr = img[:, :, :3]
     else:
         bgr = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
-    target_dim = 360
+    target_dim = 420
     h, w = bgr.shape[:2]
     scale = target_dim / max(h, w)
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
     bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
+    # 2. Usuwanie tła / wyciąganie sylwetki (Silhouette Mask)
     if has_alpha:
         fg_mask = cv2.resize(
             alpha_mask.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
@@ -98,71 +88,101 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     elif keep_bg:
         fg_mask = np.ones((new_h, new_w), dtype=bool)
     else:
-        # BEZWZGLĘDNA ELIMINACJA TŁA I SZACHOWNICY STOCKOWEJ:
-        # Konwertujemy na odcienie szarości i szukamy mocnego kontrastu (głowa vs tło)
         gray = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2GRAY)
+        # Adaptacyjny filtr tła
+        blurred = cv2.bilateralFilter(gray, 9, 75, 75)
+        _, thresh = cv2.threshold(blurred, 235, 255, cv2.THRESH_BINARY_INV)
         
-        # Rozmycie usuwające wzorek kratki szachownicy
-        blurred = cv2.GaussianBlur(gray, (15, 15), 0)
-        
-        # Adaptacyjne progowanie Otsu odwrócone (ciemny motyw psa na jasnym tle)
-        _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        
-        # Domykamy dziury wewnątrz sylwetki (np. w środku uszu czy pyska)
-        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
-        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_close)
-        
-        # Wyciągamy komponenty spójne
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+        # Znajdź największy element centralny
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(closed)
-        
-        # Szukamy największego komponentu, który NIE jest tłem (leży bliżej środka)
         best_label = -1
         max_area = 0
-        cx_mid, cy_mid = new_w / 2, new_h / 2
+        cx, cy = new_w / 2, new_h / 2
 
         for i in range(1, num_labels):
             area = stats[i, cv2.CC_STAT_AREA]
-            bx = stats[i, cv2.CC_STAT_LEFT]
-            by = stats[i, cv2.CC_STAT_TOP]
-            bw = stats[i, cv2.CC_STAT_WIDTH]
-            bh = stats[i, cv2.CC_STAT_HEIGHT]
-
-            # Odrzucamy ramki dotykające wszystkich 4 krawędzi
-            if bw > 0.95 * new_w and bh > 0.95 * new_h:
+            bx, by, bw, bh = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP], stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+            if bw > 0.98 * new_w and bh > 0.98 * new_h:
                 continue
-            
-            # Punkt ciężkości
-            dist_to_center = np.hypot(centroids[i][0] - cx_mid, centroids[i][1] - cy_mid)
-            if area > max_area and dist_to_center < (max(new_w, new_h) * 0.45):
+            dist = np.hypot(centroids[i][0] - cx, centroids[i][1] - cy)
+            if area > max_area and dist < (max(new_w, new_h) * 0.45):
                 max_area = area
                 best_label = i
 
-        if best_label != -1 and max_area > (0.05 * new_w * new_h):
-            # Poszerzamy delikatnie maskę psa, by nie uciąć futra na krawędziach
-            dog_mask = (labels == best_label).astype(np.uint8) * 255
-            dog_mask = cv2.dilate(dog_mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)), iterations=1)
-            fg_mask = dog_mask > 0
+        if best_label != -1:
+            fg_mask = (labels == best_label)
+            # Wypełnienie dziur wewnątrz sylwetki psa (żeby baza pod spodem była pełna!)
+            fg_mask = cv2.morphologyEx(fg_mask.astype(np.uint8) * 255, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))) > 0
         else:
-            # Bezpieczny fallback
             fg_mask = np.ones((new_h, new_w), dtype=bool)
 
-    # Kwantyzacja pikseli należących TYLKO do wyciętego psa
-    pixels = bgr_resized[fg_mask].reshape(-1, 3)
-    if len(pixels) < n_colors:
-        pixels = bgr_resized.reshape(-1, 3)
-        fg_mask = np.ones((new_h, new_w), dtype=bool)
+    # 3. Ekstrakcja czarnych linii i detali (Nos, Oczy, Obrysy fafli jak w Bambu)
+    gray = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    gray_clahe = clahe.apply(gray)
+    
+    # Detekcja krawędzi i ciemnych detali
+    dark_details_mask = (gray_clahe < 70) & fg_mask
+    dark_details_mask = cv2.morphologyEx(dark_details_mask.astype(np.uint8) * 255, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))) > 0
 
-    # 4. K-Means
-    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=3)
-    kmeans.fit(pixels)
+    # 4. Kwantyzacja kolorów pośrednich (Kolor sierści, cienie)
+    # Wybieramy piksele obiektu, które nie są czarnymi liniami
+    body_pixels_mask = fg_mask & (~dark_details_mask)
+    body_pixels = bgr_resized[body_pixels_mask].reshape(-1, 3)
 
-    centers = kmeans.cluster_centers_.astype(int)
-    hex_colors = [f"#{c[2]:02x}{c[1]:02x}{c[0]:02x}".upper() for c in centers]
+    if len(body_pixels) < (n_colors - 1):
+        body_pixels = bgr_resized[fg_mask].reshape(-1, 3)
+        body_pixels_mask = fg_mask
 
-    quantized_map = np.full((new_h, new_w), -1, dtype=int)
-    quantized_map[fg_mask] = kmeans.labels_
+    # K-Means dla 3 kolorów ciała + 1 kolor dedykowany na czerń detali = 4 kolory
+    n_body_colors = max(1, n_colors - 1)
+    kmeans = KMeans(n_clusters=n_body_colors, random_state=42, n_init=3)
+    kmeans.fit(body_pixels)
 
-    # 5. Skalowanie do obrysu samego psa (a nie całego kwadratu szachownicy!)
+    body_centers = kmeans.cluster_centers_.astype(int)
+    # Sortujemy kolory ciała od najjaśniejszego do najciemniejszego (jasny brąz -> ciemny brąz)
+    brightness = [np.mean(c) for c in body_centers]
+    sorted_order = np.argsort(brightness)[::-1] # Od najjaśniejszego
+    body_centers = body_centers[sorted_order]
+
+    # Składamy 4 kolory: [Najjaśniejszy, Pośredni, Ciemny, Głęboka Czerń na detale]
+    hex_colors = [f"#{c[2]:02x}{c[1]:02x}{c[0]:02x}".upper() for c in body_centers]
+    hex_colors.append("#1A1A1A") # Ostatni kolor: czyste detale i obrysy
+
+    # 5. Tworzenie warstw MakerWorld (Stacking)
+    # Warstwa 1: Cała sylwetka (Silhouette - brak prześwitów podłoża!)
+    # Warstwa 2: Średni brąz
+    # Warstwa 3: Ciemny brąz
+    # Warstwa 4: Czarne detale, oczy, nos
+    layer_masks = []
+    
+    # Warstwa 1 (Baza/Podkład): cała sylwetka
+    layer_masks.append(fg_mask.astype(np.uint8) * 255)
+
+    # Kwantyzacja ciała
+    body_labels = np.full((new_h, new_w), -1, dtype=int)
+    body_labels[body_pixels_mask] = kmeans.labels_
+
+    # Mapowanie posortowanych klastrów
+    for orig_idx in sorted_order[1:]:
+        c_mask = (body_labels == orig_idx).astype(np.uint8) * 255
+        # Delikatne poszerzenie, by zlikwidować szpary
+        c_mask = cv2.dilate(c_mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
+        layer_masks.append(c_mask)
+
+    # Uzupełnij warstwy pośrednie jeśli zabrakło
+    while len(layer_masks) < 3:
+        layer_masks.append(np.zeros((new_h, new_w), dtype=np.uint8))
+
+    # Ostatnia warstwa: Czarne obrysy, oczy, nos
+    line_mask = dark_details_mask.astype(np.uint8) * 255
+    line_mask = cv2.dilate(line_mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2)))
+    layer_masks.append(line_mask)
+
+    # 6. Centrowanie i wektoryzacja do SVG z zaokrąglonymi krzywymi
     y_idx, x_idx = np.where(fg_mask)
     if len(x_idx) > 0 and len(y_idx) > 0:
         min_x, max_x = np.min(x_idx), np.max(x_idx)
@@ -174,42 +194,35 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     bbox_h = max(max_y - min_y, 1)
     max_side = max(bbox_w, bbox_h)
 
-    usable_box = 90.0 # 90% szerokości bazy
+    usable_box = 86.0
     scale_fit = usable_box / max_side
     center_x = (min_x + max_x) / 2.0
     center_y = (min_y + max_y) / 2.0
 
-    collected_paths = []
     color_ids = ["color_1", "color_2", "color_3", "color_4"]
+    svg_output = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
 
-    kernel_clean = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-
-    for cluster_idx in range(n_colors):
-        mask = (quantized_map == cluster_idx).astype(np.uint8) * 255
+    for l_idx in range(4):
+        mask = layer_masks[l_idx]
         if not np.any(mask):
             continue
 
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_clean)
-        mask = cv2.medianBlur(mask, 3)
-
+        # Wygładzenie krawędzi (Bézier-like smoothing)
+        mask = cv2.GaussianBlur(mask, (3, 3), 0)
+        _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS)
 
+        paths = []
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            # Ignorujemy małe szumy
-            if area < 12:
-                continue
-
-            # Jeśli jakikolwiek kształt próbuje być kwadratowym obramowaniem tła - odrzucamy
-            bx, by, bw, bh = cv2.boundingRect(cnt)
-            if bw > 0.88 * new_w and bh > 0.88 * new_h:
+            if area < (12 if l_idx == 3 else 25): # Detale linii mogą być mniejsze
                 continue
 
             perimeter = cv2.arcLength(cnt, True)
-            epsilon = 0.0016 * perimeter
-            approx_cnt = cv2.approxPolyDP(cnt, epsilon, True)
+            epsilon = 0.0012 * perimeter # Bardziej gęste próbkowanie łuków
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
 
-            pts = approx_cnt.reshape(-1, 2)
+            pts = approx.reshape(-1, 2)
             if len(pts) < 3:
                 continue
 
@@ -219,38 +232,20 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
                 return nx, ny
 
             start_x, start_y = map_pt(pts[0])
-            path_d = f"M {start_x:.2f} {start_y:.2f} "
-
+            d = f"M {start_x:.2f} {start_y:.2f} "
             for pt in pts[1:]:
                 x, y = map_pt(pt)
-                path_d += f"L {x:.2f} {y:.2f} "
-            path_d += "Z"
+                d += f"L {x:.2f} {y:.2f} "
+            d += "Z "
+            paths.append(d)
 
-            collected_paths.append({
-                "area": area,
-                "cluster_idx": cluster_idx,
-                "path_d": path_d
-            })
-
-    collected_paths.sort(key=lambda x: x["area"], reverse=True)
-
-    svg_output = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
-    final_colors = []
-
-    for cluster_idx in range(n_colors):
-        c_id = color_ids[cluster_idx]
-        c_hex = hex_colors[cluster_idx]
-        group_paths = [p["path_d"] for p in collected_paths if p["cluster_idx"] == cluster_idx]
-
-        if group_paths:
-            paths_str = " ".join([f'<path d="{p}" />' for p in group_paths])
-            svg_output.append(f'<g id="{c_id}" fill="{c_hex}">{paths_str}</g>')
-            final_colors.append(c_hex)
-        else:
-            final_colors.append("#222222")
+        c_id = color_ids[l_idx]
+        c_hex = hex_colors[l_idx]
+        paths_str = "".join([f'<path d="{p}"/>' for p in paths])
+        svg_output.append(f'<g id="{c_id}" fill="{c_hex}">{paths_str}</g>')
 
     svg_output.append("</svg>")
-    return "".join(svg_output), final_colors
+    return "".join(svg_output), hex_colors
 
 
 @app.get("/")
