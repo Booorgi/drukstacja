@@ -19,14 +19,23 @@ import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 
-from analysis import analyze_file, UnsupportedFileType
+from analysis import (
+    process_uploaded_file,
+    analyze_file,
+    ALL_SUPPORTED_EXTENSIONS,
+    INSTANT_3D_EXTENSIONS,
+    INSTANT_MESH_EXTENSIONS,
+    INSTANT_CAD_EXTENSIONS,
+    ARCHIVE_EXTENSIONS,
+    UnsupportedFileType,
+)
 from pricing import calculate_price, MATERIALS
 from storage import upload_file_to_r2, get_file_url
 from slicer import convert_step_to_stl, run_slicer
 from orientation import auto_orient_mesh
 
 # Inicjalizacja aplikacji FastAPI
-app = FastAPI(title="Drukstacja API", version="0.4.1")
+app = FastAPI(title="Drukstacja API", version="0.5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,7 +46,7 @@ app.add_middleware(
 )
 
 MAX_FILE_SIZE_MB = 100
-ALLOWED_EXTENSIONS = {".stl", ".step", ".stp", ".obj"}
+ALLOWED_EXTENSIONS = ALL_SUPPORTED_EXTENSIONS
 
 
 class QuoteRequest(BaseModel):
@@ -359,26 +368,33 @@ async def vectorize_image_ai(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Błąd wektoryzacji: {str(e)}")
 @app.post("/analyze")
-async def analyze(file: UploadFile = File(...)):
+@app.post("/api/analyze-model")
+async def analyze_model_endpoint(file: UploadFile = File(...)):
     """
-    Przyjmuje plik CAD (STL/STEP/OBJ):
-    1. Zapisuje oryginalny plik
-    2. W przypadku .STEP konwertuje go na .STL
-    3. Tnie model slicerem (Bambu/Prusa CLI) wyliczając realny czas i podpory
-    4. Wysyła plik(i) do Cloudflare R2
-    5. Zwraca dane geometrii, metadane slicera i klucze R2
+    Hybrydowa analiza plików produkcyjnych (standard JLCPCB / PCBWay):
+    - Pliki 3D Mesh / CAD i archiwa z modelami: instant 3D geometry + slicing
+    - Pliki 2D DXF/DWG, PDF, PCB Gerber, CAD/BIM: rejestracja zlecenia RFQ bez błędów
     """
-    ext = Path(file.filename).suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
+    filename_lower = file.filename.lower()
+    ext = Path(filename_lower).suffix
+
+    # Sprawdzenie czy rozszerzenie jest na liście lub czy to archiwum tar.gz / tar.bz2
+    is_supported = (
+        ext in ALLOWED_EXTENSIONS
+        or filename_lower.endswith((".tar.gz", ".tar.bz2", ".tgz"))
+    )
+
+    if not is_supported:
         raise HTTPException(
             status_code=400,
-            detail=f"Nieobsługiwany format pliku: {ext}. Dozwolone: {', '.join(ALLOWED_EXTENSIONS)}",
+            detail=f"Nieobsługiwany format pliku: {ext}. Obsługujemy formaty 3D (.step, .stl, .obj, .3mf itp.), PCB Gerber, rysunki techniczne oraz archiwa ZIP.",
         )
 
     tmp_dir = tempfile.mkdtemp()
     unique_id = uuid.uuid4().hex
-    tmp_path = os.path.join(tmp_dir, f"{unique_id}{ext}")
-    r2_key = f"models/{unique_id}_{file.filename}"
+    safe_filename = "".join(c for c in file.filename if c.isalnum() or c in "._- ")
+    tmp_path = os.path.join(tmp_dir, f"{unique_id}_{safe_filename}")
+    r2_key = f"models/{unique_id}_{safe_filename}"
 
     try:
         with open(tmp_path, "wb") as f:
@@ -391,61 +407,93 @@ async def analyze(file: UploadFile = File(...)):
                 detail=f"Plik za duży ({size_mb:.1f}MB). Limit: {MAX_FILE_SIZE_MB}MB",
             )
 
-        # 1. Wysyłka do R2
-        with open(tmp_path, "rb") as f_upload:
-            upload_file_to_r2(
-                file_obj=f_upload,
-                object_name=r2_key,
-                content_type=file.content_type or "application/octet-stream",
-            )
-
-        # 2. Konwersja STEP jeśli trzeba
-        if ext in [".step", ".stp"]:
-            converted_stl_path = os.path.join(tmp_dir, f"{unique_id}_converted.stl")
-            convert_step_to_stl(tmp_path, converted_stl_path)
-            mesh_source_path = converted_stl_path
-        else:
-            mesh_source_path = tmp_path
-
-        # 3. Auto-orientacja
-        raw_mesh = trimesh.load(mesh_source_path, force="mesh")
-        oriented_mesh, orientation_info = auto_orient_mesh(raw_mesh)
-
-        oriented_stl_path = os.path.join(tmp_dir, f"{unique_id}_oriented.stl")
-        oriented_mesh.export(oriented_stl_path)
-
-        # 4. Upload zorientowanego STL
-        preview_stl_key = f"models/{unique_id}_oriented.stl"
-        with open(oriented_stl_path, "rb") as f_stl:
-            upload_file_to_r2(
-                file_obj=f_stl,
-                object_name=preview_stl_key,
-                content_type="model/stl",
-            )
-        preview_stl_url = get_file_url(preview_stl_key)
-
-        # 5. Analiza geometrii
-        result = analyze_file(oriented_stl_path, ".stl")
-
-        # 6. Slicing
+        # 1. Wysyłka oryginalnego pliku do Cloudflare R2 (zabezpieczenie dla inżyniera / klienta)
         try:
-            slice_data = run_slicer(oriented_stl_path, infill=20, layer_height=0.2)
-            result["print_time_exact"] = slice_data["print_time"]
-            result["filament_weight_g_exact"] = slice_data["filament_g"]
-            result["has_supports"] = slice_data["has_supports"]
-            result["support_lines"] = slice_data.get("support_lines", [])
-        except Exception as slice_err:
-            print(f"[WARN] Slicer error: {slice_err}")
+            with open(tmp_path, "rb") as f_upload:
+                upload_file_to_r2(
+                    file_obj=f_upload,
+                    object_name=r2_key,
+                    content_type=file.content_type or "application/octet-stream",
+                )
+        except Exception as r2_err:
+            print(f"[WARN] Błąd zapisu w R2 (kontynuuję analizę): {r2_err}")
+
+        # 2. Hybrydowa analiza pliku
+        result = process_uploaded_file(tmp_path, file.filename, tmp_dir)
+
+        # 3. Przypadek A: Model 3D z natychmiastową wyceną (instant_pricing == True)
+        if result.get("instant_pricing") is True:
+            mesh_source = result.get("mesh_source_path", tmp_path)
+            raw_mesh = result.pop("mesh_object", None)
+
+            if raw_mesh is None:
+                source_ext = Path(mesh_source).suffix.lower()
+                if source_ext in [".step", ".stp", ".iges", ".igs"]:
+                    try:
+                        converted_stl_path = os.path.join(tmp_dir, f"{unique_id}_converted.stl")
+                        convert_step_to_stl(mesh_source, converted_stl_path)
+                        raw_mesh = trimesh.load(converted_stl_path, force="mesh")
+                    except Exception as conv_err:
+                        print(f"[WARN] Konwersja STEP do STL nie powiodła się: {conv_err}")
+                        # Bezpieczny fallback do RFQ zamiast błędu 500
+                        result["instant_pricing"] = False
+                        result["type"] = "rfq_document"
+                        result["category"] = "Bryła CAD (B-Rep)"
+                        result["message"] = f"Złożona bryła CAD ({source_ext.upper()}) wymaga manualnego przygotowania siatki przez inżyniera. Oferta w 24h."
+
+            if raw_mesh is not None and result.get("instant_pricing") is True:
+                try:
+                    oriented_mesh, orientation_info = auto_orient_mesh(raw_mesh)
+                    oriented_stl_path = os.path.join(tmp_dir, f"{unique_id}_oriented.stl")
+                    oriented_mesh.export(oriented_stl_path)
+
+                    preview_stl_key = f"models/{unique_id}_oriented.stl"
+                    with open(oriented_stl_path, "rb") as f_stl:
+                        upload_file_to_r2(
+                            file_obj=f_stl,
+                            object_name=preview_stl_key,
+                            content_type="model/stl",
+                        )
+                    preview_stl_url = get_file_url(preview_stl_key)
+                    result["preview_stl_key"] = preview_stl_key
+                    result["preview_stl_url"] = preview_stl_url
+                    result["orientation"] = orientation_info
+
+                    # Slicing
+                    try:
+                        slice_data = run_slicer(oriented_stl_path, infill=20, layer_height=0.2)
+                        result["print_time_exact"] = slice_data.get("print_time")
+                        result["filament_weight_g_exact"] = slice_data.get("filament_g")
+                        result["has_supports"] = slice_data.get("has_supports", False)
+                        result["support_lines"] = slice_data.get("support_lines", [])
+                    except Exception as slice_err:
+                        print(f"[WARN] Slicer error: {slice_err}")
+                        result["print_time_exact"] = None
+                        result["filament_weight_g_exact"] = None
+                        result["has_supports"] = False
+                        result["support_lines"] = []
+
+                except Exception as mesh_proc_err:
+                    print(f"[WARN] Błąd orientacji/cięcia siatki: {mesh_proc_err}")
+                    result["preview_stl_key"] = None
+                    result["preview_stl_url"] = None
+                    result["orientation"] = None
+
+        # 4. Przypadek B: Dokument RFQ (Rysunek 2D, PCB Gerber, CAD BIM itp.)
+        if result.get("instant_pricing") is not True:
+            result["instant_pricing"] = False
+            result["type"] = "rfq_document"
+            result["preview_stl_key"] = None
+            result["preview_stl_url"] = None
+            result["orientation"] = None
             result["print_time_exact"] = None
             result["filament_weight_g_exact"] = None
             result["has_supports"] = False
             result["support_lines"] = []
 
-        # 7. Zwrócenie wyniku
+        result.pop("mesh_object", None)
+        result.pop("mesh_source_path", None)
         result["file_key"] = r2_key
-        result["preview_stl_key"] = preview_stl_key
-        result["preview_stl_url"] = preview_stl_url
-        result["orientation"] = orientation_info
         result["original_filename"] = file.filename
 
         return result
