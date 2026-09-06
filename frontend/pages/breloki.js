@@ -490,6 +490,8 @@ export default function KeychainGenerator() {
 
           const formData = new FormData();
           formData.append("file", blob, "preprocessed.png");
+          // Przekazanie wyboru użytkownika do AI wycinania tła (rembg)
+          formData.append("keep_bg", keepBg.toString());
 
           try {
             const res = await fetch(`${API_URL}/vectorize-ai`, {

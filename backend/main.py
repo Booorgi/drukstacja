@@ -48,13 +48,22 @@ class QuoteRequest(BaseModel):
     infill_percent: int = 20
 
 
-def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
+from rembg import remove
+
+def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool = False):
+    # 1. AI Cutout: Usuwanie tła przy użyciu U2-Net (jeśli keep_bg=False)
+    if not keep_bg:
+        try:
+            image_bytes = remove(image_bytes)
+        except Exception as e:
+            print(f"[WARN] Rembg fallback: {e}")
+
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
     if img is None:
         raise ValueError("Nie udało się zdekodować obrazu.")
 
-    # 1. Obsługa przezroczystości
+    # 2. Obsługa kanału alfa
     has_alpha = False
     if len(img.shape) == 3 and img.shape[2] == 4:
         has_alpha = True
@@ -69,30 +78,40 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
     bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    # Likwidacja kratek, pasków i znaków wodnych z tła
-    bgr_clean = cv2.bilateralFilter(bgr_resized, d=7, sigmaColor=75, sigmaSpace=75)
+    # 3. Wzmocnienie krawędzi i kontrastu (CLAHE w przestrzeni LAB)
+    lab = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2LAB)
+    l_channel, a_channel, b_channel = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+    cl = clahe.apply(l_channel)
+    bgr_enhanced = cv2.cvtColor(cv2.merge((cl, a_channel, b_channel)), cv2.COLOR_LAB2BGR)
+
+    # Likwidacja szumu i artefaktów kompresji JPG
+    bgr_clean = cv2.bilateralFilter(bgr_enhanced, d=7, sigmaColor=75, sigmaSpace=75)
 
     if has_alpha:
         alpha_resized = cv2.resize(
             alpha_mask.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
         ).astype(bool)
     else:
-        flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
-        bgr_flood = bgr_clean.copy()
-        diff_tol = (20, 20, 20)
-        cv2.floodFill(bgr_flood, flood_mask, (0, 0), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
-        cv2.floodFill(bgr_flood, flood_mask, (new_w - 1, 0), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
-        cv2.floodFill(bgr_flood, flood_mask, (0, new_h - 1), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
-        cv2.floodFill(bgr_flood, flood_mask, (new_w - 1, new_h - 1), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
-        bg_mask = (flood_mask[1:-1, 1:-1] == 1)
-        alpha_resized = ~bg_mask
+        if keep_bg:
+            alpha_resized = np.ones((new_h, new_w), dtype=bool)
+        else:
+            flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
+            bgr_flood = bgr_clean.copy()
+            diff_tol = (20, 20, 20)
+            cv2.floodFill(bgr_flood, flood_mask, (0, 0), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
+            cv2.floodFill(bgr_flood, flood_mask, (new_w - 1, 0), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
+            cv2.floodFill(bgr_flood, flood_mask, (0, new_h - 1), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
+            cv2.floodFill(bgr_flood, flood_mask, (new_w - 1, new_h - 1), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
+            bg_mask = (flood_mask[1:-1, 1:-1] == 1)
+            alpha_resized = ~bg_mask
 
     pixels = bgr_clean[alpha_resized].reshape(-1, 3)
     if len(pixels) < n_colors:
         pixels = bgr_clean.reshape(-1, 3)
         alpha_resized = np.ones((new_h, new_w), dtype=bool)
 
-    # 2. Kwantyzacja K-Means
+    # 4. Kwantyzacja K-Means
     kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=4)
     kmeans.fit(pixels)
 
@@ -102,7 +121,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
     quantized_map = np.full((new_h, new_w), -1, dtype=int)
     quantized_map[alpha_resized] = kmeans.labels_
 
-    # 3. Wyznaczenie faktycznego Bounding Box motywu (centrowanie geometryczne)
+    # 5. Centrowanie geometryczne motywu
     y_indices, x_indices = np.where(alpha_resized)
     if len(x_indices) > 0 and len(y_indices) > 0:
         min_x, max_x = np.min(x_indices), np.max(x_indices)
@@ -114,19 +133,16 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
     bbox_h = max(max_y - min_y, 1)
     max_side = max(bbox_w, bbox_h)
 
-    # Skalujemy motyw tak, by wypełniał obszar roboczy 0-100 z zachowaniem proporcji i środka
     pad = 4.0
     usable_box = 100.0 - (2 * pad)
     scale_fit = usable_box / max_side
 
-    # Przesunięcie środka motywu do (50, 50)
     center_x = (min_x + max_x) / 2.0
     center_y = (min_y + max_y) / 2.0
 
     collected_paths = []
     color_ids = ["color_1", "color_2", "color_3", "color_4"]
 
-    # Elementy strukturalne pod optymalizację minimalnej grubości ścieżki (dysza 0.4 mm)
     kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
 
@@ -135,10 +151,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
         if not np.any(mask):
             continue
 
-        # Zamykanie mikroszczelin
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
-
-        # Pogrubienie drobnych detali, aby dysza 0.4 mm nie gubiła linii
         if cluster_idx > 0:
             mask = cv2.dilate(mask, kernel_dilate, iterations=1)
 
@@ -148,11 +161,9 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4):
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            # Odrzucanie pojedynczych drobin mniejszych niż ~16 px oraz zewnętrznego tła
             if area < 16 or area > (0.92 * (new_w * new_h)):
                 continue
 
-            # Uproszczenie krawędzi metodą Ramer-Douglas-Peucker pod płynny ruch ekstrudera
             perimeter = cv2.arcLength(cnt, True)
             epsilon = 0.0018 * perimeter
             approx_cnt = cv2.approxPolyDP(cnt, epsilon, True)
@@ -212,12 +223,17 @@ def get_materials():
     return MATERIALS
 
 
+from fastapi import Form
+
 @app.post("/vectorize-ai")
-async def vectorize_image_ai(file: UploadFile = File(...)):
-    """Wektoryzacja konturów z auto-pobieraniem palety barw."""
+async def vectorize_image_ai(
+    file: UploadFile = File(...),
+    keep_bg: bool = Form(False)
+):
+    """Wektoryzacja konturów z inteligentnym wycinaniem tła AI i doborem barw."""
     try:
         contents = await file.read()
-        svg_result, detected_colors = image_to_quantized_svg(contents, n_colors=4)
+        svg_result, detected_colors = image_to_quantized_svg(contents, n_colors=4, keep_bg=keep_bg)
         return {
             "svg": svg_result,
             "detected_colors": detected_colors
@@ -225,7 +241,6 @@ async def vectorize_image_ai(file: UploadFile = File(...)):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Błąd wektoryzacji: {str(e)}")
-
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
