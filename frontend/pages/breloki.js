@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabaseClient";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
+import Navbar from "../components/Navbar";
 import {
   SUNLU_CATALOG,
   KEYCHAIN_CATEGORIES,
@@ -1448,57 +1449,13 @@ export default function KeychainGenerator() {
       </Head>
 
       {/* NAVBAR */}
-      <header className="max-w-7xl w-full mx-auto px-6 py-5 flex items-center justify-between z-20">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#EF4444] flex items-center justify-center shadow-lg shadow-red-500/30">
-            <span className="font-extrabold text-xl text-white">D</span>
-          </div>
-          <span className="text-xl font-bold tracking-tight text-slate-900">
-            DRUK<span className="text-[#EF4444]">STACJA</span>
-          </span>
-        </Link>
-
-        <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-600">
-          <Link href="/" className="hover:text-black transition">
-            Wyceniarka STL
-          </Link>
-          <Link href="/breloki" className="text-[#EF4444] transition">
-            Konfigurator 3D
-          </Link>
-          <span className="hover:text-black cursor-pointer transition">
-            Materiały
-          </span>
-        </nav>
-
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => setIsCartOpen(true)}
-            className="p-2.5 rounded-full bg-white border border-slate-200 hover:border-slate-400 text-slate-700 shadow-sm transition relative"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-            </svg>
-            {cartItems.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-[#EF4444] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow">
-                {cartItems.length}
-              </span>
-            )}
-          </button>
-          {user ? (
-            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-slate-200 text-slate-800">
-              {user.email.split("@")[0]}
-            </span>
-          ) : (
-            <button
-              onClick={() => setIsAuthOpen(true)}
-              className="text-xs font-bold px-4 py-2 rounded-full bg-slate-900 text-white hover:bg-slate-800 transition"
-            >
-              Zaloguj
-            </button>
-          )}
-        </div>
-      </header>
+      <Navbar
+        activePage="breloki"
+        user={user}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        cartItems={cartItems}
+        onOpenCart={() => setIsCartOpen(true)}
+      />
 
       {/* GŁÓWNY MODUŁ */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 pb-10 flex items-center justify-center">

@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabaseClient";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
+import Navbar from "../components/Navbar";
 import { STL_MATERIAL_GROUPS, STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -78,6 +79,7 @@ export default function Home() {
     handleSelectMaterial(filteredMaterials[nextIdx].id);
   }
 
+  const [layerHeight, setLayerHeight] = useState(0.20);
   const [infill, setInfill] = useState(20);
   const [showSupports, setShowSupports] = useState(true);
   const [quantity, setQuantity] = useState(1);
@@ -241,7 +243,8 @@ export default function Home() {
   const volume = analysisData?.volume_cm3 || 32.5;
   const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
   const activeColorObj = matConfig?.colors?.find((c) => c.hex === selectedColor) || matConfig?.colors?.[0];
-  const unitPrice = Math.max(15, volume * (matConfig?.pricePerCm3 || 0.38) * (1 + infill / 100)).toFixed(2);
+  const layerMultiplier = layerHeight === 0.12 ? 1.25 : layerHeight === 0.28 ? 0.88 : 1.0;
+  const unitPrice = Math.max(15, volume * (matConfig?.pricePerCm3 || 0.38) * (1 + infill / 100) * layerMultiplier).toFixed(2);
   const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
 
   // Rekomendowane zastosowania dla karty specyfikacji technicznej
@@ -302,7 +305,7 @@ export default function Home() {
             : matConfig.group === "flex"
             ? "FDM Direct Drive 0.4mm (Flex TPU)"
             : "FDM Precision 0.4mm",
-        layer_height: "0.20 mm",
+        layer_height: `${layerHeight} mm`,
         infill: infill,
         clean_supports: true,
         brass_inserts: false,
@@ -329,100 +332,13 @@ export default function Home() {
       </Head>
 
       {/* NAVBAR */}
-      <header className="max-w-7xl w-full mx-auto px-6 py-5 flex items-center justify-between z-20">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#EF4444] flex items-center justify-center shadow-lg shadow-red-500/30">
-            <span className="font-extrabold text-xl text-white">D</span>
-          </div>
-          <span className="text-xl font-bold tracking-tight text-slate-900">
-            DRUK<span className="text-[#EF4444]">STACJA</span>
-          </span>
-        </Link>
-
-        <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-600">
-          <Link href="/" className="text-[#EF4444] transition">
-            Wyceniarka STL
-          </Link>
-          <Link href="/breloki" className="hover:text-black transition">
-            Konfigurator 3D
-          </Link>
-          <span className="hover:text-black cursor-pointer transition">
-            Materiały
-          </span>
-        </nav>
-
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => setIsCartOpen(true)}
-            className="p-2.5 rounded-full bg-white border border-slate-200 hover:border-slate-400 text-slate-700 shadow-sm transition relative"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-            </svg>
-            {cartItems.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-[#EF4444] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow">
-                {cartItems.length}
-              </span>
-            )}
-          </button>
-
-          {/* PANEL KLIENTA Z ROZWIJANYM MENU */}
-          {user ? (
-            <div className="relative" ref={userMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm text-xs font-bold text-slate-800 hover:border-slate-400 transition"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span>{user.email.split("@")[0]}</span>
-                <svg
-                  className={`w-3.5 h-3.5 transition-transform ${isUserMenuOpen ? "rotate-180" : ""}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {isUserMenuOpen && (
-                <div className="absolute right-0 mt-2 w-52 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-50 animate-in fade-in zoom-in-95">
-                  <div className="px-4 py-2 border-b border-slate-100">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Zalogowano</span>
-                    <span className="text-xs font-bold text-slate-800 truncate block">{user.email}</span>
-                  </div>
-                  <Link
-                    href="/orders"
-                    onClick={() => setIsUserMenuOpen(false)}
-                    className="block px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
-                  >
-                    Moje zlecenia
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      supabase.auth.signOut();
-                    }}
-                    className="w-full text-left px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 transition"
-                  >
-                    Wyloguj
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <button
-              onClick={() => setIsAuthOpen(true)}
-              className="text-xs font-bold px-5 py-2 rounded-full bg-slate-900 text-white hover:bg-slate-800 transition"
-            >
-              Zaloguj
-            </button>
-          )}
-        </div>
-      </header>
+      <Navbar
+        activePage="wycena"
+        user={user}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        cartItems={cartItems}
+        onOpenCart={() => setIsCartOpen(true)}
+      />
 
       {/* GŁÓWNY UKŁAD STRONY: 2 KOLUMNY GÓRA + 1 KOLUMNA PEŁNA SZEROKOŚĆ DÓŁ */}
       <main className="max-w-7xl w-full mx-auto px-4 md:px-6 py-8 space-y-8">
@@ -921,6 +837,84 @@ export default function Home() {
                     </div>
                   </div>
 
+                  {/* Wysokość warstwy (Jakość druku) */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700">
+                        Wysokość warstwy (Jakość druku)
+                      </span>
+                      <span className="text-xs font-extrabold text-[#EF4444] bg-red-50 px-2 py-0.5 rounded-full border border-red-100">
+                        {layerHeight === 0.12 ? "0.12 mm (Ultra)" : layerHeight === 0.28 ? "0.28 mm (Draft)" : "0.20 mm (Standard)"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        {
+                          val: 0.12,
+                          label: "0.12 mm",
+                          title: "Ultra Detail",
+                          subtitle: "Wysoka precyzja",
+                          multiplier: "+25%",
+                          badge: "Gładki",
+                        },
+                        {
+                          val: 0.20,
+                          label: "0.20 mm",
+                          title: "Standard",
+                          subtitle: "Zbalansowana",
+                          multiplier: "1.0x",
+                          badge: "Domyślny",
+                        },
+                        {
+                          val: 0.28,
+                          label: "0.28 mm",
+                          title: "Draft",
+                          subtitle: "Szybki prototyp",
+                          multiplier: "-12%",
+                          badge: "Szybki",
+                        },
+                      ].map((item) => {
+                        const isSelected = layerHeight === item.val;
+                        return (
+                          <button
+                            key={item.val}
+                            type="button"
+                            onClick={() => setLayerHeight(item.val)}
+                            className={`p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
+                              isSelected
+                                ? "border-[#EF4444] bg-red-50/50 shadow-sm ring-1 ring-red-400/40"
+                                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/80"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between w-full mb-1">
+                              <span className={`text-xs font-black ${isSelected ? "text-[#EF4444]" : "text-slate-800"}`}>
+                                {item.label}
+                              </span>
+                              {isSelected ? (
+                                <span className="w-3.5 h-3.5 rounded-full bg-[#EF4444] text-white flex items-center justify-center text-[9px] font-bold">
+                                  ✓
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-semibold text-slate-400">
+                                  {item.multiplier}
+                                </span>
+                              )}
+                            </div>
+                            <div>
+                              <span className={`text-[11px] font-bold block leading-tight ${isSelected ? "text-slate-900" : "text-slate-700"}`}>
+                                {item.title}
+                              </span>
+                              <span className="text-[10px] text-slate-500 block leading-tight truncate mt-0.5">
+                                {item.subtitle}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {/* Infill */}
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
                     <div className="flex justify-between text-xs font-bold text-slate-700">
@@ -970,7 +964,7 @@ export default function Home() {
         {/* ================================================================= */}
         {/* DOLNY RZĄD: PEŁNA SZEROKOŚĆ (KARTA MATERIAŁOWA & DFM)             */}
         {/* ================================================================= */}
-        <div className="w-full bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 md:p-8 space-y-6">
+        <div id="materialy" className="w-full bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 md:p-8 space-y-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-5 border-b border-slate-100">
             <div>
               <div className="flex items-center gap-2 mb-1">

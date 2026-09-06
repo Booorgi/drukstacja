@@ -22,7 +22,7 @@ MARGIN_MULTIPLIER = 1.3  # marza narzucona na koszt materialu + maszyny
 PRINT_SPEED_MM3_PER_HOUR = 15000
 
 
-def estimate_print_time_hours(volume_cm3: float, infill_percent: int, bbox_mm: list[float]) -> float:
+def estimate_print_time_hours(volume_cm3: float, infill_percent: int, bbox_mm: list[float], layer_height: float = 0.20) -> float:
     """
     Bardzo uproszczony szacunek czasu druku.
     UWAGA: to jest przyblizenie na start. Do dokladnej wyceny docelowo
@@ -32,31 +32,35 @@ def estimate_print_time_hours(volume_cm3: float, infill_percent: int, bbox_mm: l
     effective_volume_mm3 = volume_cm3 * 1000 * (infill_percent / 100)
     # Wysokosc modelu wplywa na liczbe warstw - wyzszy model = wiecej czasu na sam ruch w Z
     height_mm = bbox_mm[2] if len(bbox_mm) == 3 else 50
-    layer_overhead_hours = (height_mm / 0.2) * 0.0008  # przyblizenie czasu na warstwe
+    lh = layer_height if layer_height and layer_height > 0 else 0.20
+    layer_overhead_hours = (height_mm / lh) * 0.0008  # przyblizenie czasu na warstwe
 
     volume_hours = effective_volume_mm3 / PRINT_SPEED_MM3_PER_HOUR
     return round(volume_hours + layer_overhead_hours, 2)
 
 
 def calculate_price(volume_cm3: float, bbox_mm: list[float], material: str,
-                     quantity: int, infill_percent: int) -> dict:
-    mat = MATERIALS[material]
+                     quantity: int, infill_percent: int, layer_height: float = 0.20) -> dict:
+    mat = MATERIALS.get(material, MATERIALS["PLA"])
 
     weight_g = volume_cm3 * mat["density_g_cm3"] * (infill_percent / 100)
     material_cost = (weight_g / 1000) * mat["price_per_kg"]
 
-    print_time_h = estimate_print_time_hours(volume_cm3, infill_percent, bbox_mm)
+    print_time_h = estimate_print_time_hours(volume_cm3, infill_percent, bbox_mm, layer_height=layer_height)
     machine_cost = print_time_h * MACHINE_RATE_PLN_PER_HOUR
 
-    unit_cost = (material_cost + machine_cost) * MARGIN_MULTIPLIER + BASE_FEE_PLN
+    layer_multiplier = 1.25 if abs(layer_height - 0.12) < 0.02 else (0.88 if abs(layer_height - 0.28) < 0.02 else 1.0)
+    unit_cost = ((material_cost + machine_cost) * MARGIN_MULTIPLIER + BASE_FEE_PLN) * layer_multiplier
     total_cost = unit_cost * quantity
 
     return {
         "material": material,
         "quantity": quantity,
+        "layer_height_mm": layer_height,
         "weight_g_per_unit": round(weight_g, 1),
         "estimated_print_time_hours_per_unit": print_time_h,
         "unit_price_pln": round(unit_cost, 2),
         "total_price_pln": round(total_cost, 2),
         "note": "Wycena szacunkowa. Ostateczna cena moze sie roznic po weryfikacji przez operatora.",
     }
+
