@@ -11,6 +11,7 @@ import uuid
 import traceback
 from pathlib import Path
 
+from typing import Any
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,9 +85,9 @@ class Generate3MFRequest(BaseModel):
     file_key: str | None = None
     order_id: str | None = None
     file_name: str | None = None
-    layer_height: float = 0.20
-    nozzle_size: float = 0.4
-    infill: int = 20
+    layer_height: Any = 0.20
+    nozzle_size: Any = 0.4
+    infill: Any = 20
     material: str = "PLA"
     color_hex: str = "#EF4444"
 
@@ -775,11 +776,24 @@ def generate_3mf_endpoint(req: Generate3MFRequest):
             detail="Plik geometrii 3D nie został odnaleziony na serwerze. Proszę załadować plik w wyceniarce."
         )
 
+    def parse_clean_float(val, default_val):
+        try:
+            if isinstance(val, (int, float)):
+                return float(val)
+            nums = re.findall(r"[\d\.]+", str(val or ""))
+            return float(nums[0]) if nums else default_val
+        except Exception:
+            return default_val
+
+    clean_layer_height = parse_clean_float(req.layer_height, 0.20)
+    clean_nozzle_size = parse_clean_float(req.nozzle_size, 0.4)
+    clean_infill = int(parse_clean_float(req.infill, 20))
+
     order_id = req.order_id or uuid.uuid4().hex[:8].upper()
     file_name = req.file_name or os.path.basename(local_model)
     safe_name = sanitize_filename(Path(file_name).stem)
     safe_mat = sanitize_filename(req.material.split()[0])
-    target_3mf_name = f"ORDER_{order_id}_{safe_name}_{safe_mat}_{req.nozzle_size}mm.3mf"
+    target_3mf_name = f"ORDER_{order_id}_{safe_name}_{safe_mat}_{clean_nozzle_size}mm.3mf"
     local_3mf_path = os.path.join(PROJECTS_3MF_CACHE_DIR, target_3mf_name)
 
     # Generowanie .3MF
@@ -787,9 +801,9 @@ def generate_3mf_endpoint(req: Generate3MFRequest):
         model_path=local_model,
         order_metadata={"order_id": order_id, "file_name": file_name},
         print_settings={
-            "layer_height": req.layer_height,
-            "nozzle_size": req.nozzle_size,
-            "infill": req.infill,
+            "layer_height": clean_layer_height,
+            "nozzle_size": clean_nozzle_size,
+            "infill": clean_infill,
             "material": req.material,
             "color_hex": req.color_hex,
         },
@@ -848,9 +862,9 @@ def download_order_3mf(
     file_name: str | None = None,
     material: str | None = "PLA",
     color_hex: str | None = "#EF4444",
-    layer_height: float = 0.20,
-    nozzle_size: float = 0.4,
-    infill: int = 20,
+    layer_height: str | None = "0.20",
+    nozzle_size: str | None = "0.4",
+    infill: str | None = "20",
     file_key: str | None = None,
 ):
     """
@@ -858,6 +872,20 @@ def download_order_3mf(
     Generuje i od razu zwraca gotowy plik projektu produkcyjnego .3MF do pobrania jednym kliknięciem.
     """
     clean_order_id = str(order_id)
+
+    def parse_clean_float(val, default_val):
+        try:
+            if isinstance(val, (int, float)):
+                return float(val)
+            nums = re.findall(r"[\d\.]+", str(val or ""))
+            return float(nums[0]) if nums else default_val
+        except Exception:
+            return default_val
+
+    clean_layer_height = parse_clean_float(layer_height, 0.20)
+    clean_nozzle_size = parse_clean_float(nozzle_size, 0.4)
+    clean_infill = int(parse_clean_float(infill, 20))
+
     conn = get_db_connection()
     db_order = None
     if conn:
@@ -877,20 +905,15 @@ def download_order_3mf(
     if db_order:
         file_name = file_name or db_order.get("file_name")
         material = material or db_order.get("material") or "PLA"
-        infill = infill if infill != 20 else (db_order.get("infill") or 20)
-        lh_raw = db_order.get("layer_height")
-        if lh_raw:
-            try:
-                nums = re.findall(r"[\d\.]+", str(lh_raw))
-                if nums:
-                    layer_height = float(nums[0])
-            except Exception:
-                pass
+        if db_order.get("infill"):
+            clean_infill = int(parse_clean_float(db_order.get("infill"), clean_infill))
+        if db_order.get("layer_height"):
+            clean_layer_height = parse_clean_float(db_order.get("layer_height"), clean_layer_height)
         tech_raw = db_order.get("technology")
         if tech_raw and "0.2mm" in str(tech_raw):
-            nozzle_size = 0.2
+            clean_nozzle_size = 0.2
         elif tech_raw and "0.4mm" in str(tech_raw):
-            nozzle_size = 0.4
+            clean_nozzle_size = 0.4
 
     # Odnalezienie pliku źródłowego geometrii
     local_model = None
@@ -927,7 +950,7 @@ def download_order_3mf(
 
     safe_model_name = sanitize_filename(Path(file_name or "model").stem)
     safe_mat = sanitize_filename(str(material).split()[0])
-    target_3mf_name = f"ORDER_{clean_order_id[:8]}_{safe_model_name}_{safe_mat}_{nozzle_size}mm.3mf"
+    target_3mf_name = f"ORDER_{clean_order_id[:8]}_{safe_model_name}_{safe_mat}_{clean_nozzle_size}mm.3mf"
     local_3mf_path = os.path.join(PROJECTS_3MF_CACHE_DIR, target_3mf_name)
 
     # Generowanie pakietu .3MF
@@ -935,9 +958,9 @@ def download_order_3mf(
         model_path=local_model,
         order_metadata={"order_id": clean_order_id, "file_name": file_name or safe_model_name},
         print_settings={
-            "layer_height": layer_height,
-            "nozzle_size": nozzle_size,
-            "infill": infill,
+            "layer_height": clean_layer_height,
+            "nozzle_size": clean_nozzle_size,
+            "infill": clean_infill,
             "material": str(material),
             "color_hex": color_hex or "#EF4444",
         },
@@ -948,4 +971,4 @@ def download_order_3mf(
         local_3mf_path,
         media_type="application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
         filename=target_3mf_name,
-    )
+    )

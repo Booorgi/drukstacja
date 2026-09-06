@@ -500,9 +500,9 @@ export default function Home() {
             file_name: selectedFile?.name || "model.stl",
             material: matConfig.name || "PLA",
             color_hex: activeColorObj?.hex || "#EF4444",
-            layer_height: layerHeight,
-            infill: infill,
-            nozzle_size: nozzleSize,
+            layer_height: parseFloat(String(layerHeight || "0.2").replace(/[^\d.]/g, "")) || 0.2,
+            infill: parseInt(String(infill || "20").replace(/[^\d.]/g, "")) || 20,
+            nozzle_size: parseFloat(String(nozzleSize || "0.4").replace(/[^\d.]/g, "")) || 0.4,
           }),
         })
           .then(async (res) => {
