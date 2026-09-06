@@ -1,123 +1,127 @@
-import { useState, useRef, useEffect } from "react";
-import dynamic from "next/dynamic";
+import React, { useState, useEffect, useRef } from "react";
 import Head from "next/head";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabaseClient";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
 
-const ModelViewer = dynamic(() => import("../components/ModelViewer"), { ssr: false });
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-const MATERIALS = [
-  { id: "PLA", name: "PLA Standard (Sztywny, ekologiczny)", mult: 1.0 },
-  { id: "PETG", name: "PETG (Odporny chemicznie / UV)", mult: 1.2 },
-  { id: "ABS", name: "ABS / ASA (Wytrzymały termicznie)", mult: 1.5 },
-  { id: "TPU", name: "TPU 95A (Guma / Elastyczny)", mult: 2.1 },
-];
+const StlViewer3D = dynamic(
+  () =>
+    Promise.all([
+      import("@react-three/fiber"),
+      import("@react-three/drei"),
+      import("three-stdlib"),
+    ]).then(([fiber, drei, stdlib]) => {
+      const { Canvas } = fiber;
+      const { OrbitControls, Center } = drei;
+      const { STLLoader } = stdlib;
 
-const LAYERS = [
-  { val: "0.28 mm", label: "0.28 mm (Draft)" },
-  { val: "0.20 mm", label: "0.20 mm (Standard)" },
-  { val: "0.12 mm", label: "0.12 mm (Precyzja)" },
+      function StlModel({ url, color }) {
+        const [geometry, setGeometry] = useState(null);
+
+        useEffect(() => {
+          if (!url) return;
+          const loader = new STLLoader();
+          loader.load(url, (geo) => {
+            geo.computeVertexNormals();
+            setGeometry(geo);
+          });
+        }, [url]);
+
+        if (!geometry) return null;
+
+        return (
+          <Center>
+            <mesh geometry={geometry}>
+              <meshStandardMaterial color={color} roughness={0.35} metalness={0.05} />
+            </mesh>
+          </Center>
+        );
+      }
+
+      return function Viewer({ modelUrl, color }) {
+        return (
+          <Canvas camera={{ position: [0, 40, 100], fov: 45 }}>
+            <ambientLight intensity={1.1} />
+            <directionalLight position={[30, 60, 40]} intensity={1.8} />
+            <directionalLight position={[-30, 30, -30]} intensity={0.6} />
+            <StlModel url={modelUrl} color={color} />
+            <OrbitControls makeDefault minDistance={20} maxDistance={300} />
+          </Canvas>
+        );
+      };
+    }),
+  { ssr: false }
+);
+
+const MATERIALS_LIST = [
+  { id: "PLA", name: "PLA Tough", desc: "Precyzja & Detal", pricePerCm3: 0.45 },
+  { id: "PETG", name: "PETG Carbon", desc: "Odporność UV & Temp", pricePerCm3: 0.55 },
+  { id: "ABS", name: "ABS Industry", desc: "Trwałość & Sztywność", pricePerCm3: 0.60 },
 ];
 
 export default function Home() {
   const [user, setUser] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [isGeneratorsOpen, setIsGeneratorsOpen] = useState(false);
-  const userMenuRef = useRef(null);
-  const genMenuRef = useRef(null);
-
-  const [cartItems, setCartItems] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [cartItems, setCartItems] = useState([]);
 
-  const [file, setFile] = useState(null);
-  const [analysis, setAnalysis] = useState(null);
-  const [quote, setQuote] = useState(null);
-  const [technology, setTechnology] = useState("FDM");
-  const [material, setMaterial] = useState("PLA");
-  const [layerHeight, setLayerHeight] = useState("0.20 mm");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [modelPreviewUrl, setModelPreviewUrl] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisData, setAnalysisData] = useState(null);
+
+  const [selectedMaterial, setSelectedMaterial] = useState("PLA");
+  const [selectedColor, setSelectedColor] = useState("#EF4444");
   const [infill, setInfill] = useState(20);
-  const [cleanSupports, setCleanSupports] = useState(true);
-  const [brassInserts, setBrassInserts] = useState(false);
   const [quantity, setQuantity] = useState(1);
-  const [showSupports, setShowSupports] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
-  const [error, setError] = useState(null);
-  const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
   async function fetchCart(userId) {
-    if (!userId) {
-      setCartItems([]);
-      return;
-    }
-    const { data, error } = await supabase
+    if (!userId) return;
+    const { data } = await supabase
       .from("orders")
       .select("*")
       .eq("user_id", userId)
       .eq("status", "in_cart")
       .order("created_at", { ascending: false });
-
-    if (!error && data) setCartItems(data);
+    if (data) setCartItems(data);
   }
-
-  async function handleRemoveCartItem(orderId) {
-    const { error } = await supabase.from("orders").delete().eq("id", orderId);
-    if (!error) {
-      setCartItems((prev) => prev.filter((item) => item.id !== orderId));
-    }
-  }
-
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
-        setIsUserMenuOpen(false);
-      }
-      if (genMenuRef.current && !genMenuRef.current.contains(e.target)) {
-        setIsGeneratorsOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      if (currentUser) fetchCart(currentUser.id);
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) fetchCart(u.id);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      if (currentUser) {
-        fetchCart(currentUser.id);
-      } else {
-        setCartItems([]);
-      }
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_e, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) fetchCart(u.id);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  async function handleFileSelected(selectedFile) {
-    if (!selectedFile) return;
-    setFile(selectedFile);
-    setAnalysis(null);
-    setQuote(null);
-    setError(null);
-    setShowSupports(false);
-    setLoading(true);
+  async function handleFileUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSelectedFile(file);
+    setModelPreviewUrl(URL.createObjectURL(file));
+    setIsAnalyzing(true);
+
+    const formData = new FormData();
+    formData.append("file", file);
 
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
       const res = await fetch(`${API_URL}/analyze`, {
         method: "POST",
         body: formData,
@@ -125,58 +129,22 @@ export default function Home() {
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail || "Błąd analizy pliku");
+        throw new Error(err.detail || "Błąd analizy modelu.");
       }
 
       const data = await res.json();
-      setAnalysis(data);
-      await fetchQuote(data, { material, infill, quantity });
-    } catch (e) {
-      setError(e.message);
+      setAnalysisData(data);
+    } catch (err) {
+      alert("Błąd analizy: " + err.message);
     } finally {
-      setLoading(false);
+      setIsAnalyzing(false);
     }
   }
 
-  async function fetchQuote(analysisData, overrides = {}) {
-    const body = {
-      volume_cm3: analysisData.volume_cm3,
-      bbox_mm: analysisData.bbox_mm,
-      material: overrides.material ?? material,
-      quantity: overrides.quantity ?? quantity,
-      infill_percent: overrides.infill ?? infill,
-    };
-
-    try {
-      const res = await fetch(`${API_URL}/quote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (res.ok) setQuote(await res.json());
-    } catch (e) {
-      console.error("Błąd pobierania wyceny:", e);
-    }
-  }
-
-  function handleOptionChange(newMat, newInfill, newQty) {
-    setMaterial(newMat);
-    setInfill(newInfill);
-    setQuantity(newQty);
-    if (analysis) {
-      fetchQuote(analysis, { material: newMat, infill: newInfill, quantity: newQty });
-    }
-  }
-
-  const volume = analysis?.volume_cm3 ?? 35;
-  const estimatedWeight = Math.round(volume * 1.24 * (0.5 + (infill / 100) * 0.7));
-  const estimatedHours = Math.max(1, Math.round((estimatedWeight * 4.2) / 60));
-  const estimatedMins = Math.round((estimatedWeight * 4.2) % 60);
-
-  const basePrice = quote?.total_price_pln ? parseFloat(quote.total_price_pln) : 38.5;
-  const insertCost = brassInserts ? 15.0 : 0.0;
-  const finalPrice = ((basePrice + insertCost) * quantity).toFixed(2);
+  const volume = analysisData?.volume_cm3 || 32.5;
+  const matConfig = MATERIALS_LIST.find((m) => m.id === selectedMaterial);
+  const unitPrice = (Math.max(15, volume * (matConfig?.pricePerCm3 || 0.45) * (1 + infill / 100))).toFixed(2);
+  const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
 
   async function handleAddToCart() {
     if (!user) {
@@ -188,16 +156,16 @@ export default function Home() {
     try {
       const { error } = await supabase.from("orders").insert({
         user_id: user.id,
-        file_name: file?.name || "Model demonstracyjny",
-        material: material,
-        technology: technology,
-        layer_height: layerHeight,
+        file_name: selectedFile?.name || "Model 3D STL",
+        material: selectedMaterial,
+        technology: "FDM Precision 0.4mm",
+        layer_height: "0.20 mm",
         infill: infill,
-        clean_supports: cleanSupports,
-        brass_inserts: brassInserts,
+        clean_supports: true,
+        brass_inserts: false,
         quantity: quantity,
-        total_price: parseFloat(finalPrice),
-        dimensions_mm: analysis?.bbox_mm || [62, 62, 48],
+        total_price: parseFloat(totalPrice),
+        dimensions_mm: analysisData?.dimensions_mm || [60, 60, 40],
         status: "in_cart",
       });
 
@@ -205,465 +173,269 @@ export default function Home() {
       await fetchCart(user.id);
       setIsCartOpen(true);
     } catch (err) {
-      alert("Nie udało się dodać do koszyka: " + err.message);
+      alert("Błąd koszyka: " + err.message);
     } finally {
       setAddingToCart(false);
     }
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0B0F17] text-[#F8FAFC] overflow-x-hidden font-sans">
+    <div className="min-h-screen flex flex-col bg-[#F1F5F9] text-[#0F172A] font-sans">
       <Head>
-        <title>Drukstacja — Wyceniarka & Druk 3D na Żądanie</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+        <title>Drukstacja — Profesjonalny Druk 3D i Konfiguratory</title>
       </Head>
 
       {/* NAVBAR */}
-      <header className="border-b border-[#24324A] bg-[#0B0F17]/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-[#00E5FF] to-[#2563EB] flex items-center justify-center p-0.5 shadow-[0_0_15px_rgba(0,229,255,0.3)]">
-                <div className="w-full h-full bg-[#0B0F17] rounded-[7px] flex items-center justify-center">
-                  <span className="font-bold text-lg text-[#00E5FF]">D</span>
-                </div>
-              </div>
-              <div>
-                <span className="text-xl font-bold tracking-tight text-white">
-                  DRUK<span className="text-[#00E5FF]">STACJA</span>
-                </span>
-                <span className="text-[10px] text-[#94A3B8] block -mt-1 tracking-widest font-mono">LABS 3D</span>
-              </div>
-            </Link>
+      <header className="max-w-7xl w-full mx-auto px-6 py-5 flex items-center justify-between z-20">
+        <Link href="/" className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-[#EF4444] flex items-center justify-center shadow-lg shadow-red-500/30">
+            <span className="font-extrabold text-xl text-white">D</span>
           </div>
+          <span className="text-xl font-bold tracking-tight text-slate-900">
+            DRUK<span className="text-[#EF4444]">STACJA</span>
+          </span>
+        </Link>
 
-          <nav className="hidden md:flex items-center gap-6 text-sm text-[#94A3B8]">
-            <Link href="/" className="text-white hover:text-[#00E5FF] transition">
-              Wyceniarka STL
-            </Link>
+        <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-600">
+          <Link href="/" className="text-[#EF4444] transition">
+            Wyceniarka STL
+          </Link>
+          <Link href="/breloki" className="hover:text-black transition">
+            Konfigurator 3D
+          </Link>
+          <span className="hover:text-black cursor-pointer transition">
+            Materiały
+          </span>
+        </nav>
 
-            {/* ROZWIJANA LISTA GENERATORY */}
-            <div className="relative" ref={genMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsGeneratorsOpen(!isGeneratorsOpen)}
-                className="hover:text-[#00E5FF] transition flex items-center gap-1.5 cursor-pointer text-slate-200"
-              >
-                <span>Generatory</span>
-                <svg
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ${isGeneratorsOpen ? "rotate-180 text-[#00E5FF]" : ""}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {isGeneratorsOpen && (
-                <div className="absolute left-0 mt-2 w-52 bg-[#0E1524] border border-[#24324A] rounded-xl shadow-2xl py-2 z-50 backdrop-blur-md">
-                  <Link
-                    href="/breloki"
-                    onClick={() => setIsGeneratorsOpen(false)}
-                    className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-mono text-slate-200 hover:bg-[#161F30] hover:text-[#00E5FF] transition"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#00E5FF]" />
-                    Stwórz swój brelok
-                  </Link>
-                  <div
-                    onClick={() => {
-                      setIsGeneratorsOpen(false);
-                      alert("Generator Litofanów pojawi się wkrótce!");
-                    }}
-                    className="flex items-center justify-between px-4 py-2.5 text-xs font-mono text-[#94A3B8] hover:bg-[#161F30] hover:text-white cursor-pointer transition"
-                  >
-                    <span>Litofany (Zdjęcie 3D)</span>
-                    <span className="text-[9px] bg-[#24324A] px-1.5 py-0.5 rounded text-[#94A3B8]">Wkrótce</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <span className="hover:text-[#00E5FF] cursor-pointer transition">Części użytkowe</span>
-          </nav>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setIsCartOpen(true)}
-              className="px-3 py-1.5 text-xs font-mono bg-[#161F30] border border-[#24324A] hover:border-[#00E5FF] text-white rounded-lg transition flex items-center gap-2 cursor-pointer"
-            >
-              <svg className="w-4 h-4 text-[#00E5FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-              </svg>
-              <span>Koszyk</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] text-[10px] font-bold">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setIsCartOpen(true)}
+            className="p-2.5 rounded-full bg-white border border-slate-200 hover:border-slate-400 text-slate-700 shadow-sm transition relative"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+            </svg>
+            {cartItems.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-[#EF4444] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow">
                 {cartItems.length}
               </span>
-            </button>
-
-            {user ? (
-              <div className="relative" ref={userMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="px-3 py-1.5 text-xs font-mono bg-[#161F30] border border-[#24324A] hover:border-[#00E5FF] text-white rounded-lg transition flex items-center gap-2 cursor-pointer"
-                >
-                  <span className="w-2 h-2 rounded-full bg-[#00E5FF]" />
-                  <span>Panel klienta</span>
-                  <svg
-                    className={`w-3.5 h-3.5 text-[#94A3B8] transition-transform duration-200 ${
-                      isUserMenuOpen ? "rotate-180 text-[#00E5FF]" : ""
-                    }`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-
-                {isUserMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-56 bg-[#0E1524] border border-[#24324A] rounded-xl shadow-2xl py-2 z-50 backdrop-blur-md">
-                    <div className="px-4 py-2 border-b border-[#24324A] mb-1">
-                      <span className="text-[10px] uppercase font-mono text-[#94A3B8] block">Zalogowano jako</span>
-                      <span className="text-xs font-mono text-[#00E5FF] truncate block font-bold" title={user.email}>
-                        {user.email}
-                      </span>
-                    </div>
-
-                    <Link
-                      href="/orders"
-                      onClick={() => setIsUserMenuOpen(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-xs font-mono text-slate-200 hover:bg-[#161F30] hover:text-[#00E5FF] transition"
-                    >
-                      <svg className="w-4 h-4 text-[#94A3B8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                      Zlecenia
-                    </Link>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsUserMenuOpen(false);
-                        alert("Moduł wiadomości z obsługą farmy będzie dostępny wkrótce!");
-                      }}
-                      className="w-full flex items-center justify-between px-4 py-2 text-xs font-mono text-slate-200 hover:bg-[#161F30] hover:text-[#00E5FF] transition text-left cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2.5">
-                        <svg className="w-4 h-4 text-[#94A3B8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                        Wiadomości
-                      </span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#24324A] text-[#94A3B8]">0</span>
-                    </button>
-
-                    <div className="border-t border-[#24324A] my-1" />
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsUserMenuOpen(false);
-                        supabase.auth.signOut();
-                      }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-mono text-red-400 hover:bg-red-500/10 transition text-left cursor-pointer"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                      </svg>
-                      Wyloguj
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsAuthOpen(true)}
-                className="px-3.5 py-1.5 text-xs font-mono font-bold bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30 hover:bg-[#00E5FF]/20 rounded-lg transition cursor-pointer"
-              >
-                Zaloguj
-              </button>
             )}
-          </div>
+          </button>
+          {user ? (
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-slate-200 text-slate-800">
+              {user.email.split("@")[0]}
+            </span>
+          ) : (
+            <button
+              onClick={() => setIsAuthOpen(true)}
+              className="text-xs font-bold px-4 py-2 rounded-full bg-slate-900 text-white hover:bg-slate-800 transition"
+            >
+              Zaloguj
+            </button>
+          )}
         </div>
       </header>
 
-      {/* VIEWPORT 3D & FORMULARZ */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <section className="lg:col-span-7 flex flex-col gap-4">
-          <div className="relative w-full h-[520px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
-            <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowSupports(!showSupports)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-mono border backdrop-blur-md transition cursor-pointer ${
-                  showSupports
-                    ? "bg-red-500/20 border-red-500 text-red-400"
-                    : "bg-[#161F30]/90 text-[#94A3B8] border-[#24324A] hover:text-[#00E5FF] hover:border-[#00E5FF]"
-                }`}
-              >
-                Zwisy / Podpory: {showSupports ? "ON" : "OFF"}
-              </button>
-            </div>
-
-            <div className="absolute bottom-4 left-4 z-10 flex gap-2 font-mono text-xs">
-              <span className="px-2.5 py-1 rounded bg-[#0B0F17]/80 border border-[#24324A] text-[#94A3B8]">
-                X: {analysis?.bbox_mm?.[0] ?? "62"} mm
-              </span>
-              <span className="px-2.5 py-1 rounded bg-[#0B0F17]/80 border border-[#24324A] text-[#94A3B8]">
-                Y: {analysis?.bbox_mm?.[1] ?? "62"} mm
-              </span>
-              <span className="px-2.5 py-1 rounded bg-[#0B0F17]/80 border border-[#24324A] text-[#94A3B8]">
-                Z: {analysis?.bbox_mm?.[2] ?? "48"} mm
+      {/* HERO & KONFIGURATOR CARD */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 pb-12 flex items-center justify-center">
+        <div className="bg-white rounded-[32px] border border-slate-200/80 shadow-[0_25px_70px_rgba(0,0,0,0.06)] w-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-[640px]">
+          
+          {/* LEWA STRONA: 3D STUDIO STAGE */}
+          <div className="lg:col-span-7 bg-gradient-to-b from-[#F8FAFC] to-[#EDF2F7] relative flex flex-col justify-between p-6 md:p-8">
+            <div className="flex items-center justify-between z-10">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-widest text-[#EF4444] block">
+                  Studio Wyceny CAD/STL
+                </span>
+                <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                  {selectedFile ? selectedFile.name : "Wgraj model 3D do wyceny"}
+                </h1>
+              </div>
+              <span className="text-xs font-medium px-3 py-1 rounded-full bg-white border border-slate-200 shadow-sm text-slate-600">
+                Podgląd interaktywny
               </span>
             </div>
 
-            <div className="w-full h-full">
-              {file ? (
-                <ModelViewer
-                  file={file}
-                  previewUrl={analysis?.preview_stl_url}
-                  color="#00E5FF"
-                  showOverhangs={showSupports}
-                />
+            {/* Viewport 3D */}
+            <div className="relative w-full h-[380px] md:h-[430px] my-auto flex items-center justify-center">
+              {modelPreviewUrl ? (
+                <StlViewer3D modelUrl={modelPreviewUrl} color={selectedColor} />
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-center p-6 bg-[radial-gradient(#24324A_1px,transparent_1px)] [background-size:24px_24px]">
-                  <div className="w-16 h-16 rounded-2xl bg-[#161F30] border border-[#24324A] text-[#00E5FF] flex items-center justify-center mb-4 shadow-[0_0_30px_rgba(0,229,255,0.15)]">
-                    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeWidth="1.5" d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                    </svg>
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full h-full max-h-[320px] rounded-3xl border-2 border-dashed border-slate-300 hover:border-[#EF4444] bg-white/60 flex flex-col items-center justify-center gap-3 cursor-pointer transition"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-red-50 text-[#EF4444] flex items-center justify-center font-bold text-xl">
+                    ↑
                   </div>
-                  <p className="text-sm font-semibold text-white mb-1">Stół roboczy gotowy do załadunku</p>
-                  <p className="text-xs font-mono text-[#94A3B8]">Wgraj model poniżej, aby uruchomić podgląd 3D i wycenę</p>
+                  <div className="text-center">
+                    <span className="font-bold text-slate-800 text-sm block">
+                      Kliknij lub przeciągnij plik STL / STEP / OBJ
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      Maksymalny rozmiar: 100 MB
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
-          </div>
 
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(false);
-              if (e.dataTransfer.files?.[0]) handleFileSelected(e.dataTransfer.files[0]);
-            }}
-            className={`border border-dashed transition rounded-xl p-4 flex items-center justify-between text-xs cursor-pointer ${
-              dragOver
-                ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
-                : "border-[#24324A] hover:border-[#00E5FF] bg-[#161F30]/40 text-[#94A3B8]"
-            }`}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".stl,.step,.stp,.obj"
-              className="hidden"
-              onChange={(e) => e.target.files?.[0] && handleFileSelected(e.target.files[0])}
-            />
-            <div className="flex items-center gap-3">
-              <svg className="w-6 h-6 text-[#00E5FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              <span>
-                {file ? <strong>Wybrano: {file.name}</strong> : <>Upuść plik <strong>.STL</strong>, <strong>.STEP</strong> lub <strong>.OBJ</strong> (maks. 100MB)</>}
-              </span>
-            </div>
-            <button
-              type="button"
-              className="px-3 py-1.5 bg-[#161F30] border border-[#24324A] rounded-lg text-white hover:border-[#00E5FF] transition cursor-pointer"
-            >
-              {loading ? "Analizuję..." : "Wybierz plik"}
-            </button>
-          </div>
-
-          {error && (
-            <div className="p-3 rounded-lg bg-red-950/40 border border-red-800 text-red-300 text-xs font-mono">
-              {error}
-            </div>
-          )}
-        </section>
-
-        <section className="lg:col-span-5 flex flex-col gap-4">
-          <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-6 flex flex-col justify-between shadow-xl">
-            <div className="space-y-5">
-              <div className="flex items-center justify-between border-b border-[#24324A] pb-3">
-                <h2 className="text-lg font-bold text-white tracking-wide">PARAMETRY DRUKU</h2>
-                <span className="text-xs font-mono text-[#00E5FF]">ID: #DS-{file ? "READY" : "DEMO"}</span>
-              </div>
-
+            {/* Dolny pasek ceny i dodawania do koszyka */}
+            <div className="flex items-end justify-between z-10 pt-4 border-t border-slate-200/70">
               <div>
-                <label className="block text-xs font-medium text-[#94A3B8] mb-2 uppercase tracking-wider">Technologia</label>
-                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                  <button
-                    type="button"
-                    onClick={() => setTechnology("FDM")}
-                    className={`py-2.5 px-3 rounded-lg border font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
-                      technology === "FDM"
-                        ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
-                        : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8] hover:border-[#94A3B8]"
-                    }`}
-                  >
-                    FDM (Termoplast)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTechnology("SLA")}
-                    className={`py-2.5 px-3 rounded-lg border font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
-                      technology === "SLA"
-                        ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
-                        : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8] hover:border-[#94A3B8]"
-                    }`}
-                  >
-                    SLA (Żywica precyzyjna)
-                  </button>
+                <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
+                  Cena zamówienia
+                </span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-3xl font-black text-slate-900 tracking-tight">
+                    {totalPrice}
+                  </span>
+                  <span className="text-sm font-bold text-slate-500">PLN</span>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-[#94A3B8] mb-2 uppercase tracking-wider">Materiał</label>
-                <select
-                  value={material}
-                  onChange={(e) => handleOptionChange(e.target.value, infill, quantity)}
-                  className="w-full bg-[#0B0F17] border border-[#24324A] rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-[#00E5FF] transition"
+              <div className="flex items-center gap-3">
+                <div className="flex items-center bg-white border border-slate-200 rounded-full px-2 py-1 shadow-sm">
+                  <button
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition"
+                  >
+                    -
+                  </button>
+                  <span className="w-8 text-center font-bold text-sm text-slate-800">
+                    {quantity}
+                  </span>
+                  <button
+                    onClick={() => setQuantity(quantity + 1)}
+                    className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition"
+                  >
+                    +
+                  </button>
+                </div>
+
+                <button
+                  disabled={addingToCart || isAnalyzing}
+                  onClick={handleAddToCart}
+                  className="px-6 py-3.5 rounded-full bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25 transition cursor-pointer disabled:opacity-50"
                 >
-                  {MATERIALS.map((mat) => (
-                    <option key={mat.id} value={mat.id}>{mat.name}</option>
-                  ))}
-                </select>
+                  {addingToCart ? "Zapisuję..." : "Dodaj do koszyka +"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* PRAWA STRONA: MODUŁ PARAMETRÓW */}
+          <div className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-white border-l border-slate-100">
+            <div className="space-y-6">
+              {/* Ukryty input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".stl,.step,.stp,.obj"
+                className="hidden"
+                onChange={handleFileUpload}
+              />
+
+              {/* Upload przycisk */}
+              <div>
+                <span className="text-xs font-bold uppercase text-slate-400 block mb-2 tracking-wider">
+                  Plik CAD:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-3 px-4 rounded-2xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-between text-xs font-bold text-slate-800 transition"
+                >
+                  <span className="truncate max-w-[220px]">
+                    {selectedFile ? selectedFile.name : "Wybierz plik z dysku"}
+                  </span>
+                  <span className="text-[#EF4444]">
+                    {isAnalyzing ? "Analizuję..." : "Zmień plik"}
+                  </span>
+                </button>
               </div>
 
+              {/* Kolor podglądu */}
               <div>
-                <div className="flex justify-between text-xs mb-2">
-                  <span className="text-[#94A3B8] uppercase tracking-wider">Wysokość warstwy</span>
-                  <span className="font-mono text-[#00E5FF]">{layerHeight}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-xs font-mono">
-                  {LAYERS.map((layer) => (
+                <span className="text-xs font-bold uppercase text-slate-400 block mb-2 tracking-wider">
+                  Kolor filamentu:
+                </span>
+                <div className="flex items-center gap-2.5">
+                  {["#0B0F17", "#EF4444", "#2563EB", "#10B981", "#F59E0B", "#94A3B8", "#FFFFFF"].map((c) => (
                     <button
-                      key={layer.val}
+                      key={c}
                       type="button"
-                      onClick={() => setLayerHeight(layer.val)}
-                      className={`py-2 border rounded-lg transition cursor-pointer ${
-                        layerHeight === layer.val
-                          ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white font-bold"
-                          : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8] hover:border-[#94A3B8]"
+                      onClick={() => setSelectedColor(c)}
+                      className={`w-6 h-6 rounded-full transition-all cursor-pointer ${
+                        selectedColor === c
+                          ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110"
+                          : "hover:scale-105 border border-slate-300"
+                      }`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Wybór materiału (Kapsułki) */}
+              <div>
+                <span className="text-xs font-bold uppercase text-slate-400 block mb-3 tracking-wider">
+                  Materiał:
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  {MATERIALS_LIST.map((mat) => (
+                    <div
+                      key={mat.id}
+                      onClick={() => setSelectedMaterial(mat.id)}
+                      className={`p-3 rounded-2xl border flex flex-col items-center justify-center text-center cursor-pointer transition ${
+                        selectedMaterial === mat.id
+                          ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] font-bold shadow-sm"
+                          : "border-slate-200 hover:border-slate-300 text-slate-700"
                       }`}
                     >
-                      {layer.val}
-                    </button>
+                      <span className="text-xs font-bold block">{mat.id}</span>
+                      <span className="text-[10px] text-slate-400">{mat.desc}</span>
+                    </div>
                   ))}
                 </div>
               </div>
 
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-[#94A3B8] uppercase tracking-wider">Gęstość wypełnienia (Infill)</span>
-                  <span className="font-mono text-white">{infill}%</span>
+              {/* Wypełnienie (Infill) */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <div className="flex justify-between text-xs font-bold text-slate-700">
+                  <span>Wypełnienie wnętrza (Infill)</span>
+                  <span className="text-[#EF4444]">{infill}%</span>
                 </div>
                 <input
                   type="range"
                   min="10"
                   max="100"
-                  value={infill}
                   step="5"
-                  onChange={(e) => handleOptionChange(material, parseInt(e.target.value), quantity)}
-                  className="w-full h-1.5 bg-[#0B0F17] rounded-lg appearance-none cursor-pointer accent-[#00E5FF]"
+                  value={infill}
+                  onChange={(e) => setInfill(parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
                 />
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-[#94A3B8] uppercase tracking-wider">Liczba sztuk</span>
+                <div className="flex justify-between text-[10px] text-slate-400 font-semibold pt-1">
+                  <span>10% (Lekki)</span>
+                  <span>40% (Standard)</span>
+                  <span>100% (Lity)</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => handleOptionChange(material, infill, Math.max(1, quantity - 1))}
-                    className="w-9 h-9 rounded-lg bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono text-base flex items-center justify-center transition cursor-pointer"
-                  >
-                    -
-                  </button>
-                  <span className="font-mono text-white text-base font-bold w-10 text-center">{quantity}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleOptionChange(material, infill, quantity + 1)}
-                    className="w-9 h-9 rounded-lg bg-[#0B0F17] border border-[#24324A] hover:border-[#00E5FF] text-white font-mono text-base flex items-center justify-center transition cursor-pointer"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-[#24324A] space-y-2">
-                <label className="flex items-center gap-3 text-xs text-[#94A3B8] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={cleanSupports}
-                    onChange={(e) => setCleanSupports(e.target.checked)}
-                    className="w-4 h-4 rounded bg-[#0B0F17] border-[#24324A] accent-[#00E5FF]"
-                  />
-                  <span>Oczyszczenie z podpór roboczych</span>
-                </label>
-                <label className="flex items-center gap-3 text-xs text-[#94A3B8] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={brassInserts}
-                    onChange={(e) => setBrassInserts(e.target.checked)}
-                    className="w-4 h-4 rounded bg-[#0B0F17] border-[#24324A] accent-[#00E5FF]"
-                  />
-                  <span>Wprasowanie gwintów mosiężnych (+15 zł)</span>
-                </label>
               </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-[#24324A] bg-[#0B0F17]/50 -mx-6 -mb-6 p-6 rounded-b-2xl">
-              <div className="grid grid-cols-2 gap-4 mb-4 text-xs font-mono">
-                <div>
-                  <span className="text-[#94A3B8] block">Czas druku:</span>
-                  <span className="text-white font-bold text-sm">~ {estimatedHours}h {estimatedMins}m</span>
-                </div>
-                <div>
-                  <span className="text-[#94A3B8] block">Masa elementu:</span>
-                  <span className="text-white font-bold text-sm">~ {estimatedWeight} g</span>
-                </div>
-              </div>
-
-              <div className="flex items-baseline justify-between mb-4">
-                <div>
-                  <span className="text-xs text-[#94A3B8] block uppercase">Cena całkowita brutto</span>
-                  <div className="flex items-baseline gap-1">
-                    <span className="font-mono text-3xl font-bold text-[#00E5FF]">{finalPrice}</span>
-                    <span className="font-mono text-sm text-[#94A3B8]">PLN</span>
-                  </div>
-                </div>
-                <span className="text-xs text-emerald-400 font-mono">Dostawa: 2-3 dni</span>
-              </div>
-
-              <button
-                type="button"
-                disabled={addingToCart}
-                onClick={handleAddToCart}
-                className="w-full py-3.5 px-4 bg-gradient-to-r from-[#00E5FF] to-[#2563EB] hover:opacity-95 text-[#0B0F17] font-bold text-sm uppercase tracking-wider rounded-xl shadow-[0_0_25px_rgba(0,229,255,0.25)] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                </svg>
-                {addingToCart ? "Zapisuję w koszyku..." : "Dodaj wydruk do koszyka"}
-              </button>
+            {/* Stopka karty */}
+            <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-medium text-slate-400">
+              <span>Pole stołu: 256×256×256 mm</span>
+              <span>Dokładność: ±0.1 mm</span>
             </div>
           </div>
-        </section>
+        </div>
       </main>
 
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onLoginSuccess={(loggedUser) => setUser(loggedUser)} />
-      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} items={cartItems} onRemoveItem={handleRemoveCartItem} />
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onLoginSuccess={(u) => setUser(u)} />
+      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} items={cartItems} onRemoveItem={() => fetchCart(user?.id)} />
     </div>
   );
 }
