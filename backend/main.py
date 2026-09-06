@@ -100,10 +100,11 @@ def remove_checkerboard_pattern(bgr_img):
 
 def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool = False):
     """
-    Zaawansowany algorytm wektoryzacji w stylu MakerWorld:
-    1. Precyzyjna segmentacja postaci (u2net AI + row-filling zapobiegający dziurom w pysku/ciele).
-    2. Zachowanie pełnej głębi: źrenice, błysk oka (catchlights), tęczówki, wąsy, nos.
-    3. Hierarchia warstw stacking (Solidna Baza -> Ciało -> Cienie -> Czarne Detale).
+    Zaawansowany algorytm wektoryzacji w standardzie MakerWorld:
+    1. Precyzyjna segmentacja postaci AI (u2net) w rozdzielczości 800px bez sklejania kończyn/brzucha.
+    2. Inteligentne domykanie wyłącznie wewnętrznych ubytków (np. biały pysk) z zachowaniem otwartej przestrzeni między nogami.
+    3. Kwantyzacja KMeans posortowana luminancją (od najjaśniejszej bazy do najciemniejszych detali).
+    4. Zagnieżdżone ścieżki SVG (fill-rule='evenodd') precyzyjnie wycinające otwory (błyski oka/catchlights, źrenice, tęczówki, paski).
     """
     n_colors = max(2, min(6, n_colors))
 
@@ -112,7 +113,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     if img is None:
         raise ValueError("Błąd odczytu grafiki.")
 
-    target_dim = 400
+    target_dim = 800
     if len(img.shape) == 3 and img.shape[2] == 4:
         bgr = img[:, :, :3]
     else:
@@ -123,13 +124,13 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
     bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    # 1. USUWANIE TŁA I BUDOWANIE CIĄGŁEJ SYLWETKI
+    # 1. USUWANIE TŁA I SEGMENTACJA
     sil = None
 
     if keep_bg:
         sil = np.ones((new_h, new_w), dtype=bool)
     else:
-        # A. Prawdziwa przezroczystość alfa w przesłanym pliku
+        # A. Wbudowany kanał alfa w grafice wejściowej
         if len(img.shape) == 3 and img.shape[2] == 4:
             alpha_raw = img[:, :, 3] > 20
             alpha_ratio = np.sum(alpha_raw) / alpha_raw.size
@@ -139,7 +140,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
                 )
                 sil = raw_mask > 0
 
-        # B. Wycięcie przez AI (rembg u2net)
+        # B. Segmentacja AI (rembg u2net)
         if sil is None and REMBG_AVAILABLE and REMBG_SESSION is not None:
             try:
                 cutout_bytes = rembg_remove(image_bytes, session=REMBG_SESSION)
@@ -152,23 +153,16 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
                         raw_mask = cv2.resize(
                             c_alpha.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
                         )
-                        # Row-filling: wypełnienie wewnętrznych pustych przestrzeni w twarzy/ciele (np. pysk o kolorze tła)
-                        sil_candidate = np.zeros((new_h, new_w), dtype=bool)
-                        for y in range(new_h):
-                            row = np.where(raw_mask[y, :] > 0)[0]
-                            if len(row) > 1:
-                                sil_candidate[y, row[0]:row[-1]+1] = True
-                        if np.sum(sil_candidate) > 0.05 * sil_candidate.size:
-                            sil = sil_candidate
+                        sil = raw_mask > 0
             except Exception as _r_err:
                 print(f"[WARN] Błąd wycinania rembg: {_r_err}")
 
-        # C. Klasyczny FloodFill fallback
+        # C. Klasyczny inteligentny FloodFill / GrabCut fallback
         if sil is None:
             bgr_clean, had_checker = remove_checkerboard_pattern(bgr_resized)
             flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
             bgr_flood = bgr_clean.copy()
-            diff_tol = (28, 28, 28)
+            diff_tol = (25, 25, 25)
             for seed in [(0, 0), (new_w - 1, 0), (0, new_h - 1), (new_w - 1, new_h - 1)]:
                 cv2.floodFill(bgr_flood, flood_mask, seed, (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
             bg_candidate = (flood_mask[1:-1, 1:-1] == 1)
@@ -208,119 +202,59 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
                 except Exception:
                     sil = fg_candidate
 
-    if sil is None or np.sum(sil) < 20:
+    if sil is None or np.sum(sil) < 50:
         sil = np.ones((new_h, new_w), dtype=bool)
 
-    # Wygładzenie sylwetki bez mikroszczelin
-    sil = cv2.morphologyEx(
-        sil.astype(np.uint8) * 255,
-        cv2.MORPH_CLOSE,
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-    ) > 0
+    # 2. DOMYKANIE WYŁĄCZNIE WEWNĘTRZNYCH DZIUR (bez łączenia nóg / przestrzeni pod brzuchem!)
+    sil_u8 = (sil.astype(np.uint8)) * 255
+    contours, hierarchy = cv2.findContours(sil_u8, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    if contours and hierarchy is not None:
+        hier = hierarchy[0]
+        for i in range(len(contours)):
+            # Tylko dziury otoczone sylwetką (parent != -1)
+            if hier[i][3] != -1:
+                hole_area = cv2.contourArea(contours[i])
+                # Wypełniamy wewnętrzne ubytki (np. pysk, czoło), nie dotykając tła zewnętrznego
+                if hole_area < (new_w * new_h * 0.15):
+                    cv2.drawContours(sil_u8, [contours[i]], -1, 255, thickness=-1)
 
-    gray = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2GRAY)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    sil_u8 = cv2.morphologyEx(sil_u8, cv2.MORPH_CLOSE, kernel)
+    sil = sil_u8 > 0
 
-    # 2. PRECYZYJNA EKSTRAKCJA ELEMENTÓW
-    # A. Ciemne detale (źrenice, nos, nozdrza, wąsy, kontury fafli)
-    dark_mask = (gray < 45) & sil
-    dark_mask = cv2.morphologyEx(
-        dark_mask.astype(np.uint8) * 255,
-        cv2.MORPH_OPEN,
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
-    ) > 0
+    # 3. KWANTYZACJA KOLORÓW KMEANS POSORTOWANA PO LUMINANCJI
+    fg_pixels = bgr_resized[sil].reshape(-1, 3)
+    if len(fg_pixels) < n_colors * 10:
+        fg_pixels = bgr_resized.reshape(-1, 3)
+        sil = np.ones((new_h, new_w), dtype=bool)
 
-    # B. Białe partie i błyski (pyszczek, strzałka na czole, bliki w oczach, krawędź nosa)
-    white_mask = (bgr_resized[:, :, 0] > 180) & (bgr_resized[:, :, 1] > 180) & (bgr_resized[:, :, 2] > 180) & sil
-    white_mask = cv2.morphologyEx(
-        white_mask.astype(np.uint8) * 255,
-        cv2.MORPH_OPEN,
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
-    ) > 0
+    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=5).fit(fg_pixels)
+    centers = kmeans.cluster_centers_.astype(int)
 
-    has_white = np.sum(white_mask) > (0.01 * np.sum(sil))
+    # Sortowanie od najjaśniejszego (baza) do najciemniejszego (detale/źrenice)
+    brightness = [0.299 * c[2] + 0.587 * c[1] + 0.114 * c[0] for c in centers]
+    sorted_order = np.argsort(brightness)[::-1]
+    centers = centers[sorted_order]
 
-    # Źrenice z wyciętym miejscem na błysk
-    pupils_and_lines = dark_mask & (~white_mask)
+    hex_colors = [
+        f"#{centers[i][2]:02x}{centers[i][1]:02x}{centers[i][0]:02x}".upper()
+        for i in range(n_colors)
+    ]
 
-    # C. Ciało (piksele sierści między bielą a czernią)
-    body_mask = sil & (~dark_mask) & (~white_mask)
-    body_pixels = bgr_resized[body_mask].reshape(-1, 3)
+    labels = np.full((new_h, new_w), -1, dtype=int)
+    labels[sil] = kmeans.labels_
+    remapped = np.full((new_h, new_w), -1, dtype=int)
+    for new_idx, old_cluster in enumerate(sorted_order):
+        remapped[labels == old_cluster] = new_idx
 
-    if len(body_pixels) < 20:
-        body_pixels = bgr_resized[sil].reshape(-1, 3)
-        body_mask = sil
+    # 4. MASKI WARSTW:
+    # Warstwa 0: Jednolita baza sylwetki (biel/najjaśniejsza barwa)
+    # Warstwy 1..(N-1): Poszczególne poziomy tonalne i ciemne kontury
+    layer_masks = [sil_u8]
+    for c_idx in range(1, n_colors):
+        layer_masks.append((remapped == c_idx).astype(np.uint8) * 255)
 
-    final_colors = []
-    layer_masks = []
-
-    if has_white and n_colors >= 3:
-        # Layer 1 to Biała baza (pełna sylwetka) — pysk, klatka piersiowa i błyski są białe
-        n_body_colors = max(1, n_colors - 2)
-        kmeans = KMeans(n_clusters=n_body_colors, random_state=42, n_init=3).fit(body_pixels)
-        centers = kmeans.cluster_centers_.astype(int)
-
-        body_brightness = [np.mean(c) for c in centers]
-        sorted_body_indices = np.argsort(body_brightness)[::-1]
-        centers = centers[sorted_body_indices]
-
-        body_hex = [
-            f"#{centers[i][2]:02x}{centers[i][1]:02x}{centers[i][0]:02x}".upper()
-            for i in range(n_body_colors)
-        ]
-
-        # Warstwa 1: Biała Baza (pełna sylwetka — stanowi biały pysk, pierś i bliki)
-        final_colors.append("#F4F4F4")
-        layer_masks.append(sil.astype(np.uint8) * 255)
-
-        # Warstwy ciała (Jasny brąz, Ciemny brąz...)
-        body_labels = np.full((new_h, new_w), -1, dtype=int)
-        body_labels[body_mask] = kmeans.labels_
-
-        for sub_idx in range(n_body_colors):
-            orig_cluster = sorted_body_indices[sub_idx]
-            mask_sub = (body_labels == orig_cluster).astype(np.uint8) * 255
-            mask_sub = cv2.dilate(mask_sub, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2)))
-            final_colors.append(body_hex[sub_idx])
-            layer_masks.append(mask_sub)
-
-        # Ostatnia warstwa: Głęboka czerń (źrenice, nos, wąsy)
-        final_colors.append("#181818")
-        layer_masks.append(pupils_and_lines.astype(np.uint8) * 255)
-
-    else:
-        # Standardowa kwantyzacja bez dominującej bieli
-        n_body_colors = max(1, n_colors - 1)
-        kmeans = KMeans(n_clusters=n_body_colors, random_state=42, n_init=3).fit(body_pixels)
-        centers = kmeans.cluster_centers_.astype(int)
-
-        body_brightness = [np.mean(c) for c in centers]
-        sorted_body_indices = np.argsort(body_brightness)[::-1]
-        centers = centers[sorted_body_indices]
-
-        body_hex = [
-            f"#{centers[i][2]:02x}{centers[i][1]:02x}{centers[i][0]:02x}".upper()
-            for i in range(n_body_colors)
-        ]
-
-        # Warstwa 1: Najjaśniejszy kolor ciała jako baza
-        final_colors.append(body_hex[0])
-        layer_masks.append(sil.astype(np.uint8) * 255)
-
-        body_labels = np.full((new_h, new_w), -1, dtype=int)
-        body_labels[body_mask] = kmeans.labels_
-
-        for sub_idx in range(1, n_body_colors):
-            orig_cluster = sorted_body_indices[sub_idx]
-            mask_sub = (body_labels == orig_cluster).astype(np.uint8) * 255
-            mask_sub = cv2.dilate(mask_sub, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2)))
-            final_colors.append(body_hex[sub_idx])
-            layer_masks.append(mask_sub)
-
-        # Ostatnia warstwa: Czerń
-        final_colors.append("#181818")
-        layer_masks.append(pupils_and_lines.astype(np.uint8) * 255)
-
-    # 3. CENTROWANIE I GENEROWANIE SVG
+    # 5. DOPASOWANIE I CENTROWANIE W OKNIE 100x100
     y_idx, x_idx = np.where(sil)
     if len(x_idx) > 0 and len(y_idx) > 0:
         min_x, max_x = np.min(x_idx), np.max(x_idx)
@@ -337,55 +271,91 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     center_x = (min_x + max_x) / 2.0
     center_y = (min_y + max_y) / 2.0
 
-    num_layers = len(layer_masks)
-    color_ids = [f"color_{i+1}" for i in range(num_layers)]
-    svg_output = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
+    def map_pt(pt):
+        nx = 50.0 + (pt[0] - center_x) * scale_fit
+        ny = 50.0 + (pt[1] - center_y) * scale_fit
+        return nx, ny
 
-    for l_idx in range(num_layers):
+    # 6. GENEROWANIE SVG Z ZAGNIEŻDŻONYMI ŚCIEŻKAMI (FILL-RULE="EVENODD")
+    svg_parts = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
+
+    for l_idx in range(n_colors):
         mask = layer_masks[l_idx]
         if not np.any(mask):
             continue
 
-        # Dla warstwy 1 (baza) bierzemy RETR_EXTERNAL, by uzyskać jednolity obrys bez wewnętrznych dziur
-        mode = cv2.RETR_EXTERNAL if l_idx == 0 else cv2.RETR_CCOMP
-        contours, hierarchy = cv2.findContours(mask, mode, cv2.CHAIN_APPROX_TC89_KCOS)
-
-        paths = []
-        if contours:
+        if l_idx == 0:
+            # Baza: lity zewnętrzny kontur
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
+            paths = []
             for cnt in contours:
-                area = cv2.contourArea(cnt)
-                min_a = 4 if l_idx == num_layers - 1 else 10
-                if area < min_a:
+                if cv2.contourArea(cnt) < 10:
+                    continue
+                approx = cv2.approxPolyDP(cnt, 0.0008 * cv2.arcLength(cnt, True), True)
+                pts = approx.reshape(-1, 2)
+                if len(pts) < 3:
+                    continue
+                sx, sy = map_pt(pts[0])
+                d = f"M {sx:.2f} {sy:.2f} "
+                for p in pts[1:]:
+                    x, y = map_pt(p)
+                    d += f"L {x:.2f} {y:.2f} "
+                d += "Z "
+                paths.append(d)
+            p_str = "".join([f'<path d="{p}"/>' for p in paths])
+            svg_parts.append(f'<g id="color_{l_idx+1}" fill="{hex_colors[l_idx]}">{p_str}</g>')
+
+        else:
+            # Warstwy detali z wycinaniem otworów (bliki oka, źrenice, paski)
+            contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_KCOS)
+            if not contours or hierarchy is None:
+                continue
+
+            hier = hierarchy[0]
+            compound_paths = []
+
+            for i in range(len(contours)):
+                if hier[i][3] != -1:
+                    continue  # Pomiń otwory na poziomie głównym (są przetwarzane w rodzicu)
+
+                cnt = contours[i]
+                if cv2.contourArea(cnt) < (4 if l_idx == n_colors - 1 else 6):
                     continue
 
-                perimeter = cv2.arcLength(cnt, True)
-                epsilon = 0.0012 * perimeter
-                approx = cv2.approxPolyDP(cnt, epsilon, True)
-
+                approx = cv2.approxPolyDP(cnt, 0.0008 * cv2.arcLength(cnt, True), True)
                 pts = approx.reshape(-1, 2)
                 if len(pts) < 3:
                     continue
 
-                def map_pt(pt, _cx=center_x, _cy=center_y, _sf=scale_fit):
-                    nx = 50.0 + (pt[0] - _cx) * _sf
-                    ny = 50.0 + (pt[1] - _cy) * _sf
-                    return nx, ny
+                sx, sy = map_pt(pts[0])
+                d_str = f"M {sx:.2f} {sy:.2f} "
+                for p in pts[1:]:
+                    x, y = map_pt(p)
+                    d_str += f"L {x:.2f} {y:.2f} "
+                d_str += "Z "
 
-                start_x, start_y = map_pt(pts[0])
-                d = f"M {start_x:.2f} {start_y:.2f} "
-                for pt in pts[1:]:
-                    x, y = map_pt(pt)
-                    d += f"L {x:.2f} {y:.2f} "
-                d += "Z "
-                paths.append(d)
+                # Wycinanie otworów wewnątrz tego wielokąta
+                child = hier[i][2]
+                while child != -1:
+                    hole_cnt = contours[child]
+                    if cv2.contourArea(hole_cnt) >= 2:
+                        hole_approx = cv2.approxPolyDP(hole_cnt, 0.0008 * cv2.arcLength(hole_cnt, True), True)
+                        hole_pts = hole_approx.reshape(-1, 2)
+                        if len(hole_pts) >= 3:
+                            hsx, hsy = map_pt(hole_pts[0])
+                            d_str += f"M {hsx:.2f} {hsy:.2f} "
+                            for hp in hole_pts[1:]:
+                                hx, hy = map_pt(hp)
+                                d_str += f"L {hx:.2f} {hy:.2f} "
+                            d_str += "Z "
+                    child = hier[child][0]
 
-        c_id = color_ids[l_idx]
-        c_hex = final_colors[l_idx]
-        paths_str = "".join([f'<path d="{p}"/>' for p in paths])
-        svg_output.append(f'<g id="{c_id}" fill="{c_hex}">{paths_str}</g>')
+                compound_paths.append(f'<path fill-rule="evenodd" d="{d_str}"/>')
 
-    svg_output.append("</svg>")
-    return "".join(svg_output), final_colors
+            svg_parts.append(f'<g id="color_{l_idx+1}" fill="{hex_colors[l_idx]}">{"".join(compound_paths)}</g>')
+
+    svg_parts.append("</svg>")
+    return "".join(svg_parts), hex_colors
 
 
 
