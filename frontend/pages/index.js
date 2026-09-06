@@ -460,30 +460,64 @@ export default function Home() {
 
     setAddingToCart(true);
     try {
-      const { error } = await supabase.from("orders").insert({
-        user_id: user.id,
-        file_name: selectedFile?.name || "Model 3D STL",
-        material: `${matConfig.name} (${activeColorObj?.name || selectedColor})`,
-        technology: `${
-          matConfig.group === "composite"
-            ? "FDM Hardened Steel 0.4mm (Carbon)"
-            : matConfig.group === "flex"
-            ? "FDM Direct Drive 0.4mm (Flex TPU)"
-            : `FDM Precision ${nozzleSize}mm`
-        }${analysisData?.print_time_formatted ? ` | Czas: ${analysisData.print_time_formatted}` : ""}${
-          analysisData?.filament_weight_g ? ` | Waga: ${analysisData.filament_weight_g}g` : ""
-        }`,
-        layer_height: `${layerHeight} mm`,
-        infill: infill,
-        clean_supports: true,
-        brass_inserts: false,
-        quantity: quantity,
-        total_price: parseFloat(totalPrice),
-        dimensions_mm: analysisData?.dimensions_mm || [60, 60, 40],
-        status: "in_cart",
-      });
+      const { data: newOrder, error } = await supabase
+        .from("orders")
+        .insert({
+          user_id: user.id,
+          file_name: selectedFile?.name || "Model 3D STL",
+          material: `${matConfig.name} (${activeColorObj?.name || selectedColor})`,
+          technology: `${
+            matConfig.group === "composite"
+              ? "FDM Hardened Steel 0.4mm (Carbon)"
+              : matConfig.group === "flex"
+              ? "FDM Direct Drive 0.4mm (Flex TPU)"
+              : `FDM Precision ${nozzleSize}mm`
+          }${analysisData?.print_time_formatted ? ` | Czas: ${analysisData.print_time_formatted}` : ""}${
+            analysisData?.filament_weight_g ? ` | Waga: ${analysisData.filament_weight_g}g` : ""
+          }`,
+          layer_height: `${layerHeight} mm`,
+          infill: infill,
+          clean_supports: true,
+          brass_inserts: false,
+          quantity: quantity,
+          total_price: parseFloat(totalPrice),
+          dimensions_mm: analysisData?.dimensions_mm || [60, 60, 40],
+          status: "in_cart",
+        })
+        .select()
+        .single();
 
       if (error) throw error;
+
+      // W tle: wygenerowanie pakietu produkcyjnego .3MF
+      if (newOrder?.id && (analysisData?.preview_stl_key || analysisData?.file_key)) {
+        fetch(`${API_URL || ""}/api/generate-3mf`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            order_id: newOrder.id,
+            model_key: analysisData.preview_stl_key || analysisData.file_key,
+            file_name: selectedFile?.name || "model.stl",
+            material: matConfig.name || "PLA",
+            color_hex: activeColorObj?.hex || "#EF4444",
+            layer_height: layerHeight,
+            infill: infill,
+            nozzle_size: nozzleSize,
+          }),
+        })
+          .then(async (res) => {
+            if (res.ok) {
+              const resData = await res.json();
+              if (resData.download_url) {
+                await supabase
+                  .from("orders")
+                  .update({ production_file_url: resData.download_url })
+                  .eq("id", newOrder.id);
+              }
+            }
+          })
+          .catch((e) => console.warn("Background 3MF generation:", e));
+      }
       await fetchCart(user.id);
       setIsCartOpen(true);
     } catch (err) {

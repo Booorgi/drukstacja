@@ -54,3 +54,23 @@ def download_file_from_r2(object_name: str, target_path: str):
         raise ValueError("R2_BUCKET_NAME nie jest skonfigurowany.")
     s3_client.download_file(R2_BUCKET_NAME, object_name, target_path)
 
+
+def save_production_3mf_file(local_3mf_path: str, object_name: str) -> str:
+    """
+    Zapisuje wygenerowany plik .3mf w storage Cloudflare R2 (jeśli skonfigurowane)
+    lub zwraca endpoint URL.
+    """
+    if R2_BUCKET_NAME and R2_ACCESS_KEY_ID:
+        try:
+            with open(local_3mf_path, "rb") as f:
+                upload_file_to_r2(
+                    f,
+                    object_name,
+                    content_type="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"
+                )
+            return get_file_url(object_name)
+        except Exception as e:
+            print(f"[WARN] Błąd uploadu .3MF do R2: {e}")
+    return f"/api/download-3mf-file/{os.path.basename(local_3mf_path)}"
+
+

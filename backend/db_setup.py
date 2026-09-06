@@ -162,7 +162,7 @@ def setup_database():
         conn.autocommit = True
         cur = conn.cursor()
 
-        print("[1/2] Tworzenie tabeli 'filaments'...")
+        print("[1/3] Tworzenie tabeli 'filaments'...")
         create_table_sql = """
         CREATE TABLE IF NOT EXISTS filaments (
             id VARCHAR(50) PRIMARY KEY,
@@ -181,7 +181,31 @@ def setup_database():
         cur.execute(create_table_sql)
         print("      ✓ Tabela 'filaments' istnieje / została utworzona.")
 
-        print(f"[2/2] Seedowanie {len(SEED_FILAMENTS)} filamentów (ON CONFLICT DO NOTHING)...")
+        print("[2/3] Weryfikacja tabeli 'orders' i kolumny 'production_file_url'...")
+        orders_migration_sql = """
+        CREATE TABLE IF NOT EXISTS orders (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID,
+            file_name VARCHAR(255),
+            material VARCHAR(100),
+            technology VARCHAR(255),
+            layer_height VARCHAR(50),
+            infill INT,
+            clean_supports BOOLEAN DEFAULT true,
+            brass_inserts BOOLEAN DEFAULT false,
+            quantity INT DEFAULT 1,
+            total_price NUMERIC(10, 2),
+            dimensions_mm INT[],
+            status VARCHAR(50) DEFAULT 'in_cart',
+            production_file_url VARCHAR(255),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS production_file_url VARCHAR(255);
+        """
+        cur.execute(orders_migration_sql)
+        print("      ✓ Tabela 'orders' z kolumną 'production_file_url' jest gotowa.")
+
+        print(f"[3/3] Seedowanie {len(SEED_FILAMENTS)} filamentów (ON CONFLICT DO NOTHING)...")
         insert_sql = """
         INSERT INTO filaments (
             id, name, tier, type, category, hex, colors, price_per_cm3, in_stock, roughness, metalness

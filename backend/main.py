@@ -12,6 +12,7 @@ import traceback
 from pathlib import Path
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import trimesh
@@ -30,13 +31,18 @@ from analysis import (
     UnsupportedFileType,
 )
 from pricing import calculate_price, calculate_price_from_slicer, MATERIALS
-from storage import upload_file_to_r2, get_file_url, download_file_from_r2
+from storage import upload_file_to_r2, get_file_url, download_file_from_r2, save_production_3mf_file
 from slicer import convert_step_to_stl, run_slicer
 from orientation import auto_orient_mesh
+from packager_3mf import generate_production_3mf, sanitize_filename
 
 # Katalog cache dla wygenerowanych i zorientowanych siatek STL do szybkiego ponownego cięcia
 MODELS_CACHE_DIR = os.path.join(tempfile.gettempdir(), "drukstacja_cache")
 os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
+
+# Katalog cache dla wygenerowanych pakietów produkcyjnych .3MF
+PROJECTS_3MF_CACHE_DIR = os.path.join(tempfile.gettempdir(), "drukstacja_3mf")
+os.makedirs(PROJECTS_3MF_CACHE_DIR, exist_ok=True)
 
 # Inicjalizacja aplikacji FastAPI
 app = FastAPI(title="Drukstacja API", version="0.5.0")
@@ -71,6 +77,18 @@ class ResliceRequest(BaseModel):
     infill: int = 20
     filament_type: str = "PLA"
     quantity: int = 1
+
+
+class Generate3MFRequest(BaseModel):
+    preview_stl_key: str | None = None
+    file_key: str | None = None
+    order_id: str | None = None
+    file_name: str | None = None
+    layer_height: float = 0.20
+    nozzle_size: float = 0.4
+    infill: int = 20
+    material: str = "PLA"
+    color_hex: str = "#EF4444"
 
 
 REMBG_AVAILABLE = False
@@ -718,4 +736,216 @@ def get_filaments():
         fallback = [dict(item, in_stock=True) for item in SEED_FILAMENTS]
         return {"success": True, "source": "fallback", "filaments": fallback}
     except Exception as err:
-        return {"success": False, "error": str(err), "filaments": []}
+        return {"success": False, "error": str(err), "filaments": []}
+
+
+# --------------------------------------------------------------------------
+# MODUŁ PAKIETÓW PRODUKCYJNYCH .3MF (BAMBU STUDIO / ORCASLICER / PRUSASLICER)
+# --------------------------------------------------------------------------
+
+@app.post("/api/generate-3mf")
+def generate_3mf_endpoint(req: Generate3MFRequest):
+    """
+    Generuje i zapisuje pakiet produkcyjny .3MF dla danego modelu i parametrów.
+    Zwraca informację o pliku i URL do pobrania.
+    """
+    key = req.preview_stl_key or req.file_key
+    local_model = None
+
+    if key:
+        base_name = os.path.basename(key)
+        local_cached = os.path.join(MODELS_CACHE_DIR, base_name)
+        if os.path.exists(local_cached):
+            local_model = local_cached
+        else:
+            uuid_prefix = base_name.split("_")[0]
+            matches = [f for f in os.listdir(MODELS_CACHE_DIR) if f.startswith(uuid_prefix)]
+            if matches:
+                local_model = os.path.join(MODELS_CACHE_DIR, matches[0])
+            else:
+                try:
+                    download_file_from_r2(key, local_cached)
+                    local_model = local_cached
+                except Exception as dl_err:
+                    print(f"[WARN] Błąd pobierania modelu z R2: {dl_err}")
+
+    if not local_model or not os.path.exists(local_model):
+        raise HTTPException(
+            status_code=404,
+            detail="Plik geometrii 3D nie został odnaleziony na serwerze. Proszę załadować plik w wyceniarce."
+        )
+
+    order_id = req.order_id or uuid.uuid4().hex[:8].upper()
+    file_name = req.file_name or os.path.basename(local_model)
+    safe_name = sanitize_filename(Path(file_name).stem)
+    safe_mat = sanitize_filename(req.material.split()[0])
+    target_3mf_name = f"ORDER_{order_id}_{safe_name}_{safe_mat}_{req.nozzle_size}mm.3mf"
+    local_3mf_path = os.path.join(PROJECTS_3MF_CACHE_DIR, target_3mf_name)
+
+    # Generowanie .3MF
+    generate_production_3mf(
+        model_path=local_model,
+        order_metadata={"order_id": order_id, "file_name": file_name},
+        print_settings={
+            "layer_height": req.layer_height,
+            "nozzle_size": req.nozzle_size,
+            "infill": req.infill,
+            "material": req.material,
+            "color_hex": req.color_hex,
+        },
+        output_path=local_3mf_path,
+    )
+
+    r2_key = f"production_packages/{target_3mf_name}"
+    production_url = save_production_3mf_file(local_3mf_path, r2_key)
+
+    # Aktualizacja w bazie PostgreSQL jeśli order_id istnieje
+    if req.order_id:
+        conn = get_db_connection()
+        if conn:
+            try:
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE orders SET production_file_url = %s WHERE id::text = %s OR id::text LIKE %s",
+                            (production_url, str(req.order_id), f"{req.order_id}%")
+                        )
+            except Exception as db_err:
+                print(f"[WARN] Nie udało się zaktualizować orders w PostgreSQL: {db_err}")
+            finally:
+                conn.close()
+
+    return {
+        "success": True,
+        "filename": target_3mf_name,
+        "production_file_url": production_url,
+        "download_url": f"/api/download-3mf-file/{target_3mf_name}",
+    }
+
+
+@app.get("/api/download-3mf-file/{filename}")
+def download_3mf_file(filename: str):
+    """Pobiera lokalnie zapisany plik projektu .3MF."""
+    safe_name = os.path.basename(filename)
+    path = os.path.join(PROJECTS_3MF_CACHE_DIR, safe_name)
+    if not os.path.exists(path):
+        alt = os.path.join(MODELS_CACHE_DIR, safe_name)
+        if os.path.exists(alt):
+            path = alt
+        else:
+            raise HTTPException(status_code=404, detail="Plik produkcyjny .3MF nie został odnaleziony.")
+
+    return FileResponse(
+        path,
+        media_type="application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+        filename=safe_name,
+    )
+
+
+@app.get("/api/orders/{order_id}/download-3mf")
+def download_order_3mf(
+    order_id: str,
+    file_name: str | None = None,
+    material: str | None = "PLA",
+    color_hex: str | None = "#EF4444",
+    layer_height: float = 0.20,
+    nozzle_size: float = 0.4,
+    infill: int = 20,
+    file_key: str | None = None,
+):
+    """
+    Dedykowany endpoint dla operatora farmy druku / widoku zlecenia:
+    Generuje i od razu zwraca gotowy plik projektu produkcyjnego .3MF do pobrania jednym kliknięciem.
+    """
+    clean_order_id = str(order_id)
+    conn = get_db_connection()
+    db_order = None
+    if conn:
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT * FROM orders WHERE id::text = %s OR id::text LIKE %s LIMIT 1",
+                        (clean_order_id, f"{clean_order_id}%")
+                    )
+                    db_order = cur.fetchone()
+        except Exception as e:
+            print(f"[WARN] Błąd odczytu zlecenia z bazy: {e}")
+        finally:
+            conn.close()
+
+    if db_order:
+        file_name = file_name or db_order.get("file_name")
+        material = material or db_order.get("material") or "PLA"
+        infill = infill if infill != 20 else (db_order.get("infill") or 20)
+        lh_raw = db_order.get("layer_height")
+        if lh_raw:
+            try:
+                nums = re.findall(r"[\d\.]+", str(lh_raw))
+                if nums:
+                    layer_height = float(nums[0])
+            except Exception:
+                pass
+        tech_raw = db_order.get("technology")
+        if tech_raw and "0.2mm" in str(tech_raw):
+            nozzle_size = 0.2
+        elif tech_raw and "0.4mm" in str(tech_raw):
+            nozzle_size = 0.4
+
+    # Odnalezienie pliku źródłowego geometrii
+    local_model = None
+    if file_key:
+        base_name = os.path.basename(file_key)
+        target = os.path.join(MODELS_CACHE_DIR, base_name)
+        if os.path.exists(target):
+            local_model = target
+        else:
+            try:
+                download_file_from_r2(file_key, target)
+                local_model = target
+            except Exception:
+                pass
+
+    if not local_model:
+        clean_name = sanitize_filename(Path(file_name or "model").stem)
+        candidates = [
+            f for f in os.listdir(MODELS_CACHE_DIR)
+            if f.endswith((".stl", ".step", ".stp", ".obj", ".3mf"))
+        ]
+        matching = [f for f in candidates if clean_order_id[:8].lower() in f.lower() or clean_name.lower() in f.lower()]
+        if matching:
+            local_model = os.path.join(MODELS_CACHE_DIR, matching[0])
+        elif candidates:
+            candidates.sort(key=lambda x: os.path.getmtime(os.path.join(MODELS_CACHE_DIR, x)), reverse=True)
+            local_model = os.path.join(MODELS_CACHE_DIR, candidates[0])
+
+    if not local_model or not os.path.exists(local_model):
+        raise HTTPException(
+            status_code=404,
+            detail="Nie znaleziono pliku geometrii 3D dla tego zlecenia na serwerze."
+        )
+
+    safe_model_name = sanitize_filename(Path(file_name or "model").stem)
+    safe_mat = sanitize_filename(str(material).split()[0])
+    target_3mf_name = f"ORDER_{clean_order_id[:8]}_{safe_model_name}_{safe_mat}_{nozzle_size}mm.3mf"
+    local_3mf_path = os.path.join(PROJECTS_3MF_CACHE_DIR, target_3mf_name)
+
+    # Generowanie pakietu .3MF
+    generate_production_3mf(
+        model_path=local_model,
+        order_metadata={"order_id": clean_order_id, "file_name": file_name or safe_model_name},
+        print_settings={
+            "layer_height": layer_height,
+            "nozzle_size": nozzle_size,
+            "infill": infill,
+            "material": str(material),
+            "color_hex": color_hex or "#EF4444",
+        },
+        output_path=local_3mf_path,
+    )
+
+    return FileResponse(
+        local_3mf_path,
+        media_type="application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+        filename=target_3mf_name,
+    )

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
 const STATUS_STEPS = [
   { key: "in_cart", label: "W koszyku", step: 0 },
   { key: "pending_payment", label: "Oczekuje na opłacenie", step: 1 },
@@ -254,6 +256,32 @@ export default function OrdersPage() {
                       )}
                     </div>
                   )}
+
+                  {/* PAKIET PRODUKCYJNY 3MF */}
+                  <div className="pt-3 border-t border-[#24324A] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono text-[#94A3B8]">
+                        Plik produkcyjny dla Bambu / Orca / Prusa:
+                      </span>
+                    </div>
+                    <a
+                      href={
+                        order.production_file_url ||
+                        `${API_URL}/api/orders/${order.id}/download-3mf?file_name=${encodeURIComponent(
+                          order.file_name || ""
+                        )}&material=${encodeURIComponent(
+                          order.material || ""
+                        )}&layer_height=${encodeURIComponent(
+                          order.layer_height || "0.20"
+                        )}&infill=${order.infill || 20}`
+                      }
+                      download
+                      className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 hover:from-emerald-500/30 hover:to-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-mono font-bold transition shadow-sm hover:scale-[1.02] active:scale-98"
+                    >
+                      <span>📦</span>
+                      <span>Pobierz projekt produkcyjny (.3MF)</span>
+                    </a>
+                  </div>
                 </div>
               );
             })}
