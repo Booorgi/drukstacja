@@ -1,3 +1,6 @@
+import React, { useState, useEffect } from "react";
+import { supabase } from "../lib/supabaseClient";
+
 function getDeletedIds() {
   if (typeof window === "undefined") return [];
   try {
