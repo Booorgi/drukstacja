@@ -59,12 +59,15 @@ class QuoteRequest(BaseModel):
     material: str = "PLA"
     quantity: int = 1
     infill_percent: int = 20
+    layer_height: float = 0.20
+    nozzle_size: float = 0.4
 
 
 class ResliceRequest(BaseModel):
     preview_stl_key: str | None = None
     file_key: str | None = None
     layer_height: float = 0.20
+    nozzle_size: float = 0.4
     infill: int = 20
     filament_type: str = "PLA"
     quantity: int = 1
@@ -385,6 +388,7 @@ async def vectorize_image_ai(
 async def analyze_model_endpoint(
     file: UploadFile = File(...),
     layer_height: float = Form(0.20),
+    nozzle_size: float = Form(0.4),
     infill: int = Form(20),
     filament_type: str = Form("PLA"),
 ):
@@ -490,6 +494,7 @@ async def analyze_model_endpoint(
                             oriented_stl_path,
                             infill=int(infill),
                             layer_height=float(layer_height),
+                            nozzle_size=float(nozzle_size),
                             filament_type=filament_type,
                         )
                         result["slicer_engine"] = slice_data.get("engine")
@@ -499,6 +504,7 @@ async def analyze_model_endpoint(
                         result["filament_length_m"] = slice_data.get("filament_length_m")
                         result["filament_volume_cm3"] = slice_data.get("filament_volume_cm3")
                         result["layer_height"] = float(layer_height)
+                        result["nozzle_size"] = float(nozzle_size)
                         result["infill"] = int(infill)
                         result["filament_type"] = filament_type
                         result["has_supports"] = slice_data.get("has_supports", False)
@@ -511,6 +517,7 @@ async def analyze_model_endpoint(
                             material=filament_type,
                             quantity=1,
                             layer_height=float(layer_height),
+                            nozzle_size=float(nozzle_size),
                         )
                         result["price_breakdown"] = price_info
                         result["unit_price"] = price_info["unit_price_pln"]
@@ -569,6 +576,8 @@ def quote(req: QuoteRequest):
         material=req.material,
         quantity=req.quantity,
         infill_percent=req.infill_percent,
+        layer_height=req.layer_height,
+        nozzle_size=req.nozzle_size,
     )
     return result
 
@@ -577,7 +586,7 @@ def quote(req: QuoteRequest):
 def reslice_model_endpoint(req: ResliceRequest):
     """
     Ponowne slice'owanie modelu w czasie rzeczywistym z nowymi parametrami
-    (layer_height, infill, filament_type) bez konieczności re-uploadu pliku z przeglądarki.
+    (layer_height, nozzle_size, infill, filament_type) bez konieczności re-uploadu pliku z przeglądarki.
     """
     key = req.preview_stl_key or req.file_key
     if not key:
@@ -606,6 +615,7 @@ def reslice_model_endpoint(req: ResliceRequest):
         stl_path=local_cached,
         infill=int(req.infill),
         layer_height=float(req.layer_height),
+        nozzle_size=float(req.nozzle_size),
         filament_type=req.filament_type,
     )
 
@@ -615,6 +625,7 @@ def reslice_model_endpoint(req: ResliceRequest):
         material=req.filament_type,
         quantity=req.quantity,
         layer_height=float(req.layer_height),
+        nozzle_size=float(req.nozzle_size),
     )
 
     return {
@@ -626,6 +637,7 @@ def reslice_model_endpoint(req: ResliceRequest):
         "filament_length_m": slice_data.get("filament_length_m"),
         "filament_volume_cm3": slice_data.get("filament_volume_cm3"),
         "layer_height": float(req.layer_height),
+        "nozzle_size": float(req.nozzle_size),
         "infill": int(req.infill),
         "filament_type": req.filament_type,
         "has_supports": slice_data.get("has_supports", False),

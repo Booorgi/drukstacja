@@ -80,12 +80,91 @@ export default function Home() {
   }
 
   const [layerHeight, setLayerHeight] = useState(0.20);
+  const [nozzleSize, setNozzleSize] = useState(0.4);
   const [infill, setInfill] = useState(20);
   const [isReslicing, setIsReslicing] = useState(false);
   const [showSupports, setShowSupports] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Weryfikacja tworzywa PLA dla dyszy 0.2 mm
+  const isPlaMaterial = useMemo(() => {
+    return (selectedMaterial || "").toUpperCase().includes("PLA");
+  }, [selectedMaterial]);
+
+  // Automatyczny powrót do dyszy 0.4 mm przy wyborze materiału nie-PLA
+  useEffect(() => {
+    if (!isPlaMaterial && nozzleSize === 0.2) {
+      setNozzleSize(0.4);
+    }
+  }, [isPlaMaterial, nozzleSize]);
+
+  // Dostępne wysokości warstwy dopasowane do wybranej średnicy dyszy
+  const layerHeightOptions = useMemo(() => {
+    if (nozzleSize === 0.2) {
+      return [
+        {
+          val: 0.08,
+          label: "0.08 mm",
+          title: "Ultra Detal",
+          subtitle: "Mikrodruki i figurki",
+          multiplier: "+30%",
+          badge: "Ultra",
+        },
+        {
+          val: 0.12,
+          label: "0.12 mm",
+          title: "Wysoka Precyzja",
+          subtitle: "Zbalansowany detal",
+          multiplier: "+15%",
+          badge: "Optimum",
+        },
+        {
+          val: 0.16,
+          label: "0.16 mm",
+          title: "Standard 0.2",
+          subtitle: "Maks. dla dyszy 0.2",
+          multiplier: "1.0x",
+          badge: "Standard",
+        },
+      ];
+    }
+    return [
+      {
+        val: 0.12,
+        label: "0.12 mm",
+        title: "Ultra Detail",
+        subtitle: "Wysoka precyzja",
+        multiplier: "+25%",
+        badge: "Gładki",
+      },
+      {
+        val: 0.20,
+        label: "0.20 mm",
+        title: "Standard",
+        subtitle: "Zbalansowana",
+        multiplier: "1.0x",
+        badge: "Domyślny",
+      },
+      {
+        val: 0.28,
+        label: "0.28 mm",
+        title: "Draft",
+        subtitle: "Szybki prototyp",
+        multiplier: "-10%",
+        badge: "Szybki",
+      },
+    ];
+  }, [nozzleSize]);
+
+  // Automatyczne dopasowanie wybranej warstwy po zmianie dyszy
+  useEffect(() => {
+    const isValid = layerHeightOptions.some((opt) => Math.abs(opt.val - layerHeight) < 0.01);
+    if (!isValid) {
+      setLayerHeight(nozzleSize === 0.2 ? 0.12 : 0.20);
+    }
+  }, [nozzleSize, layerHeightOptions, layerHeight]);
 
   // Stan wyceny inżynierskiej / RFQ (pliki 2D, PCB, CAD projektowe, archiwa)
   const [rfqName, setRfqName] = useState("");
@@ -167,6 +246,7 @@ export default function Home() {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("layer_height", String(layerHeight));
+    formData.append("nozzle_size", String(nozzleSize));
     formData.append("infill", String(infill));
     formData.append("filament_type", matConfig?.name?.split(" ")[0] || "PLA");
 
@@ -260,6 +340,7 @@ export default function Home() {
             preview_stl_key: analysisData.preview_stl_key,
             file_key: analysisData.file_key,
             layer_height: parseFloat(layerHeight),
+            nozzle_size: parseFloat(nozzleSize),
             infill: parseInt(infill),
             filament_type: matConfig?.name?.split(" ")[0] || "PLA",
             quantity: quantity,
@@ -276,6 +357,7 @@ export default function Home() {
             filament_length_m: resliceData.filament_length_m,
             filament_volume_cm3: resliceData.filament_volume_cm3,
             layer_height: resliceData.layer_height,
+            nozzle_size: resliceData.nozzle_size,
             infill: resliceData.infill,
             has_supports: resliceData.has_supports,
             support_lines: resliceData.support_lines?.length > 0 ? resliceData.support_lines : prev.support_lines,
@@ -291,40 +373,42 @@ export default function Home() {
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [layerHeight, infill, selectedMaterial]);
+  }, [layerHeight, nozzleSize, infill, selectedMaterial]);
 
   const volume = analysisData?.volume_cm3 || 32.5;
   const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
   const activeColorObj = matConfig?.colors?.find((c) => c.hex === selectedColor) || matConfig?.colors?.[0];
-  const layerMultiplier = layerHeight === 0.12 ? 1.25 : layerHeight === 0.28 ? 0.90 : 1.0;
+  const isNozzle02 = Math.abs(nozzleSize - 0.2) < 0.05;
+  const layerMultiplier = isNozzle02
+    ? (Math.abs(layerHeight - 0.08) < 0.02 ? 1.30 : Math.abs(layerHeight - 0.12) < 0.02 ? 1.15 : 1.0)
+    : (Math.abs(layerHeight - 0.12) < 0.02 ? 1.25 : Math.abs(layerHeight - 0.28) < 0.02 ? 0.90 : 1.0);
+  const nozzleMultiplier = isNozzle02 ? 1.65 : 1.0;
   
   // Obliczenie wagi i ceny bazowej (dla 1 sztuki bez rabatu)
   const baseUnitPrice = useMemo(() => {
     if (analysisData?.price_breakdown?.unit_price_pln != null) {
-      const pb = analysisData.price_breakdown;
-      const appliedDiscount = pb.discount_percent || 0;
-      return pb.unit_price_pln / ((100 - appliedDiscount) / 100);
+      return analysisData.price_breakdown.unit_price_pln;
     }
     // Kalibrowany model geometryczny dopasowany do slicera:
-    // np. Watch case (7.16 cm3 przy 20% infill) -> ~9.8g -> 2.65 PLN brutto
+    // np. Watch case (7.16 cm3 przy 20% infill) -> ~9.8g -> 2.65 PLN brutto (dysza 0.4 mm, warstwa 0.20 mm)
     const density = matConfig?.density || 1.24;
     const perimeterRatio = 0.72;
     const infillRatio = (infill / 100) * (1.0 - perimeterRatio);
     const effectiveVolCm3 = volume * (perimeterRatio + infillRatio);
     const estWeightG = effectiveVolCm3 * density * 1.42;
     const ratePerG = matConfig?.ratePerG || 0.27;
-    const matCost = estWeightG * ratePerG * layerMultiplier;
+    const matCost = estWeightG * ratePerG * layerMultiplier * nozzleMultiplier;
     return Math.max(0.80, matCost);
-  }, [analysisData, volume, matConfig, infill, layerMultiplier]);
+  }, [analysisData, volume, matConfig, infill, layerMultiplier, nozzleMultiplier]);
 
-  // Progresywne rabaty ilościowe (5+, 10+, 25+, 50+ szt.)
-  const discountPercent = quantity >= 50 ? 20 : quantity >= 25 ? 15 : quantity >= 10 ? 10 : quantity >= 5 ? 5 : 0;
-  const discountFactor = (100 - discountPercent) / 100;
-  const unitPrice = (Math.round(baseUnitPrice * discountFactor * 100) / 100).toFixed(2);
+  // Czysta liniowa cena bez rabatów ilościowych
+  const unitPrice = (Math.round(baseUnitPrice * 100) / 100).toFixed(2);
   const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
 
+  // Weryfikacja wgranego modelu – ukrycie ceny i blokada koszyka przed analizą
+  const hasModel = Boolean(analysisData && (analysisData.preview_stl_url || analysisData.file_key || analysisData.volume_cm3 != null));
   const MIN_ORDER_VALUE = 30.00;
-  const isBelowMoq = parseFloat(totalPrice) < MIN_ORDER_VALUE;
+  const isBelowMoq = hasModel && parseFloat(totalPrice) < MIN_ORDER_VALUE;
   const diffToMoq = (MIN_ORDER_VALUE - parseFloat(totalPrice)).toFixed(2);
   const suggestedQtyForMoq = Math.max(1, Math.ceil(MIN_ORDER_VALUE / Math.max(0.1, parseFloat(unitPrice))));
 
@@ -385,7 +469,7 @@ export default function Home() {
             ? "FDM Hardened Steel 0.4mm (Carbon)"
             : matConfig.group === "flex"
             ? "FDM Direct Drive 0.4mm (Flex TPU)"
-            : "FDM Precision 0.4mm"
+            : `FDM Precision ${nozzleSize}mm`
         }${analysisData?.print_time_formatted ? ` | Czas: ${analysisData.print_time_formatted}` : ""}${
           analysisData?.filament_weight_g ? ` | Waga: ${analysisData.filament_weight_g}g` : ""
         }`,
@@ -665,84 +749,76 @@ export default function Home() {
               ) : (
                 <>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
-                        Cena zamówienia
-                      </span>
-                      {discountPercent > 0 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-700 border border-emerald-200 animate-pulse">
-                          -{discountPercent}% rabat ilościowy
+                    <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
+                      Cena zamówienia
+                    </span>
+                    {hasModel ? (
+                      <>
+                        <div className="flex items-baseline gap-2 mt-0.5">
+                          <span className="text-3xl font-black text-slate-900 tracking-tight">
+                            {totalPrice}
+                          </span>
+                          <span className="text-sm font-bold text-slate-500">PLN</span>
+                          {quantity > 1 && (
+                            <span className="text-xs font-semibold text-slate-400">
+                              ({unitPrice} PLN / szt.)
+                            </span>
+                          )}
+                        </div>
+                        {isBelowMoq && (
+                          <div className="flex items-center gap-1.5 mt-1.5 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-lg">
+                            <span>⚠️ Min. zamówienie w koszyku: 30.00 PLN</span>
+                            <span className="text-amber-600 font-normal">
+                              (jeszcze {diffToMoq} zł / {suggestedQtyForMoq} szt.)
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="flex items-baseline gap-2 mt-0.5">
+                        <span className="text-3xl font-black text-slate-300 tracking-tight">
+                          --
                         </span>
-                      )}
-                    </div>
-                    <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-3xl font-black text-slate-900 tracking-tight">
-                        {totalPrice}
-                      </span>
-                      <span className="text-sm font-bold text-slate-500">PLN</span>
-                      {quantity > 1 && (
-                        <span className="text-xs font-semibold text-slate-400">
-                          ({unitPrice} PLN / szt.)
-                        </span>
-                      )}
-                    </div>
-                    {isBelowMoq && (
-                      <div className="flex items-center gap-1.5 mt-1.5 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-lg">
-                        <span>⚠️ Min. zamówienie w koszyku: 30.00 PLN</span>
-                        <span className="text-amber-600 font-normal">
-                          (jeszcze {diffToMoq} zł / {suggestedQtyForMoq} szt.)
+                        <span className="text-sm font-bold text-slate-400">PLN</span>
+                        <span className="text-xs font-medium text-slate-400 ml-1">
+                          (Wgraj model, aby poznać cenę)
                         </span>
                       </div>
                     )}
                   </div>
 
-                  <div className="flex flex-col items-end gap-1.5">
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center bg-white border border-slate-200 rounded-full px-2 py-1 shadow-sm">
-                        <button
-                          onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                          className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition cursor-pointer"
-                        >
-                          -
-                        </button>
-                        <span className="w-8 text-center font-bold text-sm text-slate-800">
-                          {quantity}
-                        </span>
-                        <button
-                          onClick={() => setQuantity(quantity + 1)}
-                          className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition cursor-pointer"
-                        >
-                          +
-                        </button>
-                      </div>
-
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-white border border-slate-200 rounded-full px-2 py-1 shadow-sm">
                       <button
-                        disabled={addingToCart || isAnalyzing}
-                        onClick={handleAddToCart}
-                        className="px-6 py-3.5 rounded-full bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25 transition cursor-pointer disabled:opacity-50"
+                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                        disabled={!hasModel}
+                        className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        {addingToCart ? "Zapisuję..." : "Dodaj do koszyka +"}
+                        -
+                      </button>
+                      <span className="w-8 text-center font-bold text-sm text-slate-800">
+                        {quantity}
+                      </span>
+                      <button
+                        onClick={() => setQuantity(quantity + 1)}
+                        disabled={!hasModel}
+                        className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        +
                       </button>
                     </div>
 
-                    {/* Wskazówka rabatowa */}
-                    {quantity < 5 ? (
-                      <span className="text-[10px] font-medium text-slate-400">
-                        💡 Rabat: od 5 szt. (-5%), od 10 szt. (-10%), od 25 szt. (-15%)
-                      </span>
-                    ) : quantity < 10 ? (
-                      <span className="text-[10px] font-medium text-emerald-600">
-                        ✓ Zastosowano -5% rabatu! Od 10 szt. aż -10%
-                      </span>
-                    ) : quantity < 25 ? (
-                      <span className="text-[10px] font-medium text-emerald-600">
-                        ✓ Zastosowano -10% rabatu! Od 25 szt. aż -15%
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-medium text-emerald-600">
-                        ✓ Zastosowano maksymalny rabat hurtowy!
-                      </span>
-                    )}
+                    <button
+                      disabled={!hasModel || addingToCart || isAnalyzing}
+                      onClick={handleAddToCart}
+                      className={`px-6 py-3.5 rounded-full font-bold text-xs uppercase tracking-wider transition ${
+                        !hasModel || addingToCart || isAnalyzing
+                          ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+                          : "bg-[#EF4444] hover:bg-[#DC2626] text-white shadow-lg shadow-red-500/25 cursor-pointer"
+                      }`}
+                    >
+                      {addingToCart ? "Zapisuję..." : isAnalyzing ? "Analizuję..." : !hasModel ? "Wgraj model 3D" : "Dodaj do koszyka +"}
+                    </button>
                   </div>
                 </>
               )}
@@ -1022,6 +1098,105 @@ export default function Home() {
                     </div>
                   </div>
 
+                  {/* Wybór średnicy dyszy (Nozzle Size) */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-slate-700">
+                          Średnica dyszy ekstrudera
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">(Nozzle)</span>
+                      </div>
+                      <span className="text-xs font-extrabold text-[#EF4444] bg-red-50 px-2 py-0.5 rounded-full border border-red-100">
+                        {nozzleSize === 0.2 ? "0.2 mm (Precyzja)" : "0.4 mm (Standard)"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {/* Dysza 0.4 mm */}
+                      <button
+                        type="button"
+                        onClick={() => setNozzleSize(0.4)}
+                        className={`p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
+                          nozzleSize === 0.4
+                            ? "border-[#EF4444] bg-red-50/50 shadow-sm ring-1 ring-red-400/40"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/80"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full mb-1">
+                          <span className={`text-xs font-black ${nozzleSize === 0.4 ? "text-[#EF4444]" : "text-slate-800"}`}>
+                            Dysza 0.4 mm
+                          </span>
+                          {nozzleSize === 0.4 ? (
+                            <span className="w-3.5 h-3.5 rounded-full bg-[#EF4444] text-white flex items-center justify-center text-[9px] font-bold">
+                              ✓
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-semibold text-slate-400">Standard</span>
+                          )}
+                        </div>
+                        <div>
+                          <span className={`text-[11px] font-bold block leading-tight ${nozzleSize === 0.4 ? "text-slate-900" : "text-slate-700"}`}>
+                            Standardowa
+                          </span>
+                          <span className="text-[10px] text-slate-500 block leading-tight truncate mt-0.5">
+                            Wszystkie materiały
+                          </span>
+                        </div>
+                      </button>
+
+                      {/* Dysza 0.2 mm */}
+                      <div className="relative group">
+                        <button
+                          type="button"
+                          disabled={!isPlaMaterial}
+                          onClick={() => {
+                            if (isPlaMaterial) setNozzleSize(0.2);
+                          }}
+                          className={`w-full p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between ${
+                            !isPlaMaterial
+                              ? "border-slate-200 bg-slate-100/70 opacity-60 cursor-not-allowed"
+                              : nozzleSize === 0.2
+                              ? "border-[#EF4444] bg-red-50/50 shadow-sm ring-1 ring-red-400/40 cursor-pointer"
+                              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/80 cursor-pointer"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1">
+                            <span className={`text-xs font-black ${!isPlaMaterial ? "text-slate-400" : nozzleSize === 0.2 ? "text-[#EF4444]" : "text-slate-800"}`}>
+                              Dysza 0.2 mm
+                            </span>
+                            {!isPlaMaterial ? (
+                              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                Tylko PLA
+                              </span>
+                            ) : nozzleSize === 0.2 ? (
+                              <span className="w-3.5 h-3.5 rounded-full bg-[#EF4444] text-white flex items-center justify-center text-[9px] font-bold">
+                                ✓
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-semibold text-slate-400">Precyzja</span>
+                            )}
+                          </div>
+                          <div>
+                            <span className={`text-[11px] font-bold block leading-tight ${!isPlaMaterial ? "text-slate-400" : nozzleSize === 0.2 ? "text-slate-900" : "text-slate-700"}`}>
+                              Ultraprecyzyjna
+                            </span>
+                            <span className="text-[10px] text-slate-500 block leading-tight truncate mt-0.5">
+                              {!isPlaMaterial ? "Niedostępna dla tego tworzywa" : "Miniatury i mikrogwinty"}
+                            </span>
+                          </div>
+                        </button>
+
+                        {/* Tooltip przy zablokowaniu */}
+                        {!isPlaMaterial && (
+                          <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl z-20 pointer-events-none leading-snug">
+                            Dysza 0.2 mm dostępna tylko dla tworzywa PLA (ryzyko zapychania przy innych materiałach).
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Wysokość warstwy (Jakość druku) */}
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
                     <div className="flex items-center justify-between">
@@ -1029,38 +1204,13 @@ export default function Home() {
                         Wysokość warstwy (Jakość druku)
                       </span>
                       <span className="text-xs font-extrabold text-[#EF4444] bg-red-50 px-2 py-0.5 rounded-full border border-red-100">
-                        {layerHeight === 0.12 ? "0.12 mm (Ultra)" : layerHeight === 0.28 ? "0.28 mm (Draft)" : "0.20 mm (Standard)"}
+                        {`${layerHeight} mm`}
                       </span>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2">
-                      {[
-                        {
-                          val: 0.12,
-                          label: "0.12 mm",
-                          title: "Ultra Detail",
-                          subtitle: "Wysoka precyzja",
-                          multiplier: "+25%",
-                          badge: "Gładki",
-                        },
-                        {
-                          val: 0.20,
-                          label: "0.20 mm",
-                          title: "Standard",
-                          subtitle: "Zbalansowana",
-                          multiplier: "1.0x",
-                          badge: "Domyślny",
-                        },
-                        {
-                          val: 0.28,
-                          label: "0.28 mm",
-                          title: "Draft",
-                          subtitle: "Szybki prototyp",
-                          multiplier: "-12%",
-                          badge: "Szybki",
-                        },
-                      ].map((item) => {
-                        const isSelected = layerHeight === item.val;
+                      {layerHeightOptions.map((item) => {
+                        const isSelected = Math.abs(layerHeight - item.val) < 0.01;
                         return (
                           <button
                             key={item.val}

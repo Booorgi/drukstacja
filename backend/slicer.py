@@ -164,11 +164,12 @@ def simulate_slicing_fallback(
     infill: int = 20,
     layer_height: float = 0.20,
     filament_type: str = "PLA",
+    nozzle_size: float = 0.4,
 ) -> dict:
     """
     Precyzyjny fallback inżynieryjny na wypadek braku binarnego slicera w systemie hosta.
     Oblicza trajektorię, obrysy (perimeters), wypełnienie oraz czas druku na podstawie
-    fizycznej geometrii bryły 3D.
+    fizycznej geometrii bryły 3D i parametrów dyszy.
     """
     density = FILAMENT_DENSITIES.get(filament_type.upper(), 1.24)
     volume_cm3 = 30.0
@@ -208,14 +209,18 @@ def simulate_slicing_fallback(
     filament_weight_g = round(effective_volume_cm3 * density * 1.42, 1)
 
     # Przekrój filamentu 1.75mm: Pole = PI * (1.75 / 2)^2 ~= 2.405 mm2
-    # Objętość w mm3 = effective_volume_cm3 * 1000
     filament_length_m = round((effective_volume_cm3 * 1000.0) / (math.pi * (1.75 / 2.0) ** 2 * 1000.0), 2)
 
-    # Czas druku: prędkość ekstruzji FDM ~ 12 000 mm3/h (średnio 50-80 mm/s przy dyszy 0.4mm)
-    # + koszt ruchu Z i retrakcji zależny od liczby warstw (Z / layer_height)
-    num_layers = max(1, int(height_z_mm / max(0.08, layer_height)))
-    extrusion_hours = (effective_volume_cm3 * 1000.0) / 12000.0
-    layer_overhead_hours = num_layers * 0.0012  # ok. 4.3 sekundy na warstwę (retrakcja, uniesienie Z)
+    # Wpływ średnicy dyszy na czas druku:
+    # Dysza 0.2 mm ma szerokość ścieżki ok. 0.22 mm (zamiast 0.45 mm przy 0.4 mm)
+    # oraz wymaga znacznie wolniejszych posuwów w obrysach (30-45 mm/s vs 80-120 mm/s).
+    # Czas druku wzrasta typowo 2.4x - 2.8x.
+    is_nozzle_02 = abs(nozzle_size - 0.2) < 0.05
+    speed_factor = 2.5 if is_nozzle_02 else 1.0
+
+    num_layers = max(1, int(height_z_mm / max(0.05, layer_height)))
+    extrusion_hours = ((effective_volume_cm3 * 1000.0) / 12000.0) * speed_factor
+    layer_overhead_hours = num_layers * (0.0018 if is_nozzle_02 else 0.0012)
     
     total_hours = round(extrusion_hours + layer_overhead_hours, 2)
     _, print_time_formatted = parse_time_to_hours(str(int(total_hours * 3600)))
@@ -229,6 +234,7 @@ def simulate_slicing_fallback(
         "filament_length_m": filament_length_m,
         "filament_volume_cm3": round(effective_volume_cm3, 2),
         "layer_height": layer_height,
+        "nozzle_size": nozzle_size,
         "infill": infill,
         "filament_type": filament_type,
         "has_supports": False,
@@ -242,6 +248,7 @@ def run_slicer(
     layer_height: float = 0.20,
     filament_type: str = "PLA",
     support_material: bool = True,
+    nozzle_size: float = 0.4,
 ) -> dict:
     """
     Uruchamia natywny proces slicera (PrusaSlicer CLI) na pliku STL,
@@ -252,7 +259,13 @@ def run_slicer(
 
     if not slicer_bin:
         print("[INFO] PrusaSlicer CLI niedostępny w systemie hosta – używam symulacji inżynieryjnej.")
-        return simulate_slicing_fallback(stl_path, infill=infill, layer_height=layer_height, filament_type=filament_type)
+        return simulate_slicing_fallback(
+            stl_path,
+            infill=infill,
+            layer_height=layer_height,
+            filament_type=filament_type,
+            nozzle_size=nozzle_size,
+        )
 
     with tempfile.NamedTemporaryFile(suffix=".gcode", delete=False) as tmp_gcode:
         gcode_path = tmp_gcode.name
@@ -265,6 +278,7 @@ def run_slicer(
             "--export-gcode",
             f"--fill-density={int(infill)}%",
             f"--layer-height={layer_height}",
+            f"--nozzle-diameter={nozzle_size}",
             "--output", gcode_path,
             stl_path
         ]
@@ -290,7 +304,13 @@ def run_slicer(
 
         if process.returncode != 0 or not os.path.exists(gcode_path) or os.path.getsize(gcode_path) == 0:
             print(f"[WARN] PrusaSlicer exit code {process.returncode}: {process.stderr[:300]}")
-            return simulate_slicing_fallback(stl_path, infill=infill, layer_height=layer_height, filament_type=filament_type)
+            return simulate_slicing_fallback(
+                stl_path,
+                infill=infill,
+                layer_height=layer_height,
+                filament_type=filament_type,
+                nozzle_size=nozzle_size,
+            )
 
         # PARSOWANIE G-CODE
         print_time_str = None
@@ -362,6 +382,7 @@ def run_slicer(
             "filament_length_m": filament_m,
             "filament_volume_cm3": filament_cm3,
             "layer_height": layer_height,
+            "nozzle_size": nozzle_size,
             "infill": infill,
             "filament_type": filament_type,
             "has_supports": has_supports,
@@ -370,7 +391,13 @@ def run_slicer(
 
     except Exception as e:
         print(f"[WARN] Błąd wykonania slicera CLI: {e} – przejście na fallback.")
-        return simulate_slicing_fallback(stl_path, infill=infill, layer_height=layer_height, filament_type=filament_type)
+        return simulate_slicing_fallback(
+            stl_path,
+            infill=infill,
+            layer_height=layer_height,
+            filament_type=filament_type,
+            nozzle_size=nozzle_size,
+        )
 
     finally:
         if os.path.exists(gcode_path):

@@ -51,27 +51,27 @@ def get_material_rate_per_g(material_name: str) -> float:
 
 
 def calculate_discount_percent(quantity: int) -> int:
-    """Progresywne rabaty ilościowe zachęcające do większych nakładów."""
-    if quantity >= 50:
-        return 20  # -20%
-    if quantity >= 25:
-        return 15  # -15%
-    if quantity >= 10:
-        return 10  # -10%
-    if quantity >= 5:
-        return 5   # -5%
+    """Wycena liniowa bez rabatów ilościowych."""
     return 0
 
 
-def estimate_print_time_hours(volume_cm3: float, infill_percent: int, bbox_mm: list[float], layer_height: float = 0.20) -> float:
+def estimate_print_time_hours(
+    volume_cm3: float,
+    infill_percent: int,
+    bbox_mm: list[float],
+    layer_height: float = 0.20,
+    nozzle_size: float = 0.4,
+) -> float:
     """Szacunek czasu druku na potrzeby szybkiej wyceny orientacyjnej."""
     effective_volume_mm3 = volume_cm3 * 1000 * (0.50 + 0.50 * (infill_percent / 100.0))
     height_mm = bbox_mm[2] if len(bbox_mm) == 3 else 30
     lh = layer_height if layer_height and layer_height > 0 else 0.20
     num_layers = max(1, int(height_mm / lh))
     
-    extrusion_hours = effective_volume_mm3 / 12000.0
-    layer_overhead_hours = num_layers * 0.001
+    # Dysza 0.2 mm nakłada o połowę węższą ścieżkę (0.22 vs 0.45 mm) przy niższej prędkości ekstruzji
+    speed_factor = 2.4 if abs(nozzle_size - 0.2) < 0.05 else 1.0
+    extrusion_hours = (effective_volume_mm3 / 12000.0) * speed_factor
+    layer_overhead_hours = num_layers * (0.0015 if abs(nozzle_size - 0.2) < 0.05 else 0.001)
     return round(extrusion_hours + layer_overhead_hours, 2)
 
 
@@ -81,33 +81,39 @@ def calculate_price_from_slicer(
     material: str = "PLA",
     quantity: int = 1,
     layer_height: float = 0.20,
+    nozzle_size: float = 0.4,
     price_per_cm3: float = None,
 ) -> dict:
     """
     Rynkowy model kalkulacji cenowej:
-    - Oparty bezpośrednio na zużyciu tworzywa (gramy filamentu ze slicera)
-    - Brak sztywnej opłaty startowej (setup fee) zawyżającej cenę pojedynczego detalu
-    - 9.8g PLA -> dokładnie 2.65 PLN brutto
+    - Oparty bezpośrednio na zużyciu tworzywa i amortyzacji
+    - 9.8g PLA -> dokładnie 2.65 PLN brutto przy dyszy 0.4 mm i warstwie 0.20 mm
+    - Dysza 0.2 mm: precyzyjny druk o wydłużonym czasie maszynowym (narzut 1.65x)
+    - Czysta wycena liniowa bez rabatów ilościowych (total = unit_price * quantity)
     - Obsługa MOQ (Minimalna wartość zamówienia = 30.00 PLN)
-    - Progresywne rabaty ilościowe (5+, 10+, 25+, 50+ szt.)
     """
     rate_per_g = get_material_rate_per_g(material)
 
     # 1. Koszt bazowy materiału i energii
     material_cost = filament_weight_g * rate_per_g
 
-    # 2. Mnożnik wysokości warstwy (0.12 mm wymaga większego czasu i kalibracji: 1.25x; 0.28 mm szybszy: 0.90x)
-    layer_multiplier = 1.25 if abs(layer_height - 0.12) < 0.02 else (0.90 if abs(layer_height - 0.28) < 0.02 else 1.0)
-    base_unit_price = material_cost * layer_multiplier
+    # 2. Mnożnik wysokości warstwy
+    if abs(nozzle_size - 0.2) < 0.05:
+        # Profile dla dyszy 0.2 mm
+        layer_multiplier = 1.30 if abs(layer_height - 0.08) < 0.02 else (1.15 if abs(layer_height - 0.12) < 0.02 else 1.0)
+        nozzle_multiplier = 1.65  # Odzwierciedla 2.5x dłuższy czas i wolniejszy posuw
+    else:
+        # Profile standardowe dla dyszy 0.4 mm
+        layer_multiplier = 1.25 if abs(layer_height - 0.12) < 0.02 else (0.90 if abs(layer_height - 0.28) < 0.02 else 1.0)
+        nozzle_multiplier = 1.0
 
-    # Zabezpieczenie minimalnego kosztu drobiazgu (np. śrubka 0.2g): min 0.80 PLN
+    base_unit_price = material_cost * layer_multiplier * nozzle_multiplier
+
+    # Zabezpieczenie minimalnego kosztu drobiazgu: min 0.80 PLN
     base_unit_price = max(0.80, base_unit_price)
 
-    # 3. Rabat ilościowy
-    discount_pct = calculate_discount_percent(quantity)
-    discount_factor = (100 - discount_pct) / 100.0
-
-    unit_price = round(base_unit_price * discount_factor, 2)
+    # 3. Czysta wycena liniowa (bez naliczania progresywnych zniżek)
+    unit_price = round(base_unit_price, 2)
     total_price = round(unit_price * quantity, 2)
 
     # 4. Sprawdzenie progu MOQ (30.00 PLN)
@@ -119,10 +125,11 @@ def calculate_price_from_slicer(
         "material": material,
         "quantity": quantity,
         "layer_height_mm": layer_height,
+        "nozzle_size_mm": nozzle_size,
         "filament_weight_g": round(filament_weight_g, 1),
         "print_time_hours": round(print_time_hours, 2),
         "rate_per_g_pln": rate_per_g,
-        "discount_percent": discount_pct,
+        "discount_percent": 0,
         "unit_price_pln": unit_price,
         "total_price_pln": total_price,
         "minimum_order_value_pln": MINIMUM_ORDER_VALUE_PLN,
@@ -140,19 +147,24 @@ def calculate_price(
     quantity: int,
     infill_percent: int,
     layer_height: float = 0.20,
+    nozzle_size: float = 0.4,
 ) -> dict:
     """Kalkulator fallback dla zapytań bez pełnego G-Code (np. /quote)."""
     mat = MATERIALS.get(material, MATERIALS["PLA"])
     density = mat["density_g_cm3"]
 
-    # Obliczenie realistycznej wagi z uwzględnieniem obrysów perymetrów i retrakcji
-    # Dla koperty zegarka (7.16 cm3 przy 20% infill) daje dokładnie 9.8g -> 2.65 PLN
     perimeter_ratio = 0.72
     infill_ratio = (infill_percent / 100.0) * (1.0 - perimeter_ratio)
     effective_vol_cm3 = volume_cm3 * (perimeter_ratio + infill_ratio)
     estimated_weight_g = round(effective_vol_cm3 * density * 1.42, 1)
 
-    print_time_h = estimate_print_time_hours(volume_cm3, infill_percent, bbox_mm, layer_height=layer_height)
+    print_time_h = estimate_print_time_hours(
+        volume_cm3,
+        infill_percent,
+        bbox_mm,
+        layer_height=layer_height,
+        nozzle_size=nozzle_size,
+    )
 
     return calculate_price_from_slicer(
         print_time_hours=print_time_h,
@@ -160,4 +172,5 @@ def calculate_price(
         material=material,
         quantity=quantity,
         layer_height=layer_height,
+        nozzle_size=nozzle_size,
     )
