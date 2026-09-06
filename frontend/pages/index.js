@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabaseClient";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
 import Navbar from "../components/Navbar";
+import MaterialCatalog from "../components/MaterialCatalog";
 import { STL_MATERIAL_GROUPS, STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -549,7 +550,7 @@ export default function Home() {
 
       {/* GŁÓWNY UKŁAD STRONY: 2 KOLUMNY GÓRA + 1 KOLUMNA PEŁNA SZEROKOŚĆ DÓŁ */}
       <main className="max-w-7xl w-full mx-auto px-4 md:px-6 py-8 space-y-8">
-        <div className="bg-white rounded-[32px] border border-slate-200/80 shadow-[0_25px_70px_rgba(0,0,0,0.06)] w-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-[640px]">
+        <div id="configurator" className="bg-white rounded-[32px] border border-slate-200/80 shadow-[0_25px_70px_rgba(0,0,0,0.06)] w-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-[640px] scroll-mt-24">
           
           {/* LEWA STRONA: 3D STUDIO STAGE LUB KARTA DOKUMENTACJI RFQ */}
           <div className="lg:col-span-7 bg-gradient-to-b from-[#F8FAFC] to-[#EDF2F7] relative flex flex-col justify-between p-6 md:p-8">
@@ -1498,6 +1499,10 @@ export default function Home() {
 
           </div>
         </div>
+
+        {/* KOMPLEKSOWY KATALOG MATERIAŁÓW INŻYNIERYJNYCH FDM */}
+        <MaterialCatalog onSelectMaterial={handleSelectMaterial} />
+
       </main>
 
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onLoginSuccess={(u) => setUser(u)} />
