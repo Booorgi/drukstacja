@@ -1213,7 +1213,14 @@ export default function KeychainGenerator() {
       .eq("user_id", userId)
       .eq("status", "in_cart")
       .order("created_at", { ascending: false });
-    if (data) setCartItems(data);
+    if (data) {
+      try {
+        const deletedIds = JSON.parse(localStorage.getItem("deleted_order_ids") || "[]");
+        setCartItems(data.filter((it) => !deletedIds.includes(String(it.id))));
+      } catch {
+        setCartItems(data);
+      }
+    }
   }
 
   useEffect(() => {
@@ -2036,8 +2043,7 @@ export default function KeychainGenerator() {
         onClose={() => setIsCartOpen(false)}
         items={cartItems}
         onRemoveItem={(removedId) => {
-          setCartItems((prev) => prev.filter((it) => it.id !== removedId));
-          if (user?.id) fetchCart(user.id);
+          setCartItems((prev) => prev.filter((it) => String(it.id) !== String(removedId)));
         }}
       />
     </div>

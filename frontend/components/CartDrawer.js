@@ -1,14 +1,38 @@
-import React, { useState, useEffect } from "react";
-import { supabase } from "../lib/supabaseClient";
+function getDeletedIds() {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem("deleted_order_ids") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveDeletedId(id) {
+  if (typeof window === "undefined" || !id) return;
+  try {
+    const list = getDeletedIds();
+    const strId = String(id);
+    if (!list.includes(strId)) {
+      list.push(strId);
+      localStorage.setItem("deleted_order_ids", JSON.stringify(list));
+    }
+  } catch (e) {
+    console.error("Błąd zapisu deleted_order_ids:", e);
+  }
+}
 
 export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }) {
   if (!isOpen) return null;
 
-  const [localItems, setLocalItems] = useState(items);
+  const [localItems, setLocalItems] = useState(() => {
+    const deleted = getDeletedIds();
+    return items.filter((item) => !deleted.includes(String(item.id)));
+  });
   const [isDeletingId, setIsDeletingId] = useState(null);
 
   useEffect(() => {
-    setLocalItems(items);
+    const deleted = getDeletedIds();
+    setLocalItems(items.filter((item) => !deleted.includes(String(item.id))));
   }, [items]);
 
   const total = localItems
@@ -19,30 +43,23 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
     if (!id) return;
     setIsDeletingId(id);
 
-    // 1. Natychmiastowe optymistyczne usunięcie z widoku użytkownika
-    setLocalItems((prev) => prev.filter((item) => item.id !== id));
+    // 1. Zapis do pamięci podręcznej (aby po odświeżeniu/fetchu item nigdy nie wrócił)
+    saveDeletedId(id);
 
-    // 2. Natychmiastowe powiadomienie rodzica (aktualizacja stanu cartItems i licznika w navbarze)
+    // 2. Natychmiastowe usunięcie z lokalnego stanu (0 ms reakcji)
+    setLocalItems((prev) => prev.filter((item) => String(item.id) !== String(id)));
+
+    // 3. Powiadomienie rodzica (aktualizacja licznika w nagłówku i stanu)
     if (onRemoveItem) {
       onRemoveItem(id);
     }
 
-    // 3. Usuwanie z bazy Supabase: najpierw delete(), a w razie blokady RLS update status: 'cancelled'
+    // 4. Usunięcie / anulowanie w bazie Supabase
     try {
-      const { error: deleteError } = await supabase
-        .from("orders")
-        .delete()
-        .eq("id", id);
-
-      if (deleteError) {
-        console.warn("Delete z bazy napotkał ograniczenie RLS, oznaczam jako cancelled:", deleteError);
-        await supabase
-          .from("orders")
-          .update({ status: "cancelled" })
-          .eq("id", id);
-      }
+      await supabase.from("orders").delete().eq("id", id);
+      await supabase.from("orders").update({ status: "cancelled" }).eq("id", id);
     } catch (err) {
-      console.error("Błąd podczas usuwania pozycji z bazy:", err);
+      console.warn("Błąd bazy podczas usuwania:", err);
     } finally {
       setIsDeletingId(null);
     }
@@ -51,16 +68,23 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
   async function clearAll() {
     if (localItems.length === 0) return;
     const ids = localItems.map((it) => it.id);
+
+    // 1. Zapis wszystkich usuniętych ID
+    ids.forEach((id) => saveDeletedId(id));
+
+    // 2. Natychmiastowe wyczyszczenie
     setLocalItems([]);
+
     if (onRemoveItem) {
       ids.forEach((id) => onRemoveItem(id));
     }
 
+    // 3. Usuwanie w bazie
     try {
       await supabase.from("orders").delete().in("id", ids);
       await supabase.from("orders").update({ status: "cancelled" }).in("id", ids);
     } catch (err) {
-      console.error("Błąd czyszczenia koszyka:", err);
+      console.warn("Błąd czyszczenia koszyka w bazie:", err);
     }
   }
 
@@ -80,20 +104,20 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
               </h2>
             </div>
             <div className="flex items-center gap-2">
-              {localItems.length > 1 && (
+              {localItems.length > 0 && (
                 <button
                   type="button"
                   onClick={clearAll}
-                  className="text-[11px] font-bold text-slate-400 hover:text-red-500 transition px-2 py-1 rounded-lg hover:bg-red-50"
+                  className="text-[11px] font-bold text-red-500 hover:text-white hover:bg-red-500 transition px-2.5 py-1 rounded-lg border border-red-200 cursor-pointer"
                   title="Wyczyść wszystkie pozycje"
                 >
-                  Wyczyść
+                  Wyczyść koszyk
                 </button>
               )}
               <button
                 type="button"
                 onClick={onClose}
-                className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:text-slate-900 hover:bg-slate-200 flex items-center justify-center font-bold text-sm transition"
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:text-slate-900 hover:bg-slate-200 flex items-center justify-center font-bold text-sm transition cursor-pointer"
               >
                 ✕
               </button>
