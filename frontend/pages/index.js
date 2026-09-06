@@ -9,216 +9,15 @@ import { STL_MATERIAL_GROUPS, STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-const StlViewer3D = dynamic(
-  () =>
-    Promise.all([
-      import("@react-three/fiber"),
-      import("@react-three/drei"),
-      import("three-stdlib"),
-      import("three"),
-    ]).then(([fiber, drei, stdlib, THREE]) => {
-      const { Canvas } = fiber;
-      const { OrbitControls, Center, Bounds, GizmoHelper, GizmoViewcube } = drei;
-      const { STLLoader } = stdlib;
+const CadViewer3D = dynamic(() => import("../components/CadViewer3D"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-[520px] rounded-3xl bg-slate-100 animate-pulse flex items-center justify-center text-xs font-bold text-slate-400">
+      Ładowanie środowiska CAD...
+    </div>
+  ),
+});
 
-      function StlModelWithSupports({ url, color, showSupports, materialConfig }) {
-        const [geometry, setGeometry] = useState(null);
-
-        useEffect(() => {
-          if (!url) return;
-          const loader = new STLLoader();
-          loader.load(
-            url,
-            (geo) => {
-              geo.computeVertexNormals();
-
-              // -------------------------------------------------------------
-              // AUTO-ORIENTATION / LAY ON FLATTEST FACE (JAK W SLICERZE)
-              // -------------------------------------------------------------
-              const pos = geo.attributes.position;
-              if (pos && pos.count > 0) {
-                // 1. Zbieramy wektory normalne wszystkich ścianek i ich powierzchnie
-                const faceData = [];
-                const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
-                const ab = new THREE.Vector3(), ac = new THREE.Vector3(), fn = new THREE.Vector3();
-
-                for (let i = 0; i < pos.count; i += 3) {
-                  pA.fromBufferAttribute(pos, i);
-                  pB.fromBufferAttribute(pos, i + 1);
-                  pC.fromBufferAttribute(pos, i + 2);
-
-                  ab.subVectors(pB, pA);
-                  ac.subVectors(pC, pA);
-                  fn.crossVectors(ab, ac);
-                  const area = fn.length() * 0.5;
-                  fn.normalize();
-
-                  if (area > 0.01) {
-                    faceData.push({ normal: fn.clone(), area });
-                  }
-                }
-
-                // 2. Klastrujemy ścianki o podobnych wektorach normalnych (tolerancja kątowa ~8 st.)
-                const clusters = [];
-                faceData.forEach((f) => {
-                  let found = false;
-                  for (let c of clusters) {
-                    if (c.normal.dot(f.normal) > 0.98) {
-                      c.totalArea += f.area;
-                      found = true;
-                      break;
-                    }
-                  }
-                  if (!found) {
-                    clusters.push({ normal: f.normal.clone(), totalArea: f.area });
-                  }
-                });
-
-                // 3. Wybieramy płaszczyznę o największym polu powierzchni (najstabilniejsza baza)
-                if (clusters.length > 0) {
-                  clusters.sort((a, b) => b.totalArea - a.totalArea);
-                  const bestNormal = clusters[0].normal;
-
-                  // Chcemy, aby wektor normalny tej największej bazy celował w dół stołu (0, -1, 0)
-                  const targetDown = new THREE.Vector3(0, -1, 0);
-                  const q = new THREE.Quaternion().setFromUnitVectors(bestNormal, targetDown);
-                  geo.applyQuaternion(q);
-                }
-              }
-
-              // 4. Centrujemy model w osiach X i Z
-              geo.computeBoundingBox();
-              const box = geo.boundingBox;
-              const centerX = (box.min.x + box.max.x) / 2;
-              const centerZ = (box.min.z + box.max.z) / 2;
-              const minY = box.min.y;
-
-              // Ustawiamy podstawę idealnie na wysokości stołu (Y = 0)
-              geo.translate(-centerX, -minY, -centerZ);
-              geo.computeVertexNormals();
-
-              setGeometry(geo);
-            },
-            undefined,
-            (err) => console.error("Błąd ładowania STL:", err)
-          );
-        }, [url]);
-
-        // Wyliczanie powierzchni podpór (Nawisy > 45 st.)
-        const supportMeshGeometry = useMemo(() => {
-          if (!geometry || !showSupports) return null;
-
-          const pos = geometry.attributes.position;
-          if (!pos) return null;
-
-          const supportTriangles = [];
-          const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
-          const ab = new THREE.Vector3(), ac = new THREE.Vector3(), fn = new THREE.Vector3();
-
-          for (let i = 0; i < pos.count; i += 3) {
-            pA.fromBufferAttribute(pos, i);
-            pB.fromBufferAttribute(pos, i + 1);
-            pC.fromBufferAttribute(pos, i + 2);
-
-            ab.subVectors(pB, pA);
-            ac.subVectors(pC, pA);
-            fn.crossVectors(ab, ac).normalize();
-
-            // Pomiń trójkąty, które przylegają bezpośrednio do stołu (y bliskie 0)
-            const isBedLayer = pA.y < 0.15 && pB.y < 0.15 && pC.y < 0.15;
-
-            // Zwis większy niż 45° (składowa Y normalnej < -0.707)
-            if (fn.y < -0.707 && !isBedLayer) {
-              supportTriangles.push(
-                pA.x, pA.y, pA.z,
-                pB.x, pB.y, pB.z,
-                pC.x, pC.y, pC.z
-              );
-            }
-          }
-
-          if (supportTriangles.length === 0) return null;
-
-          const sGeo = new THREE.BufferGeometry();
-          sGeo.setAttribute("position", new THREE.Float32BufferAttribute(supportTriangles, 3));
-          sGeo.computeVertexNormals();
-          return sGeo;
-        }, [geometry, showSupports]);
-
-        if (!geometry) return null;
-
-        return (
-          <group>
-            {/* Główny model CAD spoczywający na stole */}
-            <mesh geometry={geometry} castShadow receiveShadow>
-              <meshStandardMaterial
-                color={color}
-                roughness={
-                  materialConfig?.group === "composite" || materialConfig?.id === "PLA_MATTE"
-                    ? 0.85
-                    : materialConfig?.group === "flex"
-                    ? 0.6
-                    : 0.35
-                }
-                metalness={materialConfig?.group === "composite" ? 0.15 : 0.08}
-              />
-            </mesh>
-
-            {/* Czerwone podświetlenie nawisów / podpór */}
-            {supportMeshGeometry && (
-              <mesh geometry={supportMeshGeometry}>
-                <meshBasicMaterial
-                  color="#EF4444"
-                  side={THREE.DoubleSide}
-                  transparent
-                  opacity={0.85}
-                  depthWrite={false}
-                />
-              </mesh>
-            )}
-          </group>
-        );
-      }
-
-      return function Viewer({ modelUrl, color, showSupports, materialConfig }) {
-        return (
-          <Canvas camera={{ position: [90, 110, 140], fov: 45 }}>
-            <ambientLight intensity={1.1} />
-            <directionalLight position={[40, 80, 50]} intensity={1.6} />
-            <directionalLight position={[-40, 40, -40]} intensity={0.5} />
-
-            <Bounds fit clip observe margin={1.2}>
-              <StlModelWithSupports
-                url={modelUrl}
-                color={color}
-                showSupports={showSupports}
-                materialConfig={materialConfig}
-              />
-            </Bounds>
-
-            {/* Siatka stołu roboczego 256x256 mm (Bambu Lab standard) */}
-            <gridHelper
-              args={[256, 25.6, "#94A3B8", "#E2E8F0"]}
-              position={[0, 0, 0]}
-            />
-
-            {/* Kostka orientacji widoku (Gizmo Cube) */}
-            <GizmoHelper alignment="bottom-right" margin={[70, 70]}>
-              <GizmoViewcube
-                color="#FFFFFF"
-                strokeColor="#CBD5E1"
-                textColor="#0F172A"
-                opacity={0.9}
-              />
-            </GizmoHelper>
-
-            <OrbitControls makeDefault minDistance={10} maxDistance={450} />
-          </Canvas>
-        );
-      };
-    }),
-  { ssr: false }
-);
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -603,25 +402,21 @@ export default function Home() {
                 </h1>
               </div>
 
-              {/* Przełącznik podświetlania podpór (tylko dla modeli 3D) */}
-              {modelPreviewUrl && analysisData?.instant_pricing !== false && (
-                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm text-xs font-bold">
-                  <span className="text-slate-600">Podpory:</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowSupports(!showSupports)}
-                    className={`px-2 py-0.5 rounded-full text-[10px] transition ${
-                      showSupports ? "bg-red-100 text-[#EF4444]" : "bg-slate-100 text-slate-400"
-                    }`}
-                  >
-                    {showSupports ? "Włączone" : "Wyłączone"}
-                  </button>
-                </div>
+              {/* Przycisk zmiany pliku */}
+              {selectedFile && (
+                <button
+                  type="button"
+                  onClick={handleResetFile}
+                  className="text-xs font-bold text-slate-500 hover:text-[#EF4444] bg-white px-3.5 py-1.5 rounded-full border border-slate-200 shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>↺</span>
+                  <span>Zmień plik</span>
+                </button>
               )}
             </div>
 
             {/* Główny obszar wizualny */}
-            <div className="relative w-full min-h-[380px] md:h-[430px] my-auto flex items-center justify-center">
+            <div className="relative w-full my-auto flex items-center justify-center">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
@@ -704,12 +499,16 @@ export default function Home() {
                   </div>
                 </div>
               ) : modelPreviewUrl ? (
-                /* VIEWPORT 3D DLA INSTANT 3D PRICING */
-                <StlViewer3D
+                /* VIEWPORT 3D DLA INSTANT 3D PRICING - PROFESJONALNY CAD & DFM INSPECTOR */
+                <CadViewer3D
                   modelUrl={modelPreviewUrl}
-                  color={selectedColor}
-                  showSupports={showSupports}
+                  fileName={selectedFile?.name || "model.stl"}
+                  analysisData={analysisData}
+                  selectedColor={selectedColor}
+                  onColorChange={(newHex) => setSelectedColor(newHex)}
                   materialConfig={matConfig}
+                  availableColors={matConfig?.colors || []}
+                  showSupportsDefault={showSupports}
                 />
               ) : (
                 /* DROPZONE PRZED UPLOADEM */
