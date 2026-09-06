@@ -318,13 +318,22 @@ const KeychainViewer3D = dynamic(
         const separationOffset = layerSeparation * 1;
 
         return (
-          <mesh
-            geometry={strokeGeometry}
-            position={[0, 0, baseThickness / 2 + 0.01 + separationOffset]}
-            renderOrder={10}
+          <group
+            userData={{
+              isExportPart: true,
+              partName: "Rant",
+              partColor: strokeFilament?.hex || "#FFFFFF",
+              partRole: "border_mesh",
+            }}
           >
-            <SunluDynamicMaterial filamentInfo={strokeFilament} />
-          </mesh>
+            <mesh
+              geometry={strokeGeometry}
+              position={[0, 0, baseThickness / 2 + 0.01 + separationOffset]}
+              renderOrder={10}
+            >
+              <SunluDynamicMaterial filamentInfo={strokeFilament} />
+            </mesh>
+          </group>
         );
       }
 
@@ -418,28 +427,44 @@ const KeychainViewer3D = dynamic(
             >
               {groupEntries.map((grp, gIdx) => {
                 const stepZ = grp.level * 0.08 + grp.level * layerSeparation;
+                if (!grp.shapes || grp.shapes.length === 0) return null;
 
-                return grp.shapes.map((shape, sIdx) => (
-                  <mesh
-                    key={`g-${gIdx}-s-${sIdx}`}
-                    position={[0, 0, stepZ]}
-                    renderOrder={grp.level + 1}
+                const rawName = grp.cfg.name || `Warstwa_${gIdx + 1}`;
+                const cleanLayerName = `Grafika_${gIdx + 1}_${rawName.replace(/[^a-zA-Z0-9ąćęłńóśźżĄĆĘŁŃÓŚŹŻ_]/g, "_")}`;
+
+                return (
+                  <group
+                    key={`grp-export-${gIdx}`}
+                    userData={{
+                      isExportPart: true,
+                      partName: cleanLayerName,
+                      partColor: grp.cfg.filament?.hex || "#EF4444",
+                      partRole: "graphic_mesh",
+                    }}
                   >
-                    <extrudeGeometry
-                      args={[
-                        shape,
-                        {
-                          depth: grp.cfg.thickness,
-                          bevelEnabled: false,
-                        },
-                      ]}
-                    />
-                    <SunluDynamicMaterial
-                      filamentInfo={grp.cfg.filament}
-                      clippingPlanes={clipPlanes}
-                    />
-                  </mesh>
-                ));
+                    {grp.shapes.map((shape, sIdx) => (
+                      <mesh
+                        key={`g-${gIdx}-s-${sIdx}`}
+                        position={[0, 0, stepZ]}
+                        renderOrder={grp.level + 1}
+                      >
+                        <extrudeGeometry
+                          args={[
+                            shape,
+                            {
+                              depth: grp.cfg.thickness,
+                              bevelEnabled: false,
+                            },
+                          ]}
+                        />
+                        <SunluDynamicMaterial
+                          filamentInfo={grp.cfg.filament}
+                          clippingPlanes={clipPlanes}
+                        />
+                      </mesh>
+                    ))}
+                  </group>
+                );
               })}
             </group>
           </group>
@@ -556,7 +581,15 @@ const KeychainViewer3D = dynamic(
         const zPos = (baseThickness || 3) / 2 + 0.05 + (layerSeparation || 0) * 5;
 
         return (
-          <group position={[finalX, finalY, zPos]}>
+          <group
+            position={[finalX, finalY, zPos]}
+            userData={{
+              isExportPart: true,
+              partName: "Tekst_3D",
+              partColor: textFilament?.hex || "#FFFFFF",
+              partRole: "text_mesh",
+            }}
+          >
             {shapes.map((shape, idx) => (
               <mesh key={`text-mesh-${idx}`} renderOrder={25}>
                 <extrudeGeometry
@@ -647,49 +680,103 @@ const KeychainViewer3D = dynamic(
           <group>
             {shapeType === "rect" && (
               <group>
-                <RoundedBox
-                  args={[baseWidth, baseHeight, baseThickness]}
-                  radius={3}
-                  smoothness={4}
-                  position={[0, 0, 0]}
+                <group
+                  userData={{
+                    isExportPart: true,
+                    partName: "Baza",
+                    partColor: baseFilament?.hex || "#222222",
+                    partRole: "base_mesh",
+                  }}
                 >
-                  <SunluDynamicMaterial filamentInfo={baseFilament} />
-                </RoundedBox>
-                {hasHole && (
-                  <mesh position={[-baseWidth / 2 - 4.5, 0, 0]}>
-                    <torusGeometry args={[5, 1.6, 16, 32]} />
+                  <RoundedBox
+                    args={[baseWidth, baseHeight, baseThickness]}
+                    radius={3}
+                    smoothness={4}
+                    position={[0, 0, 0]}
+                  >
                     <SunluDynamicMaterial filamentInfo={baseFilament} />
-                  </mesh>
+                  </RoundedBox>
+                </group>
+                {hasHole && (
+                  <group
+                    userData={{
+                      isExportPart: true,
+                      partName: "Uszko",
+                      partColor: baseFilament?.hex || "#222222",
+                      partRole: "ring_mesh",
+                    }}
+                  >
+                    <mesh position={[-baseWidth / 2 - 4.5, 0, 0]}>
+                      <torusGeometry args={[5, 1.6, 16, 32]} />
+                      <SunluDynamicMaterial filamentInfo={baseFilament} />
+                    </mesh>
+                  </group>
                 )}
               </group>
             )}
 
             {shapeType === "circle" && (
               <group>
-                <mesh rotation={[Math.PI / 2, 0, 0]}>
-                  <cylinderGeometry args={[radius, radius, baseThickness, 64]} />
-                  <SunluDynamicMaterial filamentInfo={baseFilament} />
-                </mesh>
-                {hasHole && (
-                  <mesh position={[0, radius + 4.5, 0]}>
-                    <torusGeometry args={[5, 1.6, 16, 32]} />
+                <group
+                  userData={{
+                    isExportPart: true,
+                    partName: "Baza",
+                    partColor: baseFilament?.hex || "#222222",
+                    partRole: "base_mesh",
+                  }}
+                >
+                  <mesh rotation={[Math.PI / 2, 0, 0]}>
+                    <cylinderGeometry args={[radius, radius, baseThickness, 64]} />
                     <SunluDynamicMaterial filamentInfo={baseFilament} />
                   </mesh>
+                </group>
+                {hasHole && (
+                  <group
+                    userData={{
+                      isExportPart: true,
+                      partName: "Uszko",
+                      partColor: baseFilament?.hex || "#222222",
+                      partRole: "ring_mesh",
+                    }}
+                  >
+                    <mesh position={[0, radius + 4.5, 0]}>
+                      <torusGeometry args={[5, 1.6, 16, 32]} />
+                      <SunluDynamicMaterial filamentInfo={baseFilament} />
+                    </mesh>
+                  </group>
                 )}
               </group>
             )}
 
             {shapeType === "hexagon" && (
               <group>
-                <mesh rotation={[Math.PI / 2, 0, 0]}>
-                  <cylinderGeometry args={[radius, radius, baseThickness, 6]} />
-                  <SunluDynamicMaterial filamentInfo={baseFilament} />
-                </mesh>
-                {hasHole && (
-                  <mesh position={[0, radius + 4.5, 0]}>
-                    <torusGeometry args={[5, 1.6, 16, 32]} />
+                <group
+                  userData={{
+                    isExportPart: true,
+                    partName: "Baza",
+                    partColor: baseFilament?.hex || "#222222",
+                    partRole: "base_mesh",
+                  }}
+                >
+                  <mesh rotation={[Math.PI / 2, 0, 0]}>
+                    <cylinderGeometry args={[radius, radius, baseThickness, 6]} />
                     <SunluDynamicMaterial filamentInfo={baseFilament} />
                   </mesh>
+                </group>
+                {hasHole && (
+                  <group
+                    userData={{
+                      isExportPart: true,
+                      partName: "Uszko",
+                      partColor: baseFilament?.hex || "#222222",
+                      partRole: "ring_mesh",
+                    }}
+                  >
+                    <mesh position={[0, radius + 4.5, 0]}>
+                      <torusGeometry args={[5, 1.6, 16, 32]} />
+                      <SunluDynamicMaterial filamentInfo={baseFilament} />
+                    </mesh>
+                  </group>
                 )}
               </group>
             )}
@@ -758,11 +845,45 @@ const KeychainViewer3D = dynamic(
             onExportReady({
               exportSTL: () => {
                 try {
+                  scene.updateMatrixWorld(true);
                   const exporter = new STLExporter();
                   return exporter.parse(scene, { binary: true });
                 } catch (err) {
                   console.error("Błąd podczas eksportu STLExporter:", err);
                   return null;
+                }
+              },
+              exportParts: () => {
+                try {
+                  scene.updateMatrixWorld(true);
+                  const exporter = new STLExporter();
+                  const parts = [];
+
+                  scene.traverse((obj) => {
+                    if (obj.userData && obj.userData.isExportPart) {
+                      let hasGeometry = false;
+                      obj.traverse((child) => {
+                        if (child.isMesh && child.geometry) {
+                          hasGeometry = true;
+                        }
+                      });
+                      if (hasGeometry) {
+                        const stlBinary = exporter.parse(obj, { binary: true });
+                        const blob = new Blob([stlBinary], { type: "application/octet-stream" });
+                        parts.push({
+                          name: obj.userData.partName,
+                          color: obj.userData.partColor,
+                          role: obj.userData.partRole,
+                          blob: blob,
+                        });
+                      }
+                    }
+                  });
+
+                  return parts;
+                } catch (err) {
+                  console.error("Błąd podczas eksportu części STLExporter:", err);
+                  return [];
                 }
               },
             });
@@ -777,10 +898,18 @@ const KeychainViewer3D = dynamic(
 
         React.useImperativeHandle(ref, () => ({
           exportSTL: () => {
-            if (exportFnRef.current) {
+            if (exportFnRef.current?.exportSTL) {
+              return exportFnRef.current.exportSTL();
+            } else if (typeof exportFnRef.current === "function") {
               return exportFnRef.current();
             }
             return null;
+          },
+          exportParts: () => {
+            if (exportFnRef.current?.exportParts) {
+              return exportFnRef.current.exportParts();
+            }
+            return [];
           },
         }));
 
@@ -797,7 +926,7 @@ const KeychainViewer3D = dynamic(
             </React.Suspense>
             <ExportRegistrar
               onExportReady={(handlers) => {
-                exportFnRef.current = handlers?.exportSTL;
+                exportFnRef.current = handlers;
                 if (onExportReady) onExportReady(handlers);
               }}
             />
@@ -1028,7 +1157,9 @@ export default function KeychainGenerator() {
   const exportKeychainGeometry = () => {
     try {
       let stlData = null;
-      if (exportHandlerRef.current && typeof exportHandlerRef.current === "function") {
+      if (exportHandlerRef.current && typeof exportHandlerRef.current.exportSTL === "function") {
+        stlData = exportHandlerRef.current.exportSTL();
+      } else if (typeof exportHandlerRef.current === "function") {
         stlData = exportHandlerRef.current();
       } else if (viewerRef.current && typeof viewerRef.current.exportSTL === "function") {
         stlData = viewerRef.current.exportSTL();
@@ -1041,6 +1172,21 @@ export default function KeychainGenerator() {
     } catch (err) {
       console.warn("Błąd generowania geometrii STL breloka:", err);
       return null;
+    }
+  };
+
+  const exportKeychainParts = () => {
+    try {
+      let parts = [];
+      if (exportHandlerRef.current && typeof exportHandlerRef.current.exportParts === "function") {
+        parts = exportHandlerRef.current.exportParts();
+      } else if (viewerRef.current && typeof viewerRef.current.exportParts === "function") {
+        parts = viewerRef.current.exportParts();
+      }
+      return parts || [];
+    } catch (err) {
+      console.warn("Błąd generowania części STL breloka:", err);
+      return [];
     }
   };
 
@@ -1345,9 +1491,10 @@ export default function KeychainGenerator() {
     setAddingToCart(true);
     try {
       // Wyłącz widok rozstrzelony przed pobraniem geometrii do druku
-      if (layerViewEnabled) {
+      if (layerViewEnabled || layerSeparation > 0) {
         setLayerViewEnabled(false);
         setLayerSeparation(0);
+        await new Promise((resolve) => setTimeout(resolve, 150));
       }
 
       const maxLayerThickness = Math.max(...layersConfig.map((l) => l.thickness));
@@ -1384,13 +1531,17 @@ export default function KeychainGenerator() {
       const createdOrder = Array.isArray(newOrders) ? newOrders[0] : newOrders;
       const orderId = createdOrder?.id;
 
-      // 2. Eksport geometrii STL ze sceny Three.js i przesłanie na serwer
+      // 2. Eksport geometrii STL ze sceny Three.js i przesłanie na serwer (Multi-part AMS)
       try {
-        const stlBlob = exportKeychainGeometry();
-        if (stlBlob && orderId) {
+        const parts = exportKeychainParts();
+        const combinedStlBlob = exportKeychainGeometry();
+
+        if (orderId && (parts.length > 0 || combinedStlBlob)) {
           const formData = new FormData();
           const cleanSafeName = `brelok_${shapeType}_${Date.now()}.stl`;
-          formData.append("file", stlBlob, cleanSafeName);
+          if (combinedStlBlob) {
+            formData.append("file", combinedStlBlob, cleanSafeName);
+          }
           formData.append("order_id", String(orderId));
           formData.append("file_name", orderPayload.file_name);
           formData.append("material", materialName);
@@ -1398,6 +1549,21 @@ export default function KeychainGenerator() {
           formData.append("layer_height", "0.20");
           formData.append("nozzle_size", "0.4");
           formData.append("infill", "100");
+
+          if (parts && parts.length > 0) {
+            const partsMeta = parts.map((p, idx) => ({
+              index: idx,
+              name: p.name,
+              color: p.color,
+              role: p.role,
+              filename: `part_${idx}_${p.name.replace(/[^a-zA-Z0-9_]/g, "_")}.stl`,
+            }));
+
+            formData.append("parts_json", JSON.stringify(partsMeta));
+            parts.forEach((p, idx) => {
+              formData.append("parts_files", p.blob, partsMeta[idx].filename);
+            });
+          }
 
           const res = await fetch(`${API_URL || ""}/api/orders/upload-geometry`, {
             method: "POST",
@@ -1500,7 +1666,7 @@ export default function KeychainGenerator() {
               <KeychainViewer3D
                 ref={viewerRef}
                 onExportReady={(handlers) => {
-                  exportHandlerRef.current = handlers?.exportSTL;
+                  exportHandlerRef.current = handlers;
                 }}
                 shapeType={shapeType}
                 baseFilament={baseFilament}

@@ -874,7 +874,9 @@ def download_3mf_file(filename: str):
 @app.post("/api/orders/upload-geometry")
 async def upload_order_geometry_endpoint(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    parts_files: list[UploadFile] | None = File(None),
+    parts_json: str | None = Form(None),
     order_id: str = Form(...),
     file_name: str | None = Form(None),
     material: str = Form("PLA"),
@@ -885,39 +887,85 @@ async def upload_order_geometry_endpoint(
 ):
     """
     Endpoint dedykowany dla generatora breloków 3D:
-    Przyjmuje wyeksportowany ze sceny Three.js plik STL, zapisuje go w pamięci trwałej i R2,
-    oraz natychmiast generuje zunifikowany pakiet produkcyjny .3MF powiązany z zamówieniem.
+    Przyjmuje wyeksportowane ze sceny Three.js części STL (Multi-part AMS) lub pojedynczy plik STL,
+    zapisuje je w pamięci trwałej i R2, oraz natychmiast generuje zunifikowany pakiet produkcyjny
+    .3MF w standardzie Bambu Studio / OrcaSlicer z kompletnym podziałem na kolory.
     """
     clean_order_id = str(order_id)
-    safe_file_name = sanitize_filename(Path(file_name or file.filename or "keychain.stl").stem)
-    target_stl_name = f"ORDER_{clean_order_id[:8]}_{safe_file_name}.stl"
+    clean_prefix = clean_order_id[:8]
+    safe_file_name = sanitize_filename(Path(file_name or (file.filename if file else "keychain.stl")).stem)
+    target_stl_name = f"ORDER_{clean_prefix}_{safe_file_name}.stl"
     local_stl_path = os.path.join(MODELS_CACHE_DIR, target_stl_name)
 
-    # 1. Zapis pliku STL na serwerze
-    content = await file.read()
-    with open(local_stl_path, "wb") as f_out:
-        f_out.write(content)
+    # 1. Zapis połączonego pliku STL (jeśli przesłano)
+    if file:
+        content = await file.read()
+        with open(local_stl_path, "wb") as f_out:
+            f_out.write(content)
 
-    # 2. Asynchroniczna kopia zapasowa do Cloudflare R2
-    r2_model_key = f"models/{target_stl_name}"
-    def _bg_upload_stl(path, key):
+        r2_model_key = f"models/{target_stl_name}"
+        def _bg_upload_stl(path, key):
+            try:
+                with open(path, "rb") as f_up:
+                    upload_file_to_r2(f_up, key, "application/octet-stream")
+            except Exception as up_err:
+                print(f"[WARN] Błąd zapisu STL breloka w R2: {up_err}")
+
+        background_tasks.add_task(_bg_upload_stl, local_stl_path, r2_model_key)
+
+    # 2. Obsługa wieloczęściowych siatek AMS (parts_files + parts_json)
+    parts_list = []
+    if parts_json and parts_files:
         try:
-            with open(path, "rb") as f_up:
-                upload_file_to_r2(f_up, key, "application/octet-stream")
-        except Exception as up_err:
-            print(f"[WARN] Błąd zapisu STL breloka w R2: {up_err}")
+            parts_meta = json.loads(parts_json)
+        except Exception as json_err:
+            print(f"[WARN] Błąd dekodowania parts_json: {json_err}")
+            parts_meta = []
 
-    background_tasks.add_task(_bg_upload_stl, local_stl_path, r2_model_key)
+        for idx, p_file in enumerate(parts_files):
+            try:
+                p_content = await p_file.read()
+                matched_meta = next((m for m in parts_meta if m.get("filename") == p_file.filename), None)
+                if not matched_meta and idx < len(parts_meta):
+                    matched_meta = parts_meta[idx]
+
+                p_name = matched_meta.get("name", f"Part_{idx+1}") if matched_meta else f"Part_{idx+1}"
+                p_color = matched_meta.get("color", color_hex) if matched_meta else color_hex
+                p_role = matched_meta.get("role", "") if matched_meta else ""
+                safe_pname = sanitize_filename(p_name)
+
+                target_part_name = f"ORDER_{clean_prefix}_part_{idx}_{safe_pname}.stl"
+                local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
+                with open(local_part_path, "wb") as f_out:
+                    f_out.write(p_content)
+
+                parts_list.append({
+                    "name": p_name,
+                    "color_hex": p_color,
+                    "path": local_part_path,
+                    "role": p_role,
+                })
+            except Exception as part_err:
+                print(f"[WARN] Błąd zapisu części {p_file.filename}: {part_err}")
+
+        # Zapis metadanych części do cache JSON na potrzeby późniejszego pobierania
+        if parts_list:
+            parts_meta_file = os.path.join(MODELS_CACHE_DIR, f"ORDER_{clean_prefix}_parts.json")
+            try:
+                with open(parts_meta_file, "w", encoding="utf-8") as f_meta:
+                    json.dump(parts_list, f_meta, indent=2)
+            except Exception as meta_save_err:
+                print(f"[WARN] Błąd zapisu ORDER_{clean_prefix}_parts.json: {meta_save_err}")
 
     # 3. Generowanie pakietu produkcyjnego .3MF
     safe_mat = sanitize_filename(str(material).split()[0])
-    target_3mf_name = f"ORDER_{clean_order_id[:8]}_{safe_file_name}_{safe_mat}_{nozzle_size}mm.3mf"
+    target_3mf_name = f"ORDER_{clean_prefix}_{safe_file_name}_{safe_mat}_{nozzle_size}mm.3mf"
     local_3mf_path = os.path.join(PROJECTS_3MF_CACHE_DIR, target_3mf_name)
 
     production_url = f"/api/download-3mf-file/{target_3mf_name}"
     try:
         generate_production_3mf(
-            model_path=local_stl_path,
+            model_path=local_stl_path if os.path.exists(local_stl_path) else None,
             order_metadata={"order_id": clean_order_id, "file_name": file_name or target_stl_name},
             print_settings={
                 "layer_height": layer_height,
@@ -927,6 +975,7 @@ async def upload_order_geometry_endpoint(
                 "color_hex": color_hex,
             },
             output_path=local_3mf_path,
+            parts=parts_list if parts_list else None,
         )
         r2_3mf_key = f"production_packages/{target_3mf_name}"
         saved_url = save_production_3mf_file(local_3mf_path, r2_3mf_key)
@@ -1030,66 +1079,79 @@ def download_order_3mf(
         elif tech_raw and "0.4mm" in str(tech_raw):
             clean_nozzle_size = 0.4
 
-    # 1. Odnalezienie pliku źródłowego geometrii
+    # 1. Sprawdzenie czy dla tego zamówienia istnieją zapisane części wielomateriałowe (AMS)
+    cached_parts = None
+    parts_meta_path = os.path.join(MODELS_CACHE_DIR, f"ORDER_{clean_prefix}_parts.json")
+    if os.path.exists(parts_meta_path):
+        try:
+            with open(parts_meta_path, "r", encoding="utf-8") as f_parts:
+                loaded_parts = json.load(f_parts)
+                if any(os.path.exists(p.get("path", "")) for p in loaded_parts):
+                    cached_parts = loaded_parts
+        except Exception as e:
+            print(f"[WARN] Błąd odczytu {parts_meta_path}: {e}")
+
+    # 2. Odnalezienie pliku źródłowego pojedynczej geometrii (jeśli brak złożenia części)
     local_model = None
-    if file_key:
-        base_name = os.path.basename(file_key)
-        target = os.path.join(MODELS_CACHE_DIR, base_name)
-        if os.path.exists(target):
-            local_model = target
-        else:
-            try:
-                download_file_from_r2(file_key, target)
+    if not cached_parts:
+        if file_key:
+            base_name = os.path.basename(file_key)
+            target = os.path.join(MODELS_CACHE_DIR, base_name)
+            if os.path.exists(target):
                 local_model = target
-            except Exception:
-                pass
+            else:
+                try:
+                    download_file_from_r2(file_key, target)
+                    local_model = target
+                except Exception:
+                    pass
 
-    if not local_model and os.path.exists(MODELS_CACHE_DIR):
-        # Sprawdź czy plik modelu breloka lub STL zaczyna się od ORDER_{clean_prefix}
-        for f in os.listdir(MODELS_CACHE_DIR):
-            if f.endswith((".stl", ".step", ".stp", ".obj", ".3mf")) and clean_prefix in f.lower():
-                local_model = os.path.join(MODELS_CACHE_DIR, f)
-                break
+        if not local_model and os.path.exists(MODELS_CACHE_DIR):
+            # Sprawdź czy plik modelu breloka lub STL zaczyna się od ORDER_{clean_prefix}
+            for f in os.listdir(MODELS_CACHE_DIR):
+                if f.endswith((".stl", ".step", ".stp", ".obj", ".3mf")) and clean_prefix in f.lower():
+                    local_model = os.path.join(MODELS_CACHE_DIR, f)
+                    break
 
-    if not local_model and os.path.exists(MODELS_CACHE_DIR):
-        clean_name = sanitize_filename(Path(file_name or "model").stem)
-        candidates = [
-            f for f in os.listdir(MODELS_CACHE_DIR)
-            if f.endswith((".stl", ".step", ".stp", ".obj", ".3mf"))
-        ]
-        matching = [f for f in candidates if clean_prefix in f.lower() or (len(clean_name) > 3 and clean_name.lower() in f.lower())]
-        if matching:
-            local_model = os.path.join(MODELS_CACHE_DIR, matching[0])
+        if not local_model and os.path.exists(MODELS_CACHE_DIR):
+            clean_name = sanitize_filename(Path(file_name or "model").stem)
+            candidates = [
+                f for f in os.listdir(MODELS_CACHE_DIR)
+                if f.endswith((".stl", ".step", ".stp", ".obj", ".3mf"))
+            ]
+            matching = [f for f in candidates if clean_prefix in f.lower() or (len(clean_name) > 3 and clean_name.lower() in f.lower())]
+            if matching:
+                local_model = os.path.join(MODELS_CACHE_DIR, matching[0])
 
-    # 2. FALLBACK DLA BRELOKÓW PROCEDURALNYCH:
-    # Jeśli plik geometrii nie zachował się na serwerze, wygeneruj geometryczny model breloka z parametrów zlecenia
-    if not local_model or not os.path.exists(local_model):
-        is_keychain = (
-            "brelok" in str(file_name or "").lower() or
-            "keychain" in str(file_name or "").lower() or
-            (db_order and "brelok" in str(db_order.get("file_name", "")).lower())
-        )
-        if is_keychain or (db_order and db_order.get("dimensions_mm")):
-            try:
-                dims = db_order.get("dimensions_mm") if db_order else [65, 50, 4]
-                dx = float(dims[0]) if dims and len(dims) > 0 else 60.0
-                dy = float(dims[1]) if dims and len(dims) > 1 else 50.0
-                dz = float(dims[2]) if dims and len(dims) > 2 else 4.0
+        # 3. FALLBACK DLA BRELOKÓW PROCEDURALNYCH:
+        # Jeśli plik geometrii nie zachował się na serwerze, wygeneruj geometryczny model breloka z parametrów zlecenia
+        if not local_model or not os.path.exists(local_model):
+            is_keychain = (
+                "brelok" in str(file_name or "").lower() or
+                "keychain" in str(file_name or "").lower() or
+                (db_order and "brelok" in str(db_order.get("file_name", "")).lower())
+            )
+            if is_keychain or (db_order and db_order.get("dimensions_mm")):
+                try:
+                    dims = db_order.get("dimensions_mm") if db_order else [65, 50, 4]
+                    dx = float(dims[0]) if dims and len(dims) > 0 else 60.0
+                    dy = float(dims[1]) if dims and len(dims) > 1 else 50.0
+                    dz = float(dims[2]) if dims and len(dims) > 2 else 4.0
 
-                is_rect = "rect" in str(file_name or "").lower() or "tabliczka" in str(file_name or "").lower()
-                if is_rect:
-                    fallback_mesh = trimesh.creation.box(extents=[dx, dy, dz])
-                else:
-                    fallback_mesh = trimesh.creation.cylinder(radius=dx / 2.0, height=dz, sections=48)
-                fallback_name = f"ORDER_{clean_prefix}_brelok_fallback.stl"
-                fallback_path = os.path.join(MODELS_CACHE_DIR, fallback_name)
-                fallback_mesh.export(fallback_path)
-                local_model = fallback_path
-                print(f"[INFO] Wygenerowano proceduralną geometrię breloka dla zlecenia {clean_order_id}")
-            except Exception as fb_err:
-                print(f"[WARN] Nie udało się stworzyć geometrii fallback: {fb_err}")
+                    is_rect = "rect" in str(file_name or "").lower() or "tabliczka" in str(file_name or "").lower()
+                    if is_rect:
+                        fallback_mesh = trimesh.creation.box(extents=[dx, dy, dz])
+                    else:
+                        fallback_mesh = trimesh.creation.cylinder(radius=dx / 2.0, height=dz, sections=48)
+                    fallback_name = f"ORDER_{clean_prefix}_brelok_fallback.stl"
+                    fallback_path = os.path.join(MODELS_CACHE_DIR, fallback_name)
+                    fallback_mesh.export(fallback_path)
+                    local_model = fallback_path
+                    print(f"[INFO] Wygenerowano proceduralną geometrię breloka dla zlecenia {clean_order_id}")
+                except Exception as fb_err:
+                    print(f"[WARN] Nie udało się stworzyć geometrii fallback: {fb_err}")
 
-    if not local_model or not os.path.exists(local_model):
+    if not cached_parts and (not local_model or not os.path.exists(local_model)):
         raise HTTPException(
             status_code=404,
             detail="Nie znaleziono pliku geometrii 3D dla tego zlecenia na serwerze."
@@ -1112,6 +1174,7 @@ def download_order_3mf(
             "color_hex": color_hex or "#EF4444",
         },
         output_path=local_3mf_path,
+        parts=cached_parts,
     )
 
     return FileResponse(
