@@ -244,6 +244,46 @@ export default function Home() {
   const unitPrice = Math.max(15, volume * (matConfig?.pricePerCm3 || 0.38) * (1 + infill / 100)).toFixed(2);
   const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
 
+  // Rekomendowane zastosowania dla karty specyfikacji technicznej
+  const recommendedApps = useMemo(() => {
+    const id = matConfig?.id || "";
+    const group = matConfig?.group || "";
+
+    if (id.includes("ASA")) {
+      return ["Elementy zewnętrzne i outdoor", "Części motoryzacyjne", "Obudowy czujników i kamer", "Uchwyty paneli solarnych"];
+    }
+    if (id.includes("PLA")) {
+      return ["Prototypy koncepcyjne", "Obudowy urządzeń domowych", "Makiety architektoniczne", "Figurki i detale o wysokiej precyzji"];
+    }
+    if (id.includes("PETG") || id.includes("PCTG")) {
+      return ["Uchwyty użytkowe i narzędzia", "Elementy odporne na uderzenia", "Pojemniki i obudowy szczelne", "Części maszyn i osłony"];
+    }
+    if (id.includes("ABS")) {
+      return ["Elementy o wysokiej udarności", "Obudowy elektroniki przemysłowej", "Adaptery i złączki warsztatowe", "Części narażone na obciążenia"];
+    }
+    if (id.includes("PP")) {
+      return ["Pojemniki na chemikalia i płyny", "Sprzęt laboratoryjny", "Elementy instalacji płynowych", "Części o niskim tarciu"];
+    }
+    if (group === "flex") {
+      return ["Uszczelki i dławiki", "Odbojniki i amortyzatory drgań", "Elastyczne chwytaki i osłony", "Etui ochronne"];
+    }
+    if (group === "composite" || id.includes("CF")) {
+      return ["Ramiona dronów i robotyka", "Elementy konstrukcyjne o skrajnej sztywności", "Części motorsport i wyczynowe", "Szablony produkcyjne i formy"];
+    }
+    return ["Prototypy inżynieryjne", "Elementy użytkowe", "Obudowy", "Części zamienne"];
+  }, [matConfig]);
+
+  // Odporność chemiczna
+  const chemicalResistance = useMemo(() => {
+    const id = matConfig?.id || "";
+    const group = matConfig?.group || "";
+    if (id.includes("PP")) return "Ekstremalna (Kwasy, zasady, rozpuszczalniki)";
+    if (id.includes("PETG") || id.includes("PCTG") || id.includes("ASA")) return "Wysoka (Oleje, smary, woda, chemia myjąca)";
+    if (group === "composite") return "Wysoka (Środowisko przemysłowe i paliwa)";
+    if (group === "flex") return "Dobra (Tłuszcze, oleje mineralne)";
+    return "Standardowa (Odporność domowa)";
+  }, [matConfig]);
+
   async function handleAddToCart() {
     if (!user) {
       setIsAuthOpen(true);
@@ -801,8 +841,8 @@ export default function Home() {
                         </svg>
                       </button>
 
-                      {/* Karta materiału */}
-                      <div className="flex-1 min-w-0 bg-slate-50/90 rounded-2xl p-3 border border-slate-200/80 space-y-2.5">
+                      {/* Karta materiału - wersja kompaktowa */}
+                      <div className="flex-1 min-w-0 bg-slate-50/90 rounded-2xl p-2.5 border border-slate-200/80 space-y-1.5">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-black text-slate-900 truncate">
                             {matConfig.name}
@@ -814,30 +854,37 @@ export default function Home() {
                           )}
                         </div>
 
-                        <p className="text-[11px] text-slate-500 leading-snug line-clamp-2">
-                          {matConfig.desc}
-                        </p>
-
-                        <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-thin">
-                            {matConfig.colors?.map((c) => {
-                              const isSelected = selectedColor === c.hex;
-                              return (
-                                <button
-                                  key={c.id || c.hex}
-                                  type="button"
-                                  onClick={() => setSelectedColor(c.hex)}
-                                  title={c.name}
-                                  className={`w-7 h-7 rounded-full transition-all cursor-pointer flex-shrink-0 ${
-                                    isSelected
-                                      ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110 shadow-md"
-                                      : "hover:scale-105 border border-slate-300"
-                                  }`}
-                                  style={{ backgroundColor: c.hex }}
+                        {/* Bezpieczne próbki kolorów z wewnętrznym paddingiem py-1 px-1.5 zapobiegającym ucinaniu */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto py-1 px-1.5 scrollbar-thin">
+                          {matConfig.colors?.map((c) => {
+                            const isSelected = selectedColor?.toLowerCase() === c.hex?.toLowerCase();
+                            return (
+                              <button
+                                key={c.id || c.hex}
+                                type="button"
+                                onClick={() => setSelectedColor(c.hex)}
+                                title={c.name}
+                                className={`w-7 h-7 rounded-full p-0.5 border-2 transition-all flex items-center justify-center flex-shrink-0 cursor-pointer ${
+                                  isSelected
+                                    ? "border-[#EF4444] scale-105 shadow-sm"
+                                    : "border-transparent hover:border-slate-300"
+                                }`}
+                              >
+                                <div
+                                  className="w-full h-full rounded-full"
+                                  style={{
+                                    backgroundColor: c.hex,
+                                    border:
+                                      c.hex?.toLowerCase() === "#ffffff" ||
+                                      c.hex?.toLowerCase() === "#f5f5f5" ||
+                                      c.hex?.toLowerCase() === "#f8f9fa"
+                                        ? "1px solid #CBD5E1"
+                                        : "none",
+                                  }}
                                 />
-                              );
-                            })}
-                          </div>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -913,6 +960,160 @@ export default function Home() {
                   ? "Standard: JLCPCB / PCBWay"
                   : "Dokładność: ±0.1 mm"}
               </span>
+            </div>
+          </div>
+        </div>
+
+        {/* ================================================================= */}
+        {/* SEKCJA: SPECYFIKACJA TECHNICZNA WYBRANEGO MATERIAŁU               */}
+        {/* ================================================================= */}
+        <div className="mt-8 bg-white rounded-[28px] border border-slate-200/80 shadow-[0_15px_45px_rgba(0,0,0,0.04)] p-6 md:p-8 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-5 border-b border-slate-100">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-2 h-2 rounded-full bg-[#EF4444]" />
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#EF4444]">
+                  Karta Materiałowa & DFM
+                </span>
+              </div>
+              <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight flex flex-wrap items-center gap-2.5">
+                <span>Specyfikacja wybranego materiału:</span>
+                <span className="text-[#EF4444]">{matConfig.name}</span>
+                {matConfig.badge && (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                    {matConfig.badge}
+                  </span>
+                )}
+              </h2>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="text-xs font-bold text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/70">
+                Cena bazowa: <strong>{matConfig.pricePerCm3.toFixed(2)} zł/cm³</strong>
+              </span>
+              <span className="text-xs font-bold text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/70">
+                Gęstość: <strong>{matConfig.density || 1.24} g/cm³</strong>
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Lewa kolumna: Opis i Rekomendowane Zastosowania */}
+            <div className="lg:col-span-7 space-y-5">
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2">
+                  Charakterystyka inżynieryjna
+                </h3>
+                <p className="text-sm text-slate-700 leading-relaxed font-normal">
+                  {matConfig.desc}
+                </p>
+              </div>
+
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2.5">
+                  Rekomendowane zastosowania
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {recommendedApps.map((app, idx) => (
+                    <span
+                      key={idx}
+                      className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-semibold text-slate-700 flex items-center gap-1.5"
+                    >
+                      <span className="text-[#EF4444] font-bold">✓</span>
+                      <span>{app}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Prawa kolumna: Paski i wskaźniki właściwości */}
+            <div className="lg:col-span-5 bg-slate-50/80 rounded-2xl p-5 border border-slate-200/70 space-y-4">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
+                Właściwości fizykochemiczne
+              </h3>
+
+              {/* HDT */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-bold">
+                  <span className="text-slate-600">Odporność termiczna (HDT)</span>
+                  <span className="text-slate-900 font-extrabold">{matConfig.hdt || "55°C"}</span>
+                </div>
+                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-amber-500 h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (parseInt(matConfig.hdt || "55") / 125) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Odporność UV */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-bold">
+                  <span className="text-slate-600">Odporność UV & Czynniki zewnętrzne</span>
+                  <span className="text-slate-900 font-extrabold">{matConfig.uvResistance || "Średnia"}</span>
+                </div>
+                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-blue-500 h-full rounded-full transition-all duration-300"
+                    style={{
+                      width:
+                        matConfig.uvResistance?.includes("Maksymalna")
+                          ? "100%"
+                          : matConfig.uvResistance?.includes("Dobra")
+                          ? "75%"
+                          : "45%",
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Sztywność / Udarność */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-bold">
+                  <span className="text-slate-600">Sztywność i udarność mechaniczna</span>
+                  <span className="text-slate-900 font-extrabold">{matConfig.tensileStrength || "Wysoka"}</span>
+                </div>
+                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                    style={{
+                      width:
+                        matConfig.tensileStrength?.includes("Ekstremalna")
+                          ? "100%"
+                          : matConfig.tensileStrength?.includes("Bardzo wysoka")
+                          ? "85%"
+                          : "65%",
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Odporność chemiczna */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-bold">
+                  <span className="text-slate-600">Odporność chemiczna & Środowiskowa</span>
+                  <span className="text-slate-900 font-extrabold">{chemicalResistance}</span>
+                </div>
+                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-purple-500 h-full rounded-full transition-all duration-300"
+                    style={{
+                      width:
+                        chemicalResistance?.includes("Ekstremalna")
+                          ? "100%"
+                          : chemicalResistance?.includes("Wysoka")
+                          ? "80%"
+                          : "50%",
+                    }}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -464,16 +464,16 @@ export default function CadViewer3D({
       </Canvas>
 
       {/* ---------------------------------------------------------------------
-          LEWY GÓRNY PANEL: PLAKIETKA PARAMETRÓW & JEDNOSTEK (GLASSMORPHISM)
+          LEWY GÓRNY PANEL: PLAKIETKA PARAMETRÓW & JEDNOSTEK (KOMPAKTOWY GLASSMORPHISM)
           --------------------------------------------------------------------- */}
-      <div className="absolute top-4 left-4 z-20 pointer-events-auto">
-        <div className="bg-white/80 backdrop-blur-md border border-slate-200/90 rounded-2xl p-3 shadow-lg flex flex-col gap-1.5 min-w-[200px]">
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+      <div className="absolute top-3 left-3 z-20 pointer-events-auto">
+        <div className="bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl p-2.5 shadow-sm flex flex-col gap-1 min-w-[175px]">
+          <div className="flex items-center justify-between gap-1.5 border-b border-slate-100 pb-1">
+            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">
               Objętość modelu
             </span>
             {/* Przełącznik jednostek mm³ / cm³ */}
-            <div className="flex items-center bg-slate-100/90 rounded-lg p-0.5 text-[10px] font-bold">
+            <div className="flex items-center bg-slate-100/90 rounded-md p-0.5 text-[9px] font-bold">
               <button
                 type="button"
                 onClick={() => setVolumeUnit("cm3")}
@@ -500,18 +500,18 @@ export default function CadViewer3D({
           </div>
 
           <div className="flex items-baseline justify-between">
-            <span className="text-base font-black text-slate-900 tracking-tight">
+            <span className="text-sm font-black text-slate-900 tracking-tight">
               {displayVolume}
             </span>
             {analysisData?.surface_area_cm2 && (
-              <span className="text-[10px] font-bold text-slate-500">
+              <span className="text-[9px] font-bold text-slate-400">
                 P: {analysisData.surface_area_cm2} cm²
               </span>
             )}
           </div>
 
           {/* Wymiary X x Y x Z */}
-          <div className="text-[10px] font-semibold text-slate-500 flex items-center justify-between pt-0.5">
+          <div className="text-[9px] font-semibold text-slate-500 flex items-center justify-between pt-0.5">
             <span>Gabaryty:</span>
             <span className="font-bold text-slate-700">
               {dimensions[0]} × {dimensions[1]} × {dimensions[2]} mm
@@ -521,14 +521,14 @@ export default function CadViewer3D({
       </div>
 
       {/* ---------------------------------------------------------------------
-          LEWY BOCZNY DOK: PŁYWAJĄCE MENU WYBORU KOLORÓW
+          LEWY BOCZNY DOK: PŁYWAJĄCE MENU WYBORU KOLORÓW (BEZPIECZNY OBRYS)
           --------------------------------------------------------------------- */}
-      <div className="absolute top-28 sm:top-32 left-4 z-20 pointer-events-auto">
-        <div className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-2xl p-2 shadow-lg flex flex-col items-center gap-2 max-h-[300px] overflow-y-auto scrollbar-none">
-          <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 px-1">
+      <div className="absolute top-24 sm:top-28 left-3 z-20 pointer-events-auto">
+        <div className="bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl p-1.5 shadow-sm flex flex-col items-center gap-1.5 max-h-[260px] overflow-y-auto scrollbar-none">
+          <span className="text-[8px] font-extrabold uppercase tracking-wider text-slate-400 px-0.5">
             Kolor
           </span>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1 py-0.5 px-0.5">
             {colorSwatches.map((c) => {
               const isSelected = selectedColor?.toLowerCase() === c.hex?.toLowerCase();
               return (
@@ -537,31 +537,24 @@ export default function CadViewer3D({
                   type="button"
                   onClick={() => onColorChange && onColorChange(c.hex, c.id)}
                   title={c.name}
-                  className={`group relative w-7 h-7 rounded-xl transition-all duration-150 flex items-center justify-center cursor-pointer ${
+                  className={`w-6 h-6 rounded-full p-0.5 border-2 transition-all flex items-center justify-center flex-shrink-0 cursor-pointer ${
                     isSelected
-                      ? "ring-2 ring-[#EF4444] ring-offset-2 ring-offset-white scale-110 shadow-md"
-                      : "hover:scale-105 opacity-85 hover:opacity-100"
+                      ? "border-[#EF4444] scale-105 shadow-sm"
+                      : "border-transparent hover:border-slate-300"
                   }`}
-                  style={{
-                    backgroundColor: c.hex,
-                    border: c.hex?.toLowerCase() === "#ffffff" || c.hex?.toLowerCase() === "#f5f5f5" ? "1px solid #E2E8F0" : "none",
-                  }}
                 >
-                  {isSelected && (
-                    <svg
-                      className={`w-3.5 h-3.5 drop-shadow ${
-                        c.hex?.toLowerCase() === "#ffffff" || c.hex?.toLowerCase() === "#f5f5f5" || c.hex?.toLowerCase() === "#f0f3f4"
-                          ? "text-slate-900"
-                          : "text-white"
-                      }`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={3.5}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
+                  <div
+                    className="w-full h-full rounded-full"
+                    style={{
+                      backgroundColor: c.hex,
+                      border:
+                        c.hex?.toLowerCase() === "#ffffff" ||
+                        c.hex?.toLowerCase() === "#f5f5f5" ||
+                        c.hex?.toLowerCase() === "#f8f9fa"
+                          ? "1px solid #CBD5E1"
+                          : "none",
+                    }}
+                  />
                 </button>
               );
             })}
@@ -570,21 +563,21 @@ export default function CadViewer3D({
       </div>
 
       {/* ---------------------------------------------------------------------
-          PRAWY GÓRNY PANEL: ANALIZA GEOMETRII (DFM CHECKLIST)
+          PRAWY GÓRNY PANEL: ANALIZA GEOMETRII (DFM CHECKLIST - KOMPAKTOWY)
           --------------------------------------------------------------------- */}
-      <div className="absolute top-4 right-4 z-20 pointer-events-auto max-w-[260px] sm:max-w-[280px]">
-        <div className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-2xl p-3 sm:p-3.5 shadow-lg">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+      <div className="absolute top-3 right-3 z-20 pointer-events-auto max-w-[210px] sm:max-w-[230px]">
+        <div className="bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl p-2.5 shadow-sm">
+          <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
             <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <h4 className="text-xs font-black text-slate-900 tracking-tight">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <h4 className="text-[11px] font-black text-slate-900 tracking-tight">
                 Analiza geometrii (DFM)
               </h4>
             </div>
             <button
               type="button"
               onClick={() => setIsDfmOpen(!isDfmOpen)}
-              className="text-slate-400 hover:text-slate-600 transition p-0.5 rounded text-xs font-bold"
+              className="text-slate-400 hover:text-slate-600 transition px-1 rounded text-xs font-bold"
               title={isDfmOpen ? "Zwiń analizę" : "Rozwiń analizę"}
             >
               {isDfmOpen ? "−" : "+"}
@@ -592,75 +585,73 @@ export default function CadViewer3D({
           </div>
 
           {isDfmOpen && (
-            <div className="space-y-2 pt-2.5 text-[11px]">
+            <div className="space-y-1.5 pt-2 text-[10px]">
               {/* Punkt 1: Szczelność siatki */}
-              <div className="flex items-start gap-2">
+              <div className="flex items-start gap-1.5">
                 {isWatertight ? (
-                  <span className="text-emerald-500 font-bold text-xs mt-0.5">✓</span>
+                  <span className="text-emerald-500 font-bold text-[11px] mt-0.5">✓</span>
                 ) : (
-                  <span className="text-amber-500 font-bold text-xs mt-0.5">⚠️</span>
+                  <span className="text-amber-500 font-bold text-[11px] mt-0.5">⚠️</span>
                 )}
                 <div className="leading-tight">
-                  <span className="font-bold text-slate-800 block">
+                  <span className="font-bold text-slate-800 block text-[10px]">
                     {isWatertight ? "Zamknięta geometria" : "Nieszczelna siatka"}
                   </span>
-                  <span className="text-[10px] text-slate-500">
-                    {isWatertight ? "Model 100% szczelny (Manifold)" : "Wykryto otwarte krawędzie"}
+                  <span className="text-[9px] text-slate-500 block">
+                    {isWatertight ? "Model 100% szczelny" : "Wykryto otwarte krawędzie"}
                   </span>
                 </div>
               </div>
 
               {/* Punkt 2: Grubość ścianek */}
-              <div className="flex items-start gap-2">
-                <span className="text-emerald-500 font-bold text-xs mt-0.5">✓</span>
+              <div className="flex items-start gap-1.5">
+                <span className="text-emerald-500 font-bold text-[11px] mt-0.5">✓</span>
                 <div className="leading-tight">
-                  <span className="font-bold text-slate-800 block">
-                    Minimalna grubość ścianek
+                  <span className="font-bold text-slate-800 block text-[10px]">
+                    Grubość ścianek
                   </span>
-                  <span className="text-[10px] text-slate-500">
-                    Bezpieczna strukturalnie (&gt; 0.8 mm)
+                  <span className="text-[9px] text-slate-500 block">
+                    Bezpieczna (&gt; 0.8 mm)
                   </span>
                 </div>
               </div>
 
               {/* Punkt 3: Nawisy i kąty podparcia */}
-              <div className="flex items-start gap-2">
+              <div className="flex items-start gap-1.5">
                 {hasOverhangs ? (
-                  <span className="text-amber-500 font-bold text-xs mt-0.5">⚠️</span>
+                  <span className="text-amber-500 font-bold text-[11px] mt-0.5">⚠️</span>
                 ) : (
-                  <span className="text-emerald-500 font-bold text-xs mt-0.5">✓</span>
+                  <span className="text-emerald-500 font-bold text-[11px] mt-0.5">✓</span>
                 )}
                 <div className="leading-tight">
-                  <span className="font-bold text-slate-800 block">
-                    Nawisy i kąty podparcia
+                  <span className="font-bold text-slate-800 block text-[10px]">
+                    Nawisy & podpory
                   </span>
-                  <span className="text-[10px] text-slate-500">
-                    {hasOverhangs
-                      ? "Wykryto zwisy > 45° (podpory)"
-                      : "Brak krytycznych nawisów"}
+                  <span className="text-[9px] text-slate-500 block">
+                    {hasOverhangs ? "Wykryto zwisy > 45°" : "Brak trudnych zwisów"}
                   </span>
                 </div>
               </div>
 
               {/* Punkt 4: Integralność części */}
-              <div className="flex items-start gap-2">
-                <span className="text-emerald-500 font-bold text-xs mt-0.5">✓</span>
+              <div className="flex items-start gap-1.5">
+                <span className="text-emerald-500 font-bold text-[11px] mt-0.5">✓</span>
                 <div className="leading-tight">
-                  <span className="font-bold text-slate-800 block">
-                    Integralność części
+                  <span className="font-bold text-slate-800 block text-[10px]">
+                    Integralność
                   </span>
-                  <span className="text-[10px] text-slate-500">
-                    Pojedyncza spójna bryła (1 shell)
+                  <span className="text-[9px] text-slate-500 block">
+                    Spójna bryła (1 shell)
                   </span>
                 </div>
               </div>
 
               {/* Podsumowanie DFM */}
-              <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-[9px] font-bold text-slate-400 uppercase">
+              <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-[8px] font-bold text-slate-400 uppercase">
                   Status DFM
                 </span>
-                <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200">
                   Gotowy do druku
                 </span>
               </div>
