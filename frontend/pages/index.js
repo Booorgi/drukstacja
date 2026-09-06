@@ -30,7 +30,12 @@ const StlViewer3D = dynamic(
             url,
             (geo) => {
               geo.computeVertexNormals();
+              // Wyśrodkowanie w osiach X i Z
               geo.center();
+              // Postawienie spodu modelu dokładnie na stole (Y = 0)
+              geo.computeBoundingBox();
+              const minY = geo.boundingBox.min.y;
+              geo.translate(0, -minY, 0);
               setGeometry(geo);
             },
             undefined,
@@ -38,55 +43,82 @@ const StlViewer3D = dynamic(
           );
         }, [url]);
 
-        // Wyliczanie krawędzi wymagających podpór (kąt nawisu > 45 stopni w dół)
-        const supportEdgesGeometry = useMemo(() => {
+        // Wyliczanie precyzyjnych powierzchni wymagających podpór (Nawisy > 45 st.)
+        const supportMeshGeometry = useMemo(() => {
           if (!geometry || !showSupports) return null;
 
           const pos = geometry.attributes.position;
-          const norm = geometry.attributes.normal;
-          if (!pos || !norm) return null;
+          if (!pos) return null;
 
-          const lines = [];
+          const supportTriangles = [];
+          const pA = new THREE.Vector3();
+          const pB = new THREE.Vector3();
+          const pC = new THREE.Vector3();
+          const cb = new THREE.Vector3();
+          const ab = new THREE.Vector3();
+          const faceNormal = new THREE.Vector3();
+
           for (let i = 0; i < pos.count; i += 3) {
-            // Średnia normalna trójkąta w osi Z (w dół)
-            const nz = (norm.getZ(i) + norm.getZ(i + 1) + norm.getZ(i + 2)) / 3;
-            // Kąt poniżej poziomu (zwis powyżej 45 stopni)
-            if (nz < -0.65) {
-              const ax = pos.getX(i), ay = pos.getY(i), az = pos.getZ(i);
-              const bx = pos.getX(i + 1), by = pos.getY(i + 1), bz = pos.getZ(i + 1);
-              const cx = pos.getX(i + 2), cy = pos.getY(i + 2), cz = pos.getZ(i + 2);
+            pA.fromBufferAttribute(pos, i);
+            pB.fromBufferAttribute(pos, i + 1);
+            pC.fromBufferAttribute(pos, i + 2);
 
-              lines.push(ax, ay, az, bx, by, bz);
-              lines.push(bx, by, bz, cx, cy, cz);
-              lines.push(cx, cy, cz, ax, ay, az);
+            // Wektor normalny ścianki
+            cb.subVectors(pC, pB);
+            ab.subVectors(pA, pB);
+            cb.cross(ab).normalize();
+            faceNormal.copy(cb);
+
+            // Sprawdzamy kąt zwisu względem pionu (Oś Y w Three.js skierowana w dół: Ny < -0.707 to zwis > 45°)
+            // Odrzucamy idealnie płaski spód stykający się ze stołem (y bliskie 0)
+            const isTouchingBed = pA.y < 0.2 && pB.y < 0.2 && pC.y < 0.2;
+
+            if (faceNormal.y < -0.707 && !isTouchingBed) {
+              supportTriangles.push(
+                pA.x, pA.y, pA.z,
+                pB.x, pB.y, pB.z,
+                pC.x, pC.y, pC.z
+              );
             }
           }
 
-          if (lines.length === 0) return null;
+          if (supportTriangles.length === 0) return null;
 
-          const edgeGeo = new THREE.BufferGeometry();
-          edgeGeo.setAttribute("position", new THREE.Float32BufferAttribute(lines, 3));
-          return edgeGeo;
+          const sGeo = new THREE.BufferGeometry();
+          sGeo.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(supportTriangles, 3)
+          );
+          sGeo.computeVertexNormals();
+          return sGeo;
         }, [geometry, showSupports]);
 
         if (!geometry) return null;
 
         return (
-          <Center top>
-            <group>
-              {/* Główny model */}
-              <mesh geometry={geometry}>
-                <meshStandardMaterial color={color} roughness={0.35} metalness={0.08} />
-              </mesh>
+          <group>
+            {/* Główny model CAD */}
+            <mesh geometry={geometry} castShadow receiveShadow>
+              <meshStandardMaterial
+                color={color}
+                roughness={0.35}
+                metalness={0.1}
+              />
+            </mesh>
 
-              {/* Czerwone podświetlenie nawisów / podpór */}
-              {supportEdgesGeometry && (
-                <lineSegments geometry={supportEdgesGeometry}>
-                  <lineBasicMaterial color="#EF4444" linewidth={2} />
-                </lineSegments>
-              )}
-            </group>
-          </Center>
+            {/* Czerwone podświetlenie powierzchni podpór (jak w slicerze) */}
+            {supportMeshGeometry && (
+              <mesh geometry={supportMeshGeometry}>
+                <meshBasicMaterial
+                  color="#EF4444"
+                  side={THREE.DoubleSide}
+                  transparent
+                  opacity={0.85}
+                  depthWrite={false}
+                />
+              </mesh>
+            )}
+          </group>
         );
       }
 
