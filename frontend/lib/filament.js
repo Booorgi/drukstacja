@@ -9,14 +9,90 @@
 // 1. DEDYKOWANA PALETA GENERATORA BRELOKÓW (Płaskorzeźby i Breloki Multi-Color)
 // -------------------------------------------------------------------------
 export const KEYCHAIN_CATEGORIES = [
-  { id: "PLA", label: "PLA Standard", badge: "Gładki" },
-  { id: "MATTE", label: "Matte", badge: "Aksamit" },
-  { id: "SILK", label: "Silk Błysk", badge: "Jedwabny" },
-  { id: "WOOD", label: "Wood Drewno", badge: "Naturalny" },
-  { id: "DUAL", label: "Dual-Color", badge: "Dwukolorowy" },
-  { id: "TRI", label: "Tri-Color", badge: "Trzykolorowy" },
-  { id: "RAINBOW", label: "Rainbow", badge: "Tęcza" },
+  { id: "ALL", label: "Wszystkie", finishName: "PLA", desc: "Pełna paleta PLA" },
+  { id: "CLASSIC", label: "Klasyczny", finishName: "PLA Klasyczny", badge: "Gładki", desc: "Standardowe gładkie PLA" },
+  { id: "MATTE", label: "Matte", finishName: "PLA Matte", badge: "Aksamit", desc: "Matowe, aksamitne wykończenie" },
+  { id: "SILK", label: "Silk", finishName: "PLA Silk", badge: "Połysk", desc: "Metaliczny / jedwabisty połysk" },
+  { id: "DUAL", label: "Dual-Color", finishName: "PLA Dual-Color", badge: "Dwuton", desc: "Filament dwukolorowy dwutonalny" },
+  { id: "TRI", label: "Tri-Color", finishName: "PLA Tri-Color", badge: "3-kolory", desc: "Filament trójkolorowy" },
+  { id: "RAINBOW", label: "Rainbow", finishName: "PLA Rainbow", badge: "Tęcza", desc: "Wielokolorowy gradient" },
+  { id: "WOOD", label: "Wood", finishName: "PLA Wood", badge: "Drewno", desc: "Z domieszką pyłu drzewnego" },
 ];
+
+// Sprawdza, czy dany filament jest bezpiecznym tworzywem PLA dla breloków (eliminuje PET-G, TPU, ASA itp.)
+export function isPlaFilament(f) {
+  if (!f) return false;
+  const type = (f.type || "").toUpperCase();
+  const name = (f.name || "").toLowerCase();
+
+  const nonPlaTypes = ["PETG", "PET-G", "FLEX", "TPU", "TECH", "ASA", "ABS", "PCTG", "PP", "COMPOSITE", "CARBON", "NYLON"];
+  if (nonPlaTypes.includes(type)) return false;
+
+  if (
+    name.includes("pet-g") ||
+    name.includes("petg") ||
+    name.includes("tpu") ||
+    name.includes("flex") ||
+    name.includes("asa") ||
+    name.includes("abs") ||
+    name.includes("pctg") ||
+    name.includes("carbon") ||
+    name.includes("nylon") ||
+    name.includes("polipropylen")
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+// Rozpoznaje typ wykończenia PLA (Klasyczny, Matte, Silk, Dual, Tri, Rainbow, Wood)
+export function getPlaFinishType(f) {
+  if (!f) return "CLASSIC";
+  const cat = (f.category || "").toLowerCase();
+  const type = (f.type || "").toUpperCase();
+  const name = (f.name || "").toLowerCase();
+  const id = (f.id || "").toLowerCase();
+
+  if (cat === "dual" || id.includes("dual") || name.includes("dual")) return "DUAL";
+  if (cat === "tri" || id.includes("tri") || name.includes("tri")) return "TRI";
+  if (cat === "rainbow" || id.includes("rainbow") || name.includes("rainbow") || name.includes("tęcza")) return "RAINBOW";
+  if (type === "WOOD" || id.includes("wood") || name.includes("drewno")) return "WOOD";
+  if (type === "SILK" || id.includes("silk") || name.includes("silk") || name.includes("jedwab")) return "SILK";
+  if (
+    id.includes("mat_") ||
+    name.includes("matte") ||
+    name.includes("matowy") ||
+    name.includes("satin") ||
+    name.includes("satynow") ||
+    (type === "PLA" && (f.roughness ?? 0) >= 0.6)
+  ) {
+    return "MATTE";
+  }
+  return "CLASSIC";
+}
+
+// Zwraca przyjazną etykietę wykończenia dla belki pod próbkami
+export function getPlaFinishLabel(f) {
+  const finish = getPlaFinishType(f);
+  switch (finish) {
+    case "MATTE":
+      return "PLA Matte";
+    case "SILK":
+      return "PLA Silk";
+    case "DUAL":
+      return "PLA Dual-Color";
+    case "TRI":
+      return "PLA Tri-Color";
+    case "RAINBOW":
+      return "PLA Rainbow";
+    case "WOOD":
+      return "PLA Wood";
+    case "CLASSIC":
+    default:
+      return "PLA Klasyczny";
+  }
+}
 
 export const KEYCHAIN_FILAMENTS = {
   PLA: [
