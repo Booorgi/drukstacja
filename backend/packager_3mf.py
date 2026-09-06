@@ -98,9 +98,10 @@ def generate_production_3mf(
 
     # Naprawa topologii
     try:
-        mesh.remove_duplicate_faces()
-        mesh.remove_degenerate_faces()
-        mesh.remove_unreferenced_vertices()
+        if hasattr(mesh, "process"):
+            mesh.process(validate=True)
+        if hasattr(mesh, "remove_unreferenced_vertices"):
+            mesh.remove_unreferenced_vertices()
         trimesh.repair.fix_normals(mesh)
         trimesh.repair.fix_winding(mesh)
     except Exception:

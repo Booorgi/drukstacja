@@ -13,6 +13,7 @@ import zipfile
 import tarfile
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
+import xml.etree.ElementTree as ET
 
 import trimesh
 import numpy as np
@@ -63,12 +64,131 @@ class UnsupportedFileType(Exception):
 # POMOCNICZE: ANALIZA SIATKI TRIMESH
 # --------------------------------------------------------------------------
 
+def parse_3mf_native_xml(file_path: str) -> trimesh.Trimesh:
+    """
+    Natywny fallback parsera formatu .3MF oparty na standardowych modułach Pythona
+    (zipfile + xml.etree.ElementTree).
+    Wyciąga wierzchołki i trójkąty ze wszystkich definicji siatek (<mesh>)
+    w plikach .model wewnątrz archiwum .3MF bez zewnętrznych zależności.
+    """
+    all_vertices = []
+    all_faces = []
+    vertex_offset = 0
+
+    with zipfile.ZipFile(file_path, "r") as z:
+        model_names = [n for n in z.namelist() if n.lower().endswith(".model")]
+        if not model_names:
+            raise ValueError("Brak plików definicji modelu (.model) w archiwum .3MF.")
+
+        for m_name in model_names:
+            xml_data = z.read(m_name)
+            root = ET.fromstring(xml_data)
+
+            for mesh_elem in root.iter():
+                if mesh_elem.tag.endswith("mesh"):
+                    v_list = []
+                    f_list = []
+                    for child in mesh_elem:
+                        if child.tag.endswith("vertices"):
+                            for v in child:
+                                v_list.append([
+                                    float(v.attrib.get("x", 0.0)),
+                                    float(v.attrib.get("y", 0.0)),
+                                    float(v.attrib.get("z", 0.0)),
+                                ])
+                        elif child.tag.endswith("triangles"):
+                            for t in child:
+                                f_list.append([
+                                    int(t.attrib.get("v1", 0)) + vertex_offset,
+                                    int(t.attrib.get("v2", 0)) + vertex_offset,
+                                    int(t.attrib.get("v3", 0)) + vertex_offset,
+                                ])
+                    if v_list and f_list:
+                        all_vertices.extend(v_list)
+                        all_faces.extend(f_list)
+                        vertex_offset += len(v_list)
+
+    if not all_vertices or not all_faces:
+        raise ValueError("Plik .3MF nie zawiera poprawnej geometrii 3D (brak wierzchołków lub ścianek).")
+
+    return trimesh.Trimesh(
+        vertices=np.array(all_vertices, dtype=float),
+        faces=np.array(all_faces, dtype=int),
+    )
+
+
+def load_3mf_mesh(file_path: str) -> trimesh.Trimesh:
+    """
+    Bezpieczne wczytanie i scalenie geometrii z pliku .3MF do pojedynczej bryły trimesh.Trimesh.
+    Rozwiązuje problem obiektów trimesh.Scene zwracanych przez trimesh.load()
+    oraz zabezpiecza przed brakującymi zależnościami parsera 3MF (np. lxml).
+    """
+    loaded = None
+    try:
+        loaded = trimesh.load(file_path, file_type="3mf")
+    except Exception as e:
+        print(f"[INFO] trimesh.load(file_type='3mf') zwrócił błąd: {e}. Próba wczytania alternatywnego...")
+        try:
+            loaded = trimesh.load(file_path)
+        except Exception as e2:
+            print(f"[INFO] Wczytanie trimesh nie powiodło się: {e2}. Uruchamiam natywny parser XML dla .3MF...")
+            return parse_3mf_native_xml(file_path)
+
+    if isinstance(loaded, trimesh.Scene):
+        # Scal wszystkie geometrie wewnątrz sceny
+        if len(loaded.geometry) == 0:
+            try:
+                return parse_3mf_native_xml(file_path)
+            except Exception:
+                raise ValueError("Plik .3MF nie zawiera poprawnej geometrii 3D.")
+
+        try:
+            # Metoda to_geometry() zachowująca transformacje węzłów sceny
+            mesh = loaded.to_geometry()
+            if isinstance(mesh, trimesh.Trimesh) and len(mesh.faces) > 0:
+                return mesh
+        except Exception:
+            pass
+
+        valid_geoms = [
+            g for g in loaded.geometry.values()
+            if hasattr(g, "faces") and len(g.faces) > 0
+        ]
+        if not valid_geoms:
+            try:
+                return parse_3mf_native_xml(file_path)
+            except Exception:
+                raise ValueError("Plik .3MF nie zawiera poprawnej geometrii 3D.")
+
+        mesh = trimesh.util.concatenate(list(valid_geoms))
+        return mesh
+
+    elif isinstance(loaded, trimesh.Trimesh):
+        return loaded
+    else:
+        try:
+            return parse_3mf_native_xml(file_path)
+        except Exception:
+            raise ValueError("Plik .3MF nie zawiera poprawnej siatki 3D.")
+
+
 def analyze_trimesh_geometry(loaded_obj) -> dict:
     """Wyciąga parametry geometryczne z obiektu Trimesh lub Scene z automatyczną naprawą bryły."""
     if isinstance(loaded_obj, trimesh.Scene):
         if len(loaded_obj.geometry) == 0:
             raise ValueError("Plik 3D nie zawiera żadnych trójkątów ani geometrii.")
-        mesh = trimesh.util.concatenate(tuple(loaded_obj.geometry.values()))
+        valid_geoms = [
+            g for g in loaded_obj.geometry.values()
+            if hasattr(g, "faces") and len(g.faces) > 0
+        ]
+        if not valid_geoms:
+            raise ValueError("Plik 3D nie zawiera poprawnej geometrii trójkątów.")
+        try:
+            mesh = loaded_obj.to_geometry()
+            if not isinstance(mesh, trimesh.Trimesh):
+                mesh = trimesh.util.concatenate(list(valid_geoms))
+        except Exception:
+            mesh = trimesh.util.concatenate(list(valid_geoms))
     else:
         mesh = loaded_obj
 
@@ -79,9 +199,10 @@ def analyze_trimesh_geometry(loaded_obj) -> dict:
     # 1. Głęboka naprawa topologii siatki (zwroty normalnych, nawinięcie, duplikaty)
     # Zapobiega fałszywym odczytom objętości przy nieszczelnych lub odwróconych trójkątach
     try:
-        mesh.remove_duplicate_faces()
-        mesh.remove_degenerate_faces()
-        mesh.remove_unreferenced_vertices()
+        if hasattr(mesh, "process"):
+            mesh.process(validate=True)
+        if hasattr(mesh, "remove_unreferenced_vertices"):
+            mesh.remove_unreferenced_vertices()
         trimesh.repair.fix_normals(mesh)
         trimesh.repair.fix_winding(mesh)
         trimesh.repair.fix_inversion(mesh)
@@ -136,13 +257,11 @@ def analyze_trimesh_geometry(loaded_obj) -> dict:
     }
 
 
-
 def analyze_mesh_file(path: str, ext: str) -> dict:
-    """Wczytuje siatkę 3D (.stl, .obj, .3mf, .ply, .glb, .gltf, .off) przez trimesh."""
+    """Wczytuje siatkę 3D (.stl, .obj, .3mf, .ply, .glb, .gltf, .off) przez trimesh lub wyspecjalizowany parser."""
     file_type = ext.lstrip(".").lower()
     if file_type == "3mf":
-        # Wczytanie 3MF
-        loaded = trimesh.load(path, file_type="3mf")
+        loaded = load_3mf_mesh(path)
     else:
         loaded = trimesh.load(path)
 
@@ -340,6 +459,7 @@ def process_uploaded_file(path: str, filename: str, temp_dir: str) -> dict:
             })
             return geom
         except Exception as mesh_err:
+            print(f"[WARN] Błąd analizy siatki ({ext}): {mesh_err}")
             # Bezpieczny fallback do RFQ w przypadku uszkodzonej siatki
             return {
                 "type": "rfq_document",

@@ -4,6 +4,7 @@ import os
 import math
 import shutil
 import tempfile
+from pathlib import Path
 import trimesh
 import numpy as np
 
@@ -176,11 +177,37 @@ def simulate_slicing_fallback(
     height_z_mm = 40.0
 
     try:
-        mesh = trimesh.load(stl_path, force="mesh")
+        ext = Path(stl_path).suffix.lower()
+        if ext == ".3mf":
+            from analysis import load_3mf_mesh
+            mesh = load_3mf_mesh(stl_path)
+        else:
+            loaded = trimesh.load(stl_path)
+            if isinstance(loaded, trimesh.Scene):
+                valid_geoms = [
+                    g for g in loaded.geometry.values()
+                    if hasattr(g, "faces") and len(g.faces) > 0
+                ]
+                if valid_geoms:
+                    try:
+                        mesh = loaded.to_geometry()
+                        if not isinstance(mesh, trimesh.Trimesh):
+                            mesh = trimesh.util.concatenate(list(valid_geoms))
+                    except Exception:
+                        mesh = trimesh.util.concatenate(list(valid_geoms))
+                else:
+                    mesh = loaded
+            else:
+                mesh = loaded
+
+        if not isinstance(mesh, trimesh.Trimesh):
+            mesh = trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces)
+
         try:
-            mesh.remove_duplicate_faces()
-            mesh.remove_degenerate_faces()
-            mesh.remove_unreferenced_vertices()
+            if hasattr(mesh, "process"):
+                mesh.process(validate=True)
+            if hasattr(mesh, "remove_unreferenced_vertices"):
+                mesh.remove_unreferenced_vertices()
             trimesh.repair.fix_normals(mesh)
             trimesh.repair.fix_winding(mesh)
             trimesh.repair.fix_inversion(mesh)
