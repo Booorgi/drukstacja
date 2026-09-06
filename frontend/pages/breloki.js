@@ -757,8 +757,13 @@ const KeychainViewer3D = dynamic(
           if (onExportReady) {
             onExportReady({
               exportSTL: () => {
-                const exporter = new STLExporter();
-                return exporter.parse(scene, { binary: true });
+                try {
+                  const exporter = new STLExporter();
+                  return exporter.parse(scene, { binary: true });
+                } catch (err) {
+                  console.error("Błąd podczas eksportu STLExporter:", err);
+                  return null;
+                }
               },
             });
           }
@@ -767,7 +772,18 @@ const KeychainViewer3D = dynamic(
         return null;
       }
 
-      return function Viewer({ onExportReady, ...props }) {
+      return React.forwardRef(function Viewer({ onExportReady, ...props }, ref) {
+        const exportFnRef = React.useRef(null);
+
+        React.useImperativeHandle(ref, () => ({
+          exportSTL: () => {
+            if (exportFnRef.current) {
+              return exportFnRef.current();
+            }
+            return null;
+          },
+        }));
+
         return (
           <Canvas
             gl={{ localClippingEnabled: true }}
@@ -779,11 +795,16 @@ const KeychainViewer3D = dynamic(
             <React.Suspense fallback={null}>
               <KeychainMesh {...props} />
             </React.Suspense>
-            <ExportRegistrar onExportReady={onExportReady} />
+            <ExportRegistrar
+              onExportReady={(handlers) => {
+                exportFnRef.current = handlers?.exportSTL;
+                if (onExportReady) onExportReady(handlers);
+              }}
+            />
             <OrbitControls makeDefault minDistance={30} maxDistance={280} />
           </Canvas>
         );
-      };
+      });
     }),
   { ssr: false }
 );
@@ -1001,7 +1022,27 @@ export default function KeychainGenerator() {
 
   // --- NOWE: Eksport STL ---
   const viewerRef = useRef(null);
+  const exportHandlerRef = useRef(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  const exportKeychainGeometry = () => {
+    try {
+      let stlData = null;
+      if (exportHandlerRef.current && typeof exportHandlerRef.current === "function") {
+        stlData = exportHandlerRef.current();
+      } else if (viewerRef.current && typeof viewerRef.current.exportSTL === "function") {
+        stlData = viewerRef.current.exportSTL();
+      }
+      if (!stlData) {
+        console.warn("Brak wygenerowanych danych STL ze sceny 3D breloka.");
+        return null;
+      }
+      return new Blob([stlData], { type: "application/octet-stream" });
+    } catch (err) {
+      console.warn("Błąd generowania geometrii STL breloka:", err);
+      return null;
+    }
+  };
 
   // Modale
   const [isPreprocessingOpen, setIsPreprocessingOpen] = useState(false);
@@ -1210,19 +1251,18 @@ export default function KeychainGenerator() {
   function handleExportSTL() {
     setIsExporting(true);
     try {
-      if (viewerRef.current) {
-        const stlData = viewerRef.current.exportSTL();
-        if (stlData) {
-          const blob = new Blob([stlData], { type: "application/octet-stream" });
-          const link = document.createElement("a");
-          link.style.display = "none";
-          document.body.appendChild(link);
-          link.href = URL.createObjectURL(blob);
-          link.download = `brelok_${shapeType}_${Date.now()}.stl`;
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(link.href);
-        }
+      const blob = exportKeychainGeometry();
+      if (blob) {
+        const link = document.createElement("a");
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.href = URL.createObjectURL(blob);
+        link.download = `brelok_${shapeType}_${Date.now()}.stl`;
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+      } else {
+        alert("Scena 3D breloka nie jest jeszcze gotowa do eksportu. Spróbuj za chwilę.");
       }
     } catch (err) {
       alert("Błąd eksportu STL: " + err.message);
@@ -1304,6 +1344,12 @@ export default function KeychainGenerator() {
 
     setAddingToCart(true);
     try {
+      // Wyłącz widok rozstrzelony przed pobraniem geometrii do druku
+      if (layerViewEnabled) {
+        setLayerViewEnabled(false);
+        setLayerSeparation(0);
+      }
+
       const maxLayerThickness = Math.max(...layersConfig.map((l) => l.thickness));
       const totalThickness = baseThickness + maxLayerThickness;
 
@@ -1313,7 +1359,8 @@ export default function KeychainGenerator() {
       const finishLabel = getPlaFinishLabel(baseFilament);
       const materialName = baseFilament?.name || "Standard";
 
-      const { error } = await supabase.from("orders").insert({
+      // 1. Zapis zlecenia w Supabase (status: in_cart)
+      const orderPayload = {
         user_id: user.id,
         file_name: `Brelok [${shapeType.toUpperCase()}]: ${imageFileName} (${materialName})`,
         material: `${finishLabel} - ${materialName}`,
@@ -1326,9 +1373,55 @@ export default function KeychainGenerator() {
         total_price: parseFloat(totalPrice),
         dimensions_mm: [dimX, dimY, totalThickness],
         status: "in_cart",
-      });
+      };
+
+      const { data: newOrders, error } = await supabase
+        .from("orders")
+        .insert(orderPayload)
+        .select();
 
       if (error) throw error;
+      const createdOrder = Array.isArray(newOrders) ? newOrders[0] : newOrders;
+      const orderId = createdOrder?.id;
+
+      // 2. Eksport geometrii STL ze sceny Three.js i przesłanie na serwer
+      try {
+        const stlBlob = exportKeychainGeometry();
+        if (stlBlob && orderId) {
+          const formData = new FormData();
+          const cleanSafeName = `brelok_${shapeType}_${Date.now()}.stl`;
+          formData.append("file", stlBlob, cleanSafeName);
+          formData.append("order_id", String(orderId));
+          formData.append("file_name", orderPayload.file_name);
+          formData.append("material", materialName);
+          formData.append("color_hex", baseFilament?.hex || "#222222");
+          formData.append("layer_height", "0.20");
+          formData.append("nozzle_size", "0.4");
+          formData.append("infill", "100");
+
+          const res = await fetch(`${API_URL || ""}/api/orders/upload-geometry`, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (res.ok) {
+            const resData = await res.json();
+            const prodUrl = resData.production_file_url || resData.download_url;
+            if (prodUrl) {
+              await supabase
+                .from("orders")
+                .update({ production_file_url: prodUrl })
+                .eq("id", orderId);
+            }
+          } else {
+            console.warn("Nie udało się zsynchronizować geometrii 3D breloka na backendzie:", await res.text());
+          }
+        }
+      } catch (uploadErr) {
+        console.warn("Błąd eksportu lub uploadu geometrii breloka:", uploadErr);
+        // Nie blokujemy koszyka, zlecenie zostało już utworzone
+      }
+
       await fetchCart(user.id);
       setIsCartOpen(true);
     } catch (err) {
@@ -1406,6 +1499,9 @@ export default function KeychainGenerator() {
             <div className="relative w-full h-[380px] md:h-[430px] my-auto">
               <KeychainViewer3D
                 ref={viewerRef}
+                onExportReady={(handlers) => {
+                  exportHandlerRef.current = handlers?.exportSTL;
+                }}
                 shapeType={shapeType}
                 baseFilament={baseFilament}
                 baseWidth={baseWidth}

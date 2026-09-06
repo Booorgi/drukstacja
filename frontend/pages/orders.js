@@ -272,12 +272,15 @@ export default function OrdersPage() {
                         </div>
                         <a
                           href={
-                            order.production_file_url ||
-                            `${API_URL}/api/orders/${order.id}/download-3mf?file_name=${encodeURIComponent(
-                              order.file_name || ""
-                            )}&material=${encodeURIComponent(
-                              order.material || ""
-                            )}&layer_height=${cleanLayerHeight}&nozzle_size=${cleanNozzle}&infill=${cleanInfill}`
+                            order.production_file_url
+                              ? (order.production_file_url.startsWith("http")
+                                  ? order.production_file_url
+                                  : `${API_URL || ""}${order.production_file_url}`)
+                              : `${API_URL || ""}/api/orders/${order.id}/download-3mf?file_name=${encodeURIComponent(
+                                  order.file_name || ""
+                                )}&material=${encodeURIComponent(
+                                  order.material || ""
+                                )}&layer_height=${cleanLayerHeight}&nozzle_size=${cleanNozzle}&infill=${cleanInfill}`
                           }
                           download
                           className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 hover:from-emerald-500/30 hover:to-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-mono font-bold transition shadow-sm hover:scale-[1.02] active:scale-98"

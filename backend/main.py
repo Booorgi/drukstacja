@@ -871,6 +871,93 @@ def download_3mf_file(filename: str):
     )
 
 
+@app.post("/api/orders/upload-geometry")
+async def upload_order_geometry_endpoint(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    order_id: str = Form(...),
+    file_name: str | None = Form(None),
+    material: str = Form("PLA"),
+    color_hex: str = Form("#222222"),
+    layer_height: float = Form(0.20),
+    nozzle_size: float = Form(0.4),
+    infill: int = Form(100),
+):
+    """
+    Endpoint dedykowany dla generatora breloków 3D:
+    Przyjmuje wyeksportowany ze sceny Three.js plik STL, zapisuje go w pamięci trwałej i R2,
+    oraz natychmiast generuje zunifikowany pakiet produkcyjny .3MF powiązany z zamówieniem.
+    """
+    clean_order_id = str(order_id)
+    safe_file_name = sanitize_filename(Path(file_name or file.filename or "keychain.stl").stem)
+    target_stl_name = f"ORDER_{clean_order_id[:8]}_{safe_file_name}.stl"
+    local_stl_path = os.path.join(MODELS_CACHE_DIR, target_stl_name)
+
+    # 1. Zapis pliku STL na serwerze
+    content = await file.read()
+    with open(local_stl_path, "wb") as f_out:
+        f_out.write(content)
+
+    # 2. Asynchroniczna kopia zapasowa do Cloudflare R2
+    r2_model_key = f"models/{target_stl_name}"
+    def _bg_upload_stl(path, key):
+        try:
+            with open(path, "rb") as f_up:
+                upload_file_to_r2(f_up, key, "application/octet-stream")
+        except Exception as up_err:
+            print(f"[WARN] Błąd zapisu STL breloka w R2: {up_err}")
+
+    background_tasks.add_task(_bg_upload_stl, local_stl_path, r2_model_key)
+
+    # 3. Generowanie pakietu produkcyjnego .3MF
+    safe_mat = sanitize_filename(str(material).split()[0])
+    target_3mf_name = f"ORDER_{clean_order_id[:8]}_{safe_file_name}_{safe_mat}_{nozzle_size}mm.3mf"
+    local_3mf_path = os.path.join(PROJECTS_3MF_CACHE_DIR, target_3mf_name)
+
+    production_url = f"/api/download-3mf-file/{target_3mf_name}"
+    try:
+        generate_production_3mf(
+            model_path=local_stl_path,
+            order_metadata={"order_id": clean_order_id, "file_name": file_name or target_stl_name},
+            print_settings={
+                "layer_height": layer_height,
+                "nozzle_size": nozzle_size,
+                "infill": infill,
+                "material": material,
+                "color_hex": color_hex,
+            },
+            output_path=local_3mf_path,
+        )
+        r2_3mf_key = f"production_packages/{target_3mf_name}"
+        saved_url = save_production_3mf_file(local_3mf_path, r2_3mf_key)
+        if saved_url:
+            production_url = saved_url
+    except Exception as gen_err:
+        print(f"[WARN] Błąd generowania 3MF przy uploadzie geometrii: {gen_err}")
+
+    # 4. Aktualizacja pola production_file_url w bazie PostgreSQL
+    conn = get_db_connection()
+    if conn:
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE orders SET production_file_url = %s WHERE id::text = %s OR id::text LIKE %s",
+                        (production_url, clean_order_id, f"{clean_order_id}%")
+                    )
+        except Exception as db_err:
+            print(f"[WARN] Błąd aktualizacji orders w PostgreSQL: {db_err}")
+        finally:
+            conn.close()
+
+    return {
+        "success": True,
+        "filename": target_3mf_name,
+        "download_url": f"/api/download-3mf-file/{target_3mf_name}",
+        "production_file_url": production_url,
+    }
+
+
 @app.get("/api/orders/{order_id}/download-3mf")
 def download_order_3mf(
     order_id: str,
@@ -887,6 +974,19 @@ def download_order_3mf(
     Generuje i od razu zwraca gotowy plik projektu produkcyjnego .3MF do pobrania jednym kliknięciem.
     """
     clean_order_id = str(order_id)
+    clean_prefix = clean_order_id[:8].lower()
+
+    # 0. Szybkie sprawdzenie czy gotowy plik .3MF już istnieje w cache
+    if os.path.exists(PROJECTS_3MF_CACHE_DIR):
+        for existing_3mf in os.listdir(PROJECTS_3MF_CACHE_DIR):
+            if existing_3mf.endswith(".3mf") and clean_prefix in existing_3mf.lower():
+                full_path = os.path.join(PROJECTS_3MF_CACHE_DIR, existing_3mf)
+                if os.path.getsize(full_path) > 100:
+                    return FileResponse(
+                        full_path,
+                        media_type="application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+                        filename=existing_3mf,
+                    )
 
     def parse_clean_float(val, default_val):
         try:
@@ -930,7 +1030,7 @@ def download_order_3mf(
         elif tech_raw and "0.4mm" in str(tech_raw):
             clean_nozzle_size = 0.4
 
-    # Odnalezienie pliku źródłowego geometrii
+    # 1. Odnalezienie pliku źródłowego geometrii
     local_model = None
     if file_key:
         base_name = os.path.basename(file_key)
@@ -944,18 +1044,50 @@ def download_order_3mf(
             except Exception:
                 pass
 
-    if not local_model:
+    if not local_model and os.path.exists(MODELS_CACHE_DIR):
+        # Sprawdź czy plik modelu breloka lub STL zaczyna się od ORDER_{clean_prefix}
+        for f in os.listdir(MODELS_CACHE_DIR):
+            if f.endswith((".stl", ".step", ".stp", ".obj", ".3mf")) and clean_prefix in f.lower():
+                local_model = os.path.join(MODELS_CACHE_DIR, f)
+                break
+
+    if not local_model and os.path.exists(MODELS_CACHE_DIR):
         clean_name = sanitize_filename(Path(file_name or "model").stem)
         candidates = [
             f for f in os.listdir(MODELS_CACHE_DIR)
             if f.endswith((".stl", ".step", ".stp", ".obj", ".3mf"))
         ]
-        matching = [f for f in candidates if clean_order_id[:8].lower() in f.lower() or clean_name.lower() in f.lower()]
+        matching = [f for f in candidates if clean_prefix in f.lower() or (len(clean_name) > 3 and clean_name.lower() in f.lower())]
         if matching:
             local_model = os.path.join(MODELS_CACHE_DIR, matching[0])
-        elif candidates:
-            candidates.sort(key=lambda x: os.path.getmtime(os.path.join(MODELS_CACHE_DIR, x)), reverse=True)
-            local_model = os.path.join(MODELS_CACHE_DIR, candidates[0])
+
+    # 2. FALLBACK DLA BRELOKÓW PROCEDURALNYCH:
+    # Jeśli plik geometrii nie zachował się na serwerze, wygeneruj geometryczny model breloka z parametrów zlecenia
+    if not local_model or not os.path.exists(local_model):
+        is_keychain = (
+            "brelok" in str(file_name or "").lower() or
+            "keychain" in str(file_name or "").lower() or
+            (db_order and "brelok" in str(db_order.get("file_name", "")).lower())
+        )
+        if is_keychain or (db_order and db_order.get("dimensions_mm")):
+            try:
+                dims = db_order.get("dimensions_mm") if db_order else [65, 50, 4]
+                dx = float(dims[0]) if dims and len(dims) > 0 else 60.0
+                dy = float(dims[1]) if dims and len(dims) > 1 else 50.0
+                dz = float(dims[2]) if dims and len(dims) > 2 else 4.0
+
+                is_rect = "rect" in str(file_name or "").lower() or "tabliczka" in str(file_name or "").lower()
+                if is_rect:
+                    fallback_mesh = trimesh.creation.box(extents=[dx, dy, dz])
+                else:
+                    fallback_mesh = trimesh.creation.cylinder(radius=dx / 2.0, height=dz, sections=48)
+                fallback_name = f"ORDER_{clean_prefix}_brelok_fallback.stl"
+                fallback_path = os.path.join(MODELS_CACHE_DIR, fallback_name)
+                fallback_mesh.export(fallback_path)
+                local_model = fallback_path
+                print(f"[INFO] Wygenerowano proceduralną geometrię breloka dla zlecenia {clean_order_id}")
+            except Exception as fb_err:
+                print(f"[WARN] Nie udało się stworzyć geometrii fallback: {fb_err}")
 
     if not local_model or not os.path.exists(local_model):
         raise HTTPException(
