@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabaseClient";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
+import { STL_MATERIAL_GROUPS, STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -20,7 +21,7 @@ const StlViewer3D = dynamic(
       const { OrbitControls, Center, Bounds, GizmoHelper, GizmoViewcube } = drei;
       const { STLLoader } = stdlib;
 
-      function StlModelWithSupports({ url, color, showSupports }) {
+      function StlModelWithSupports({ url, color, showSupports, materialConfig }) {
         const [geometry, setGeometry] = useState(null);
 
         useEffect(() => {
@@ -150,7 +151,17 @@ const StlViewer3D = dynamic(
           <group>
             {/* Główny model CAD spoczywający na stole */}
             <mesh geometry={geometry} castShadow receiveShadow>
-              <meshStandardMaterial color={color} roughness={0.35} metalness={0.08} />
+              <meshStandardMaterial
+                color={color}
+                roughness={
+                  materialConfig?.group === "composite" || materialConfig?.id === "PLA_MATTE"
+                    ? 0.85
+                    : materialConfig?.group === "flex"
+                    ? 0.6
+                    : 0.35
+                }
+                metalness={materialConfig?.group === "composite" ? 0.15 : 0.08}
+              />
             </mesh>
 
             {/* Czerwone podświetlenie nawisów / podpór */}
@@ -169,7 +180,7 @@ const StlViewer3D = dynamic(
         );
       }
 
-      return function Viewer({ modelUrl, color, showSupports }) {
+      return function Viewer({ modelUrl, color, showSupports, materialConfig }) {
         return (
           <Canvas camera={{ position: [90, 110, 140], fov: 45 }}>
             <ambientLight intensity={1.1} />
@@ -181,6 +192,7 @@ const StlViewer3D = dynamic(
                 url={modelUrl}
                 color={color}
                 showSupports={showSupports}
+                materialConfig={materialConfig}
               />
             </Bounds>
 
@@ -208,12 +220,6 @@ const StlViewer3D = dynamic(
   { ssr: false }
 );
 
-const MATERIALS_LIST = [
-  { id: "PLA", name: "PLA Tough", desc: "Precyzja & Detal", pricePerCm3: 0.45 },
-  { id: "PETG", name: "PETG Carbon", desc: "Odporność UV & Temp", pricePerCm3: 0.55 },
-  { id: "ABS", name: "ABS Industry", desc: "Trwałość & Sztywność", pricePerCm3: 0.60 },
-];
-
 export default function Home() {
   const [user, setUser] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -227,8 +233,27 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisData, setAnalysisData] = useState(null);
 
-  const [selectedMaterial, setSelectedMaterial] = useState("PLA");
-  const [selectedColor, setSelectedColor] = useState("#EF4444");
+  // Inżynieryjny dobór materiału i koloru
+  const [selectedMaterialGroup, setSelectedMaterialGroup] = useState("all");
+  const [selectedMaterial, setSelectedMaterial] = useState(STL_MATERIALS[0].id);
+  const [selectedColor, setSelectedColor] = useState(STL_MATERIALS[0].colors[0].hex);
+
+  const filteredMaterials = useMemo(() => {
+    if (selectedMaterialGroup === "all") return STL_MATERIALS;
+    return STL_MATERIALS.filter((m) => m.group === selectedMaterialGroup);
+  }, [selectedMaterialGroup]);
+
+  function handleSelectMaterial(matId) {
+    setSelectedMaterial(matId);
+    const targetMat = STL_MATERIALS.find((m) => m.id === matId);
+    if (targetMat && targetMat.colors && targetMat.colors.length > 0) {
+      const hasColor = targetMat.colors.some((c) => c.hex === selectedColor);
+      if (!hasColor) {
+        setSelectedColor(targetMat.colors[0].hex);
+      }
+    }
+  }
+
   const [infill, setInfill] = useState(20);
   const [showSupports, setShowSupports] = useState(true);
   const [quantity, setQuantity] = useState(1);
@@ -317,8 +342,9 @@ export default function Home() {
   }
 
   const volume = analysisData?.volume_cm3 || 32.5;
-  const matConfig = MATERIALS_LIST.find((m) => m.id === selectedMaterial);
-  const unitPrice = Math.max(15, volume * (matConfig?.pricePerCm3 || 0.45) * (1 + infill / 100)).toFixed(2);
+  const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
+  const activeColorObj = matConfig?.colors?.find((c) => c.hex === selectedColor) || matConfig?.colors?.[0];
+  const unitPrice = Math.max(15, volume * (matConfig?.pricePerCm3 || 0.38) * (1 + infill / 100)).toFixed(2);
   const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
 
   async function handleAddToCart() {
@@ -332,8 +358,13 @@ export default function Home() {
       const { error } = await supabase.from("orders").insert({
         user_id: user.id,
         file_name: selectedFile?.name || "Model 3D STL",
-        material: selectedMaterial,
-        technology: "FDM Precision 0.4mm",
+        material: `${matConfig.name} (${activeColorObj?.name || selectedColor})`,
+        technology:
+          matConfig.group === "composite"
+            ? "FDM Hardened Steel 0.4mm (Carbon)"
+            : matConfig.group === "flex"
+            ? "FDM Direct Drive 0.4mm (Flex TPU)"
+            : "FDM Precision 0.4mm",
         layer_height: "0.20 mm",
         infill: infill,
         clean_supports: true,
@@ -503,6 +534,7 @@ export default function Home() {
                   modelUrl={modelPreviewUrl}
                   color={selectedColor}
                   showSupports={showSupports}
+                  materialConfig={matConfig}
                 />
               ) : (
                 <div
@@ -598,50 +630,134 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Kolor filamentu */}
-              <div>
-                <span className="text-xs font-bold uppercase text-slate-400 block mb-2 tracking-wider">
-                  Kolor filamentu:
-                </span>
-                <div className="flex items-center gap-2.5">
-                  {["#0B0F17", "#EF4444", "#2563EB", "#10B981", "#F59E0B", "#94A3B8", "#FFFFFF"].map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setSelectedColor(c)}
-                      className={`w-6 h-6 rounded-full transition-all cursor-pointer ${
-                        selectedColor === c
-                          ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110"
-                          : "hover:scale-105 border border-slate-300"
-                      }`}
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
+              {/* SEKCJA MATERIAŁU I KOLORU (NOWOCZESNA WYCENIARKA INŻYNIERYJNA) */}
+              <div className="space-y-3.5">
+                {/* 1. Nagłówek i Taby Kategorii */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">
+                      Wybierz Materiał Drukarki:
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-400">
+                      {filteredMaterials.length} do wyboru
+                    </span>
+                  </div>
+
+                  {/* Taby kategorii */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                    {STL_MATERIAL_GROUPS.map((grp) => {
+                      const isActive = selectedMaterialGroup === grp.id;
+                      return (
+                        <button
+                          key={grp.id}
+                          type="button"
+                          onClick={() => setSelectedMaterialGroup(grp.id)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                            isActive
+                              ? "bg-slate-900 text-white shadow-sm ring-1 ring-slate-900"
+                              : "bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/60"
+                          }`}
+                        >
+                          {grp.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Karty materiałów — przewijana lista z parametrami technicznymi */}
+                <div className="max-h-[250px] overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+                  {filteredMaterials.map((mat) => {
+                    const isSelected = selectedMaterial === mat.id;
+                    return (
+                      <div
+                        key={mat.id}
+                        onClick={() => handleSelectMaterial(mat.id)}
+                        className={`p-3 rounded-2xl border transition-all cursor-pointer ${
+                          isSelected
+                            ? "border-[#EF4444] bg-red-50/40 ring-2 ring-[#EF4444]/20 shadow-sm"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
+                        }`}
+                      >
+                        {/* Wiersz tytułowy + Badge + Cena */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-xs font-bold ${isSelected ? "text-[#EF4444]" : "text-slate-900"}`}>
+                                {mat.name}
+                              </span>
+                              {mat.badge && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                                  {mat.badge}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-relaxed">
+                              {mat.desc}
+                            </p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <span className="text-xs font-black text-slate-900 block">
+                              {mat.pricePerCm3.toFixed(2)} zł
+                            </span>
+                            <span className="text-[9px] text-slate-400 uppercase font-semibold">
+                              / cm³
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Właściwości techniczne */}
+                        <div className="flex items-center flex-wrap gap-1.5 mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-500 font-medium">
+                          <span className="bg-slate-100 px-2 py-0.5 rounded-md">
+                            🌡️ HDT: <strong className="text-slate-700">{mat.hdt}</strong>
+                          </span>
+                          <span className="bg-slate-100 px-2 py-0.5 rounded-md">
+                            ⚡ <strong className="text-slate-700">{mat.tensileStrength}</strong>
+                          </span>
+                          <span className="bg-slate-100 px-2 py-0.5 rounded-md">
+                            🛡️ UV: <strong className="text-slate-700">{mat.uvResistance}</strong>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 3. Dedykowany wybór kolorów dla wybranego materiału */}
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-600">
+                    <span>Kolor dla: {matConfig?.name}</span>
+                    <span className="text-slate-900 font-extrabold flex items-center gap-1.5">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full border border-slate-300 inline-block flex-shrink-0"
+                        style={{ backgroundColor: selectedColor }}
+                      />
+                      <span className="truncate max-w-[140px]">{activeColorObj?.name || "Wybrany"}</span>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-thin min-h-[36px]">
+                    {matConfig?.colors?.map((c) => {
+                      const isSelected = selectedColor === c.hex;
+                      return (
+                        <button
+                          key={c.id || c.hex}
+                          type="button"
+                          onClick={() => setSelectedColor(c.hex)}
+                          title={c.name}
+                          className={`w-7 h-7 rounded-full transition-all cursor-pointer flex-shrink-0 ${
+                            isSelected
+                              ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110 shadow-md"
+                              : "hover:scale-105 border border-slate-300"
+                          }`}
+                          style={{ backgroundColor: c.hex }}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              {/* Materiał */}
-              <div>
-                <span className="text-xs font-bold uppercase text-slate-400 block mb-3 tracking-wider">
-                  Materiał:
-                </span>
-                <div className="grid grid-cols-3 gap-2">
-                  {MATERIALS_LIST.map((mat) => (
-                    <div
-                      key={mat.id}
-                      onClick={() => setSelectedMaterial(mat.id)}
-                      className={`p-3 rounded-2xl border flex flex-col items-center justify-center text-center cursor-pointer transition ${
-                        selectedMaterial === mat.id
-                          ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] font-bold shadow-sm"
-                          : "border-slate-200 hover:border-slate-300 text-slate-700"
-                      }`}
-                    >
-                      <span className="text-xs font-bold block">{mat.id}</span>
-                      <span className="text-[10px] text-slate-400">{mat.desc}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
 
               {/* Infill */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">

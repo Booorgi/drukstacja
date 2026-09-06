@@ -5,7 +5,12 @@ import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabaseClient";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
-import { SUNLU_CATALOG } from "../lib/filament";
+import {
+  SUNLU_CATALOG,
+  KEYCHAIN_CATEGORIES,
+  KEYCHAIN_FILAMENTS,
+  ALL_KEYCHAIN_COLORS,
+} from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -54,7 +59,7 @@ class TextErrorBoundary extends React.Component {
 }
 
 // Spłaszczona lista kolorów do szybkiego wyszukiwania
-const ALL_FLAT_COLORS = Object.values(SUNLU_CATALOG.colors).flat();
+const ALL_FLAT_COLORS = ALL_KEYCHAIN_COLORS;
 
 const KeychainViewer3D = dynamic(
   () =>
@@ -771,80 +776,100 @@ const KeychainViewer3D = dynamic(
 );
 
 // -------------------------------------------------------------
-// KOMPONENT SELEKTORA Z PODZIAŁEM NA KATEGORIE I PRÓBKAMI DUAL/TRI
+// DEDYKOWANY SELEKTOR MATERIAŁÓW DLA GENERATORA BRELOKÓW
+// Skupiony wyłącznie na palecie PLA (Standard, Matte, Silk, Wood, Dual, Tri, Rainbow)
 // -------------------------------------------------------------
-import { TIERS, MATERIAL_TYPES, FILAMENT_DATABASE } from "../lib/filament";
-
 function SunluColorPaletteSelector({ selectedFilament, onSelectColor }) {
-  const [selectedTier, setSelectedTier] = useState("standard");
-  const [selectedType, setSelectedType] = useState("PLA");
+  // Wykrywamy kategorię aktualnie wybranego filamentu
+  const initialCategory = useMemo(() => {
+    if (!selectedFilament) return "PLA";
+    for (const [catId, filList] of Object.entries(KEYCHAIN_FILAMENTS)) {
+      if (filList.some((f) => f.id === selectedFilament.id || f.name === selectedFilament.name)) {
+        return catId;
+      }
+    }
+    return "PLA";
+  }, [selectedFilament]);
 
-  const filteredColors = useMemo(() => {
-    return FILAMENT_DATABASE.filter((item) => {
-      const matchTier = selectedTier === "all" || item.tier === selectedTier;
-      const matchType = selectedType === "all" || item.type === selectedType;
-      return matchTier && matchType;
-    });
-  }, [selectedTier, selectedType]);
+  const [activeCategory, setActiveCategory] = useState(initialCategory);
+
+  // Synchronizacja przy zmianie z zewnątrz
+  useEffect(() => {
+    if (selectedFilament) {
+      for (const [catId, filList] of Object.entries(KEYCHAIN_FILAMENTS)) {
+        if (filList.some((f) => f.id === selectedFilament.id || f.name === selectedFilament.name)) {
+          setActiveCategory(catId);
+          break;
+        }
+      }
+    }
+  }, [selectedFilament?.id]);
+
+  const currentFilaments = KEYCHAIN_FILAMENTS[activeCategory] || [];
 
   return (
-    <div className="space-y-2.5 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
-      {/* 1. Przełącznik Klasy (Standard vs Premium) */}
-      <div className="flex items-center gap-1.5 pb-1 overflow-x-auto scrollbar-thin">
-        {TIERS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setSelectedTier(t.id)}
-            className={`px-3 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition ${selectedTier === t.id
-              ? "bg-[#EF4444] text-white shadow-sm"
-              : "bg-white text-slate-600 hover:bg-slate-200 border border-slate-200"
-              }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* 2. Wybór Rodzaju (PLA, Silk, PET-G, Flex itp.) */}
+    <div className="space-y-2.5 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 shadow-inner">
+      {/* 1. Przełącznik kategorii (Czysta, dedykowana lista PLA dla breloków) */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-        {MATERIAL_TYPES.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setSelectedType(t.id)}
-            className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition ${selectedType === t.id
-              ? "bg-slate-900 text-white shadow-sm"
-              : "bg-white text-slate-600 hover:bg-slate-200 border border-slate-200"
+        {KEYCHAIN_CATEGORIES.map((cat) => {
+          const isActive = activeCategory === cat.id;
+          return (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => setActiveCategory(cat.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                isActive
+                  ? "bg-slate-900 text-white shadow-sm ring-1 ring-slate-900"
+                  : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200"
               }`}
-          >
-            {t.label}
-          </button>
-        ))}
+            >
+              <span>{cat.label}</span>
+              {cat.badge && (
+                <span
+                  className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold ${
+                    isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+                  }`}
+                >
+                  {cat.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* 3. Próbki kolorów */}
-      <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-thin min-h-[38px]">
-        {filteredColors.length === 0 ? (
-          <span className="text-[11px] text-slate-400 italic">Brak koloru w tej kombinacji</span>
+      {/* 2. Próbki kolorów dla wybranej kategorii */}
+      <div className="flex items-center gap-2 overflow-x-auto py-1.5 scrollbar-thin min-h-[42px]">
+        {currentFilaments.length === 0 ? (
+          <span className="text-[11px] text-slate-400 italic">Brak próbek w tej kategorii</span>
         ) : (
-          filteredColors.map((item) => {
-            const isSelected = selectedFilament?.id === item.id;
+          currentFilaments.map((item) => {
+            const isSelected = selectedFilament?.id === item.id || selectedFilament?.name === item.name;
+            const itemType = item.type || item.category || "single";
+
             return (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => onSelectColor(item)}
                 title={item.name}
-                className={`relative flex-shrink-0 w-7 h-7 rounded-full overflow-hidden transition-transform cursor-pointer ${isSelected
-                  ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110"
-                  : "hover:scale-105 border border-slate-300"
-                  }`}
+                className={`relative flex-shrink-0 w-8 h-8 rounded-full overflow-hidden transition-all cursor-pointer shadow-sm ${
+                  isSelected
+                    ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110 shadow-md"
+                    : "hover:scale-105 border border-slate-300/80"
+                }`}
               >
-                {item.category === "single" && (
-                  <div className="w-full h-full" style={{ backgroundColor: item.hex }} />
+                {itemType === "single" && (
+                  <div
+                    className="w-full h-full"
+                    style={{
+                      backgroundColor: item.hex,
+                      boxShadow: item.metalness ? "inset 0 1px 2px rgba(255,255,255,0.4)" : undefined,
+                    }}
+                  />
                 )}
-                {item.category === "dual" && (
+                {itemType === "dual" && item.colors && (
                   <div
                     className="w-full h-full"
                     style={{
@@ -852,7 +877,7 @@ function SunluColorPaletteSelector({ selectedFilament, onSelectColor }) {
                     }}
                   />
                 )}
-                {item.category === "tri" && (
+                {itemType === "tri" && item.colors && (
                   <div
                     className="w-full h-full"
                     style={{
@@ -860,7 +885,7 @@ function SunluColorPaletteSelector({ selectedFilament, onSelectColor }) {
                     }}
                   />
                 )}
-                {item.category === "rainbow" && (
+                {itemType === "rainbow" && item.colors && (
                   <div
                     className="w-full h-full"
                     style={{
@@ -874,11 +899,24 @@ function SunluColorPaletteSelector({ selectedFilament, onSelectColor }) {
         )}
       </div>
 
-      {/* 4. Nazwa aktywnego materiału */}
-      <div className="flex items-center justify-between pt-1 border-t border-slate-200 text-[11px] font-semibold text-slate-500">
-        <span>Wybrany:</span>
-        <span className="text-slate-900 font-bold truncate max-w-[220px]">
-          {selectedFilament?.name || "Brak"}
+      {/* 3. Wybrany kolor i informacja */}
+      <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs font-semibold text-slate-500">
+        <div className="flex items-center gap-1.5 truncate max-w-[280px]">
+          <span className="text-slate-400">Wybrany:</span>
+          {selectedFilament && (
+            <span
+              className="inline-block w-3.5 h-3.5 rounded-full border border-slate-300 flex-shrink-0"
+              style={{
+                backgroundColor: selectedFilament.hex || selectedFilament.colors?.[0] || "#333",
+              }}
+            />
+          )}
+          <span className="text-slate-900 font-bold truncate">
+            {selectedFilament?.name || "Domyślny"}
+          </span>
+        </div>
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+          PLA Bambu AMS
         </span>
       </div>
     </div>
@@ -893,7 +931,7 @@ export default function KeychainGenerator() {
 
   // Kształt bazy i wymiary
   const [shapeType, setShapeType] = useState("hexagon");
-  const [baseFilament, setBaseFilament] = useState(SUNLU_CATALOG.colors.PLA_PLUS[1]); // Czerń
+  const [baseFilament, setBaseFilament] = useState(KEYCHAIN_FILAMENTS.PLA[2] || KEYCHAIN_FILAMENTS.PLA[0]); // Czerń
   const [baseWidth, setBaseWidth] = useState(65);
   const [baseHeight, setBaseHeight] = useState(50);
   const [baseDiameter, setBaseDiameter] = useState(60);
@@ -904,7 +942,7 @@ export default function KeychainGenerator() {
   const [strokeEnabled, setStrokeEnabled] = useState(true);
   const [strokeWidth, setStrokeWidth] = useState(2.0);
   const [strokeThickness, setStrokeThickness] = useState(1.0);
-  const [strokeFilament, setStrokeFilament] = useState(SUNLU_CATALOG.colors.PLA_PLUS[1]);
+  const [strokeFilament, setStrokeFilament] = useState(KEYCHAIN_FILAMENTS.PLA[2] || KEYCHAIN_FILAMENTS.PLA[0]);
 
   const [activeTab, setActiveTab] = useState("shape");
 
@@ -914,12 +952,11 @@ export default function KeychainGenerator() {
 
   // Warstwy motywu
   const [layersConfig, setLayersConfig] = useState([
-    { id: 1, name: "Warstwa 1 (Baza)", filament: SUNLU_CATALOG.colors.PLA_PLUS[1], thickness: 0.6 },
-    { id: 2, name: "Warstwa 2 (Ciało)", filament: SUNLU_CATALOG.colors.PLA_PLUS[5], thickness: 0.7 },
-    { id: 3, name: "Warstwa 3 (Cienie)", filament: SUNLU_CATALOG.colors.PLA_PLUS[4], thickness: 0.8 },
-    { id: 4, name: "Warstwa 4 (Detale)", filament: SUNLU_CATALOG.colors.PLA_PLUS[0], thickness: 0.9 },
+    { id: 1, name: "Warstwa 1 (Baza)", filament: KEYCHAIN_FILAMENTS.PLA[2], thickness: 0.6 },
+    { id: 2, name: "Warstwa 2 (Ciało)", filament: KEYCHAIN_FILAMENTS.PLA[5], thickness: 0.7 },
+    { id: 3, name: "Warstwa 3 (Cienie)", filament: KEYCHAIN_FILAMENTS.PLA[3], thickness: 0.8 },
+    { id: 4, name: "Warstwa 4 (Detale)", filament: KEYCHAIN_FILAMENTS.PLA[0], thickness: 0.9 },
   ]);
-
 
   // --- NOWE: Tekst na breloku ---
   const [textContent, setTextContent] = useState("");
@@ -928,8 +965,9 @@ export default function KeychainGenerator() {
   const [textPosition, setTextPosition] = useState("bottom"); // top, center, bottom
   const [textOffsetX, setTextOffsetX] = useState(0);
   const [textOffsetY, setTextOffsetY] = useState(0);
-  const [textFilament, setTextFilament] = useState(SUNLU_CATALOG.colors.PLA_PLUS[1] || SUNLU_CATALOG.colors.PLA_PLUS[0]); // Domyślnie czerń dla kontrastu na jasnej płycie
+  const [textFilament, setTextFilament] = useState(KEYCHAIN_FILAMENTS.PLA[0] || KEYCHAIN_FILAMENTS.PLA[2]); // Biel domyślnie
   const [textThickness, setTextThickness] = useState(0.8);
+
 
   // --- NOWE: Layer View ---
   const [layerViewEnabled, setLayerViewEnabled] = useState(false);
@@ -1213,7 +1251,7 @@ export default function KeychainGenerator() {
       const { error } = await supabase.from("orders").insert({
         user_id: user.id,
         file_name: `Brelok [${shapeType.toUpperCase()}]: ${imageFileName} (${baseFilament.name})`,
-        material: `${baseFilament.tier === "premium" ? "Premium" : "Standard"} (${baseFilament.name})`,
+        material: `PLA Multi-Color AMS (${baseFilament.name})`,
         technology: "FDM Multi-Color AMS",
         layer_height: "0.20 mm",
         infill: 100,
@@ -1433,7 +1471,7 @@ export default function KeychainGenerator() {
               {/* 1. SELEKTOR KOLORU BAZY Z KATEGORIAMI */}
               <div>
                 <span className="text-xs font-bold uppercase text-slate-400 block mb-1.5 tracking-wider">
-                  Kolor płyty bazowej (Sunlu):
+                  Kolor płyty bazowej (Filament PLA):
                 </span>
                 <SunluColorPaletteSelector
                   selectedFilament={baseFilament}
