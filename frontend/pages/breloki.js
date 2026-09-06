@@ -45,105 +45,154 @@ const KeychainViewer3D = dynamic(
       // -------------------------------------------------------------
       // SHADER DUAL / TRI / SINGLE COLOR W THREE.JS
       // -------------------------------------------------------------
+      // -------------------------------------------------------------
+      // FOTOREALISTYCZNY MATERIAŁ DUAL / TRI / SINGLE COLOR DLA THREE.JS
+      // -------------------------------------------------------------
       function SunluDynamicMaterial({ filamentInfo, clippingPlanes }) {
-        const matRef = useRef();
-
-        const shaderData = useMemo(() => {
-          if (!filamentInfo) return null;
-
-          if (filamentInfo.type === "dual" && filamentInfo.colors) {
-            return {
-              uniforms: {
-                c1: { value: new THREE.Color(filamentInfo.colors[0]) },
-                c2: { value: new THREE.Color(filamentInfo.colors[1]) },
-              },
-              vertexShader: `
-                varying vec3 vNormal;
-                varying vec3 vViewDir;
-                void main() {
-                  vNormal = normalize(normalMatrix * normal);
-                  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                  vViewDir = normalize(-mvPosition.xyz);
-                  gl_Position = projectionMatrix * mvPosition;
-                }
-              `,
-              fragmentShader: `
-                uniform vec3 c1;
-                uniform vec3 c2;
-                varying vec3 vNormal;
-                varying vec3 vViewDir;
-                void main() {
-                  float factor = dot(vNormal, vec3(1.0, 0.0, 0.5)) * 0.5 + 0.5;
-                  vec3 finalColor = mix(c1, c2, factor);
-                  float light = clamp(dot(vNormal, normalize(vec3(0.5, 1.0, 0.8))), 0.2, 1.0);
-                  gl_FragColor = vec4(finalColor * light, 1.0);
-                }
-              `,
-            };
+        const material = useMemo(() => {
+          if (!filamentInfo) {
+            return new THREE.MeshStandardMaterial({
+              color: "#3C3C3C",
+              roughness: 0.4,
+              metalness: 0.05,
+              clippingPlanes,
+            });
           }
 
-          if (filamentInfo.type === "tri" && filamentInfo.colors) {
-            return {
-              uniforms: {
-                c1: { value: new THREE.Color(filamentInfo.colors[0]) },
-                c2: { value: new THREE.Color(filamentInfo.colors[1]) },
-                c3: { value: new THREE.Color(filamentInfo.colors[2]) },
-              },
-              vertexShader: `
-                varying vec3 vNormal;
-                void main() {
-                  vNormal = normalize(normalMatrix * normal);
-                  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-              `,
-              fragmentShader: `
-                uniform vec3 c1;
-                uniform vec3 c2;
-                uniform vec3 c3;
-                varying vec3 vNormal;
-                void main() {
-                  float angle = atan(vNormal.y, vNormal.x); // -PI do PI
-                  float normAngle = fract((angle + 3.14159) / 6.28318 * 3.0);
-                  vec3 col = c1;
-                  if (normAngle < 0.33) {
-                    col = mix(c1, c2, normAngle * 3.0);
-                  } else if (normAngle < 0.66) {
-                    col = mix(c2, c3, (normAngle - 0.33) * 3.0);
-                  } else {
-                    col = mix(c3, c1, (normAngle - 0.66) * 3.0);
-                  }
-                  float light = clamp(dot(vNormal, normalize(vec3(0.4, 0.8, 0.8))), 0.25, 1.0);
-                  gl_FragColor = vec4(col * light, 1.0);
-                }
-              `,
-            };
+          // DLA ZWYKŁYCH FILAMENTÓW (PLA+, PETG, SILK SINGLE)
+          if (filamentInfo.type === "single" || !filamentInfo.colors) {
+            return new THREE.MeshStandardMaterial({
+              color: filamentInfo.hex,
+              roughness: filamentInfo.roughness ?? 0.38,
+              metalness: filamentInfo.metalness ?? 0.08,
+              clippingPlanes,
+            });
           }
 
-          return null;
-        }, [filamentInfo]);
+          // DLA DUAL-COLOR (PRZEJŚCIE 2 KOLORÓW W ZALEŻNOŚCI OD KĄTA KAMERY)
+          if (filamentInfo.type === "dual") {
+            const mat = new THREE.MeshStandardMaterial({
+              roughness: 0.28,
+              metalness: 0.15,
+              clippingPlanes,
+            });
 
-        if (shaderData) {
-          return (
-            <shaderMaterial
-              ref={matRef}
-              attach="material"
-              clippingPlanes={clippingPlanes}
-              uniforms={shaderData.uniforms}
-              vertexShader={shaderData.vertexShader}
-              fragmentShader={shaderData.fragmentShader}
-              side={THREE.DoubleSide}
-            />
-          );
-        }
+            const colA = new THREE.Color(filamentInfo.colors[0]);
+            const colB = new THREE.Color(filamentInfo.colors[1]);
 
-        return (
-          <meshStandardMaterial
-            color={filamentInfo?.hex || "#3C3C3C"}
-            roughness={filamentInfo?.roughness ?? 0.38}
-            metalness={filamentInfo?.metalness ?? 0.05}
-            clippingPlanes={clippingPlanes}
-          />
-        );
+            mat.onBeforeCompile = (shader) => {
+              shader.uniforms.uColorA = { value: colA };
+              shader.uniforms.uColorB = { value: colB };
+
+              shader.vertexShader = `
+                varying vec3 vWorldNormal;
+                varying vec3 vCamDir;
+                ${shader.vertexShader}
+              `;
+
+              shader.vertexShader = shader.vertexShader.replace(
+                "#include <begin_vertex>",
+                `
+                #include <begin_vertex>
+                vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+                vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
+                vCamDir = normalize(cameraPosition - worldPos.xyz);
+                `
+              );
+
+              shader.fragmentShader = `
+                uniform vec3 uColorA;
+                uniform vec3 uColorB;
+                varying vec3 vWorldNormal;
+                varying vec3 vCamDir;
+                ${shader.fragmentShader}
+              `;
+
+              shader.fragmentShader = shader.fragmentShader.replace(
+                "#include <color_fragment>",
+                `
+                #include <color_fragment>
+                // Rzutowanie kąta patrzenia na płaszczyznę poziomą modelu
+                float viewDot = dot(vCamDir, vec3(1.0, 0.0, 0.0));
+                float blend = clamp(viewDot * 0.7 + 0.5, 0.0, 1.0);
+                diffuseColor.rgb = mix(uColorA, uColorB, blend);
+                `
+              );
+            };
+
+            return mat;
+          }
+
+          // DLA TRI-COLOR (3 KOLORY WOKÓŁ OSI OBROTU MODELU)
+          if (filamentInfo.type === "tri" || filamentInfo.type === "rainbow") {
+            const mat = new THREE.MeshStandardMaterial({
+              roughness: 0.28,
+              metalness: 0.18,
+              clippingPlanes,
+            });
+
+            const colors = filamentInfo.colors.slice(0, 3).map((c) => new THREE.Color(c));
+
+            mat.onBeforeCompile = (shader) => {
+              shader.uniforms.uC1 = { value: colors[0] };
+              shader.uniforms.uC2 = { value: colors[1] };
+              shader.uniforms.uC3 = { value: colors[2] };
+
+              shader.vertexShader = `
+                varying vec3 vWorldNormal;
+                varying vec3 vCamDir;
+                ${shader.vertexShader}
+              `;
+
+              shader.vertexShader = shader.vertexShader.replace(
+                "#include <begin_vertex>",
+                `
+                #include <begin_vertex>
+                vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+                vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
+                vCamDir = normalize(cameraPosition - worldPos.xyz);
+                `
+              );
+
+              shader.fragmentShader = `
+                uniform vec3 uC1;
+                uniform vec3 uC2;
+                uniform vec3 uC3;
+                varying vec3 vWorldNormal;
+                varying vec3 vCamDir;
+                ${shader.fragmentShader}
+              `;
+
+              shader.fragmentShader = shader.fragmentShader.replace(
+                "#include <color_fragment>",
+                `
+                #include <color_fragment>
+                float angle = atan(vCamDir.y, vCamDir.x); // Kąt obserwacji kamery
+                float t = fract((angle + 3.14159) / 6.28318 * 1.5);
+                vec3 finalC = uC1;
+                if (t < 0.333) {
+                  finalC = mix(uC1, uC2, t * 3.0);
+                } else if (t < 0.666) {
+                  finalC = mix(uC2, uC3, (t - 0.333) * 3.0);
+                } else {
+                  finalC = mix(uC3, uC1, (t - 0.666) * 3.0);
+                }
+                diffuseColor.rgb = finalC;
+                `
+              );
+            };
+
+            return mat;
+          }
+
+          return new THREE.MeshStandardMaterial({
+            color: filamentInfo.hex,
+            roughness: 0.4,
+            clippingPlanes,
+          });
+        }, [filamentInfo, clippingPlanes]);
+
+        return <primitive object={material} attach="material" />;
       }
 
       function PlateStrokeMesh({
