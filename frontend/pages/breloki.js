@@ -63,10 +63,12 @@ const KeychainViewer3D = dynamic(
       import("@react-three/drei"),
       import("three-stdlib"),
       import("three"),
-    ]).then(([fiber, drei, stdlib, THREE]) => {
+      import("three/examples/jsm/libs/opentype.module.js"),
+    ]).then(([fiber, drei, stdlib, THREE, opentypeModule]) => {
       const { Canvas, useFrame, useThree } = fiber;
-      const { OrbitControls, RoundedBox, Text } = drei;
+      const { OrbitControls, RoundedBox } = drei;
       const { SVGLoader, STLExporter } = stdlib;
+      const opentype = opentypeModule.default || opentypeModule;
 
       // -------------------------------------------------------------
       // FOTOREALISTYCZNY MATERIAŁ DUAL / TRI / SINGLE COLOR DLA THREE.JS
@@ -426,52 +428,135 @@ const KeychainViewer3D = dynamic(
         );
       }
 
-      // Komponent tekstu 3D
+      // Cache pobranych fontów opentype w pamięci klienta
+      const fontCache = {};
+
+      async function getOrLoadFont(fontUrl) {
+        if (fontCache[fontUrl]) return fontCache[fontUrl];
+        try {
+          const res = await fetch(fontUrl);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const buffer = await res.arrayBuffer();
+          const font = opentype.parse(buffer);
+          fontCache[fontUrl] = font;
+          return font;
+        } catch (e) {
+          console.warn(`Nie udało się załadować fontu ${fontUrl}:`, e);
+          return null;
+        }
+      }
+
+      // Komponent prawdziwego wytłaczanego tekstu 3D
       function TextOverlay3D({
         textContent,
         textFont,
-        textSize,
-        textPosition,
+        textSize = 6,
+        textPosition = "bottom",
+        textOffsetX = 0,
+        textOffsetY = 0,
         textFilament,
-        textThickness,
-        baseThickness,
-        baseWidth,
-        baseHeight,
-        baseDiameter,
-        shapeType,
-        layerSeparation,
+        textThickness = 0.8,
+        baseThickness = 3,
+        baseWidth = 50,
+        baseHeight = 80,
+        baseDiameter = 60,
+        shapeType = "rect",
+        layerSeparation = 0,
+        clipPlanes,
       }) {
-        if (!textContent || typeof textContent !== "string" || textContent.trim() === "") return null;
+        const [shapes, setShapes] = useState([]);
 
-        const matchedFont = AVAILABLE_FONTS.find(f => f.id === textFont);
+        const matchedFont = AVAILABLE_FONTS.find((f) => f.id === textFont);
         const fontUrl = matchedFont ? matchedFont.url : "/fonts/roboto.woff";
 
-        // Oblicz pozycję Y w zależności od textPosition
-        let yPos = 0;
-        const halfH = shapeType === "rect" ? (baseHeight || 80) / 2 : (baseDiameter || 60) / 2;
-        if (textPosition === "top") yPos = halfH * 0.55;
-        else if (textPosition === "bottom") yPos = -halfH * 0.55;
-        else yPos = 0;
+        useEffect(() => {
+          if (!textContent || typeof textContent !== "string" || textContent.trim() === "") {
+            setShapes([]);
+            return;
+          }
 
-        const zPos = (baseThickness || 3) / 2 + 0.15 + (layerSeparation || 0) * 5;
+          let isMounted = true;
+          getOrLoadFont(fontUrl).then((font) => {
+            if (!isMounted) return;
+            const targetFont = font || fontCache["/fonts/roboto.woff"];
+            if (!targetFont) {
+              getOrLoadFont("/fonts/roboto.woff").then((fallback) => {
+                if (!isMounted || !fallback) return;
+                generateTextShapes(fallback);
+              });
+              return;
+            }
+            generateTextShapes(targetFont);
+          });
+
+          function generateTextShapes(loadedFont) {
+            try {
+              const size = Math.max(2, textSize || 6);
+              const p = loadedFont.getPath(textContent, 0, 0, size);
+              const bbox = p.getBoundingBox();
+              const centerX = (bbox.x1 + bbox.x2) / 2;
+              const centerY = (bbox.y1 + bbox.y2) / 2;
+
+              const sp = new THREE.ShapePath();
+              p.commands.forEach((cmd) => {
+                const mapX = (x) => x - centerX;
+                const mapY = (y) => -(y - centerY);
+
+                if (cmd.type === "M") sp.moveTo(mapX(cmd.x), mapY(cmd.y));
+                else if (cmd.type === "L") sp.lineTo(mapX(cmd.x), mapY(cmd.y));
+                else if (cmd.type === "Q") sp.quadraticCurveTo(mapX(cmd.x1), mapY(cmd.y1), mapX(cmd.x), mapY(cmd.y));
+                else if (cmd.type === "C") sp.bezierCurveTo(mapX(cmd.x1), mapY(cmd.y1), mapX(cmd.x2), mapY(cmd.y2), mapX(cmd.x), mapY(cmd.y));
+                else if (cmd.type === "Z") sp.currentPath.closePath();
+              });
+
+              const generatedShapes = SVGLoader.createShapes(sp);
+              if (isMounted) setShapes(generatedShapes);
+            } catch (err) {
+              console.warn("Błąd konwersji tekstu na kształty 3D:", err);
+              if (isMounted) setShapes([]);
+            }
+          }
+
+          return () => {
+            isMounted = false;
+          };
+        }, [textContent, fontUrl, textSize]);
+
+        if (!shapes || shapes.length === 0) return null;
+
+        // Oblicz bazową pozycję Y wg wybranego presetu (Góra / Środek / Dół)
+        let baseY = 0;
+        const halfH = shapeType === "rect" ? (baseHeight || 80) / 2 : (baseDiameter || 60) / 2;
+        if (textPosition === "top") baseY = halfH * 0.65;
+        else if (textPosition === "bottom") baseY = -halfH * 0.65;
+        else baseY = 0;
+
+        const finalX = textOffsetX || 0;
+        const finalY = baseY + (textOffsetY || 0);
+
+        // Wysokość Z: tekst leży na płycie bazowej (lub unosi się w trybie warstw) i jest wypukły
+        const zPos = (baseThickness || 3) / 2 + 0.05 + (layerSeparation || 0) * 5;
 
         return (
-          <Text
-            font={fontUrl}
-            fontSize={textSize || 6}
-            color={textFilament?.hex || "#FFFFFF"}
-            anchorX="center"
-            anchorY="middle"
-            position={[0, yPos, zPos]}
-            maxWidth={shapeType === "rect" ? (baseWidth || 50) * 0.85 : (baseDiameter || 60) * 0.75}
-          >
-            {textContent}
-            <meshStandardMaterial
-              color={textFilament?.hex || "#FFFFFF"}
-              roughness={textFilament?.roughness ?? 0.38}
-              metalness={textFilament?.metalness ?? 0.08}
-            />
-          </Text>
+          <group position={[finalX, finalY, zPos]}>
+            {shapes.map((shape, idx) => (
+              <mesh key={`text-mesh-${idx}`} renderOrder={25}>
+                <extrudeGeometry
+                  args={[
+                    shape,
+                    {
+                      depth: Math.max(0.4, textThickness || 0.8),
+                      bevelEnabled: false,
+                    },
+                  ]}
+                />
+                <SunluDynamicMaterial
+                  filamentInfo={textFilament}
+                  clippingPlanes={clipPlanes}
+                />
+              </mesh>
+            ))}
+          </group>
         );
       }
 
@@ -499,6 +584,8 @@ const KeychainViewer3D = dynamic(
         textFont,
         textSize,
         textPosition,
+        textOffsetX,
+        textOffsetY,
         textFilament,
         textThickness,
       }) {
@@ -512,6 +599,31 @@ const KeychainViewer3D = dynamic(
           }
           return { width: baseDiameter, height: baseDiameter };
         }, [shapeType, baseWidth, baseHeight, baseDiameter, radius]);
+
+        const clipPlanes = useMemo(() => {
+          const margin = strokeEnabled ? strokeWidth : 0.2;
+          if (shapeType === "rect") {
+            const hw = baseWidth / 2 - margin;
+            const hh = baseHeight / 2 - margin;
+            return [
+              new THREE.Plane(new THREE.Vector3(1, 0, 0), hw),
+              new THREE.Plane(new THREE.Vector3(-1, 0, 0), hw),
+              new THREE.Plane(new THREE.Vector3(0, 1, 0), hh),
+              new THREE.Plane(new THREE.Vector3(0, -1, 0), hh),
+            ];
+          }
+          if (shapeType === "hexagon") {
+            const r = (baseDiameter / 2 - margin) * 0.866;
+            const planes = [];
+            for (let i = 0; i < 6; i++) {
+              const angle = (i * Math.PI) / 3 + Math.PI / 6;
+              const normal = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0);
+              planes.push(new THREE.Plane(normal, r));
+            }
+            return planes;
+          }
+          return [];
+        }, [shapeType, baseWidth, baseHeight, baseDiameter, strokeEnabled, strokeWidth]);
 
         return (
           <group>
@@ -601,6 +713,8 @@ const KeychainViewer3D = dynamic(
                   textFont={textFont}
                   textSize={textSize}
                   textPosition={textPosition}
+                  textOffsetX={textOffsetX}
+                  textOffsetY={textOffsetY}
                   textFilament={textFilament}
                   textThickness={textThickness}
                   baseThickness={baseThickness}
@@ -609,6 +723,7 @@ const KeychainViewer3D = dynamic(
                   baseDiameter={baseDiameter}
                   shapeType={shapeType}
                   layerSeparation={layerSeparation}
+                  clipPlanes={clipPlanes}
                 />
               </React.Suspense>
             </TextErrorBoundary>
@@ -788,7 +903,9 @@ export default function KeychainGenerator() {
   const [textFont, setTextFont] = useState("roboto");
   const [textSize, setTextSize] = useState(6);
   const [textPosition, setTextPosition] = useState("bottom"); // top, center, bottom
-  const [textFilament, setTextFilament] = useState(SUNLU_CATALOG.colors.PLA_PLUS[0]); // Biel
+  const [textOffsetX, setTextOffsetX] = useState(0);
+  const [textOffsetY, setTextOffsetY] = useState(0);
+  const [textFilament, setTextFilament] = useState(SUNLU_CATALOG.colors.PLA_PLUS[1] || SUNLU_CATALOG.colors.PLA_PLUS[0]); // Domyślnie czerń dla kontrastu na jasnej płycie
   const [textThickness, setTextThickness] = useState(0.8);
 
   // --- NOWE: Layer View ---
@@ -1229,6 +1346,8 @@ export default function KeychainGenerator() {
                 textFont={textFont}
                 textSize={textSize}
                 textPosition={textPosition}
+                textOffsetX={textOffsetX}
+                textOffsetY={textOffsetY}
                 textFilament={textFilament}
                 textThickness={textThickness}
               />
@@ -1552,27 +1671,58 @@ export default function KeychainGenerator() {
                       </div>
                     </div>
 
-                    {/* Rozmiar */}
-                    <div>
-                      <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
-                        <span>Rozmiar tekstu</span>
-                        <span className="text-[#EF4444]">{textSize} mm</span>
+                    {/* Rozmiar i Wypukłość 3D */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                          <span>Rozmiar tekstu</span>
+                          <span className="text-[#EF4444]">{textSize} mm</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="3"
+                          max="18"
+                          step="0.5"
+                          value={textSize}
+                          onChange={(e) => setTextSize(parseFloat(e.target.value))}
+                          className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                        />
                       </div>
-                      <input
-                        type="range"
-                        min="3"
-                        max="18"
-                        step="0.5"
-                        value={textSize}
-                        onChange={(e) => setTextSize(parseFloat(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
-                      />
+                      <div>
+                        <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                          <span>Wypukłość 3D</span>
+                          <span className="text-[#EF4444]">{textThickness} mm</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.4"
+                          max="2.5"
+                          step="0.1"
+                          value={textThickness}
+                          onChange={(e) => setTextThickness(parseFloat(e.target.value))}
+                          className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                        />
+                      </div>
                     </div>
 
-                    {/* Pozycja */}
+                    {/* Pozycja tekstu i przesunięcie */}
                     <div>
-                      <span className="text-xs font-bold text-slate-800 block mb-1.5">Pozycja</span>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs font-bold text-slate-800">Pozycja tekstu</span>
+                        {(textOffsetX !== 0 || textOffsetY !== 0) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTextOffsetX(0);
+                              setTextOffsetY(0);
+                            }}
+                            className="text-[10px] font-bold text-[#EF4444] hover:underline transition"
+                          >
+                            Wyzeruj przesunięcie
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 mb-2.5">
                         {[
                           { id: "top", label: "Góra" },
                           { id: "center", label: "Środek" },
@@ -1581,9 +1731,13 @@ export default function KeychainGenerator() {
                           <button
                             key={pos.id}
                             type="button"
-                            onClick={() => setTextPosition(pos.id)}
+                            onClick={() => {
+                              setTextPosition(pos.id);
+                              setTextOffsetX(0);
+                              setTextOffsetY(0);
+                            }}
                             className={`py-1.5 rounded-xl text-[11px] font-bold border transition ${
-                              textPosition === pos.id
+                              textPosition === pos.id && textOffsetX === 0 && textOffsetY === 0
                                 ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
                                 : "border-slate-200 text-slate-600 hover:border-slate-300"
                             }`}
@@ -1591,6 +1745,40 @@ export default function KeychainGenerator() {
                             {pos.label}
                           </button>
                         ))}
+                      </div>
+
+                      {/* Suwaki swobodnego przesuwania po modelu X i Y */}
+                      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200/80">
+                        <div>
+                          <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-0.5">
+                            <span>Poziom (X)</span>
+                            <span className="text-slate-900">{textOffsetX} mm</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="-35"
+                            max="35"
+                            step="1"
+                            value={textOffsetX}
+                            onChange={(e) => setTextOffsetX(parseInt(e.target.value))}
+                            className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                          />
+                        </div>
+                        <div>
+                          <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-0.5">
+                            <span>Pion (Y)</span>
+                            <span className="text-slate-900">{textOffsetY} mm</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="-35"
+                            max="35"
+                            step="1"
+                            value={textOffsetY}
+                            onChange={(e) => setTextOffsetY(parseInt(e.target.value))}
+                            className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
