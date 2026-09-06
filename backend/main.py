@@ -57,15 +57,42 @@ except Exception as _e:
     REMBG_AVAILABLE = False
 
 
+def remove_checkerboard_pattern(bgr_img):
+    """Wykrywa i neutralizuje namalowaną szachownicę przezroczystości (biało-szare kwadraty)."""
+    gray = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape[:2]
+
+    # Szachownica zazwyczaj składa się z pikseli bardzo jasnych (240-255) i jasnoszarych (190-215)
+    high_contrast_edges = cv2.Canny(gray, 100, 200)
+    
+    # Sprawdzamy czy na obrzeżach występuje gęsta siatka linii
+    border_zone = np.zeros((h, w), dtype=bool)
+    border_zone[:int(h * 0.15), :] = True
+    border_zone[int(h * 0.85):, :] = True
+    border_zone[:, :int(w * 0.15)] = True
+    border_zone[:, int(w * 0.85):] = True
+
+    edge_density = np.mean(high_contrast_edges[border_zone] > 0)
+    
+    # Jeśli na brzegach jest nienaturalnie gęsta siatka krawędzi (charakterystyczna dla szachownicy)
+    if edge_density > 0.08:
+        # Maska szarych i białych pól tła
+        checker_mask = (gray > 185) & (gray < 255)
+        # Oczyszczamy tło
+        clean_bgr = bgr_img.copy()
+        clean_bgr[checker_mask] = [255, 255, 255]
+        return clean_bgr, True
+
+    return bgr_img, False
+
+
 def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool = False):
-    # 1. Próba wycięcia przez rembg (jeśli dostępne i keep_bg == False)
     processed_bytes = image_bytes
     if not keep_bg and REMBG_AVAILABLE:
         try:
             processed_bytes = rembg_remove(image_bytes)
         except Exception as err:
             print(f"[WARN] Błąd rembg: {err}")
-            processed_bytes = image_bytes
 
     nparr = np.frombuffer(processed_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
@@ -76,11 +103,10 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     if img is None:
         raise ValueError("Nie udało się zdekodować przesłanego obrazu.")
 
-    # 2. Sprawdzenie kanału alfa
+    # 1. Prawdziwa przezroczystość alfa (jeśli plik faktycznie ma kanał alfa)
     has_alpha = False
     if len(img.shape) == 3 and img.shape[2] == 4:
         alpha_raw = img[:, :, 3] > 25
-        # Guardrail: jeśli kanał alfa zjadł prawie wszystko (<10%), ignorujemy go
         if np.sum(alpha_raw) > (0.10 * alpha_raw.size):
             has_alpha = True
             alpha_mask = alpha_raw
@@ -94,15 +120,18 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
     bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    # 3. Wzmocnienie krawędzi i kontrastu (CLAHE)
-    lab = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2LAB)
+    # 2. Usuwanie fałszywej szachownicy w pikselach
+    bgr_clean, had_checker = remove_checkerboard_pattern(bgr_resized)
+
+    # 3. Poprawa kontrastu (CLAHE)
+    lab = cv2.cvtColor(bgr_clean, cv2.COLOR_BGR2LAB)
     l_chan, a_chan, b_chan = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
     l_clahe = clahe.apply(l_chan)
     bgr_clean = cv2.cvtColor(cv2.merge((l_clahe, a_chan, b_chan)), cv2.COLOR_LAB2BGR)
     bgr_clean = cv2.bilateralFilter(bgr_clean, d=5, sigmaColor=50, sigmaSpace=50)
 
-    # 4. Ustalenie maski obiektu
+    # 4. Wyznaczanie maski obiektu
     if has_alpha:
         alpha_resized = cv2.resize(
             alpha_mask.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
@@ -110,18 +139,21 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     elif keep_bg:
         alpha_resized = np.ones((new_h, new_w), dtype=bool)
     else:
-        # Delikatny FloodFill z 4 rogów
         flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
         bgr_flood = bgr_clean.copy()
-        diff_tol = (18, 18, 18)
+        diff_tol = (24, 24, 24)
         for seed in [(0, 0), (new_w - 1, 0), (0, new_h - 1), (new_w - 1, new_h - 1)]:
             cv2.floodFill(bgr_flood, flood_mask, seed, (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
         bg_mask = (flood_mask[1:-1, 1:-1] == 1)
         candidate_mask = ~bg_mask
 
-        # Jeśli FloodFill wyciął za dużo (>85% kadru zniknęło) lub za mało (<5%), bierzemy cały obraz
+        # Jeśli wykryto szachownicę, piksele bieli/jasnej szarości na obrzeżach są tłem
+        if had_checker:
+            gray_res = cv2.cvtColor(bgr_clean, cv2.COLOR_BGR2GRAY)
+            candidate_mask = candidate_mask & (gray_res < 220)
+
         fg_ratio = np.sum(candidate_mask) / (new_w * new_h)
-        if fg_ratio < 0.15 or fg_ratio > 0.96:
+        if fg_ratio < 0.10:
             alpha_resized = np.ones((new_h, new_w), dtype=bool)
         else:
             alpha_resized = candidate_mask
@@ -141,7 +173,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     quantized_map = np.full((new_h, new_w), -1, dtype=int)
     quantized_map[alpha_resized] = kmeans.labels_
 
-    # 6. Bounding Box & Fit
+    # 6. Wyznaczenie środka i dopasowanie skali (tylko na podstawie właściwego psa)
     y_indices, x_indices = np.where(alpha_resized)
     if len(x_indices) > 0 and len(y_indices) > 0:
         min_x, max_x = np.min(x_indices), np.max(x_indices)
@@ -180,47 +212,15 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            # 1. Ignoruj mikroskopijne paprochy
-            if area < 14:
+            # Ignoruj pojedyncze kafelki szachownicy i drobne szumy
+            if area < 25:
                 continue
 
-            # 2. Likwidacja "znaczka pocztowego" (odrzucenie tła dotykającego krawędzi kadru)
+            # Odrzuć tło dotykające zewnętrznych ścianek kadru
             bx, by, bw, bh = cv2.boundingRect(cnt)
             touches_border = (bx <= 2) or (by <= 2) or ((bx + bw) >= new_w - 2) or ((by + bh) >= new_h - 2)
-            # Jeśli kontur dotyka ramki zdjęcia i stanowi ponad 35% całego kadru, jest to tło
-            if touches_border and (area > (0.35 * new_w * new_h)):
+            if touches_border and (area > (0.28 * new_w * new_h)):
                 continue
-
-            # Jeśli kontur zajmuje niemal cały kadr
-            if area > (0.85 * (new_w * new_h)):
-                continue
-
-            perimeter = cv2.arcLength(cnt, True)
-            epsilon = 0.0016 * perimeter
-            approx_cnt = cv2.approxPolyDP(cnt, epsilon, True)
-
-            pts = approx_cnt.reshape(-1, 2)
-            if len(pts) < 3:
-                continue
-
-            def map_pt(pt):
-                nx = 50.0 + (pt[0] - center_x) * scale_fit
-                ny = 50.0 + (pt[1] - center_y) * scale_fit
-                return nx, ny
-
-            start_x, start_y = map_pt(pts[0])
-            path_d = f"M {start_x:.2f} {start_y:.2f} "
-
-            for pt in pts[1:]:
-                x, y = map_pt(pt)
-                path_d += f"L {x:.2f} {y:.2f} "
-            path_d += "Z"
-
-            collected_paths.append({
-                "area": area,
-                "cluster_idx": cluster_idx,
-                "path_d": path_d
-            })
 
             perimeter = cv2.arcLength(cnt, True)
             epsilon = 0.0016 * perimeter
