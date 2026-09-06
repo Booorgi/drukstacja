@@ -81,6 +81,7 @@ export default function Home() {
 
   const [layerHeight, setLayerHeight] = useState(0.20);
   const [infill, setInfill] = useState(20);
+  const [isReslicing, setIsReslicing] = useState(false);
   const [showSupports, setShowSupports] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
@@ -165,6 +166,9 @@ export default function Home() {
 
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("layer_height", String(layerHeight));
+    formData.append("infill", String(infill));
+    formData.append("filament_type", matConfig?.name?.split(" ")[0] || "PLA");
 
     try {
       const res = await fetch(`${API_URL || ""}/api/analyze-model`, {
@@ -240,11 +244,66 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  // Dynamiczne ponowne cięcie modelu (reslicing) przy zmianie infill, layerHeight lub materiału
+  useEffect(() => {
+    if (!analysisData || analysisData.instant_pricing === false) return;
+    const modelKey = analysisData.preview_stl_key || analysisData.file_key;
+    if (!modelKey) return;
+
+    const timer = setTimeout(async () => {
+      setIsReslicing(true);
+      try {
+        const res = await fetch(`${API_URL || ""}/api/reslice-model`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            preview_stl_key: analysisData.preview_stl_key,
+            file_key: analysisData.file_key,
+            layer_height: parseFloat(layerHeight),
+            infill: parseInt(infill),
+            filament_type: matConfig?.name?.split(" ")[0] || "PLA",
+            quantity: quantity,
+          }),
+        });
+
+        if (res.ok) {
+          const resliceData = await res.json();
+          setAnalysisData((prev) => ({
+            ...prev,
+            print_time_hours: resliceData.print_time_hours,
+            print_time_formatted: resliceData.print_time_formatted,
+            filament_weight_g: resliceData.filament_weight_g,
+            filament_length_m: resliceData.filament_length_m,
+            filament_volume_cm3: resliceData.filament_volume_cm3,
+            layer_height: resliceData.layer_height,
+            infill: resliceData.infill,
+            has_supports: resliceData.has_supports,
+            support_lines: resliceData.support_lines?.length > 0 ? resliceData.support_lines : prev.support_lines,
+            slicer_engine: resliceData.engine,
+            price_breakdown: resliceData.price_breakdown,
+          }));
+        }
+      } catch (err) {
+        console.warn("Błąd reslicowania:", err);
+      } finally {
+        setIsReslicing(false);
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [layerHeight, infill, selectedMaterial]);
+
   const volume = analysisData?.volume_cm3 || 32.5;
   const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
   const activeColorObj = matConfig?.colors?.find((c) => c.hex === selectedColor) || matConfig?.colors?.[0];
   const layerMultiplier = layerHeight === 0.12 ? 1.25 : layerHeight === 0.28 ? 0.88 : 1.0;
-  const unitPrice = Math.max(15, volume * (matConfig?.pricePerCm3 || 0.38) * (1 + infill / 100) * layerMultiplier).toFixed(2);
+  
+  // Jeśli slicer zwrócił wycenę opartą na G-code, używamy jej z pierwszeństwem
+  const unitPrice = (
+    analysisData?.price_breakdown?.unit_price_pln != null
+      ? analysisData.price_breakdown.unit_price_pln
+      : Math.max(15, volume * (matConfig?.pricePerCm3 || 0.38) * (1 + infill / 100) * layerMultiplier)
+  ).toFixed(2);
   const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
 
   // Rekomendowane zastosowania dla karty specyfikacji technicznej
@@ -299,12 +358,15 @@ export default function Home() {
         user_id: user.id,
         file_name: selectedFile?.name || "Model 3D STL",
         material: `${matConfig.name} (${activeColorObj?.name || selectedColor})`,
-        technology:
+        technology: `${
           matConfig.group === "composite"
             ? "FDM Hardened Steel 0.4mm (Carbon)"
             : matConfig.group === "flex"
             ? "FDM Direct Drive 0.4mm (Flex TPU)"
-            : "FDM Precision 0.4mm",
+            : "FDM Precision 0.4mm"
+        }${analysisData?.print_time_formatted ? ` | Czas: ${analysisData.print_time_formatted}` : ""}${
+          analysisData?.filament_weight_g ? ` | Waga: ${analysisData.filament_weight_g}g` : ""
+        }`,
         layer_height: `${layerHeight} mm`,
         infill: infill,
         clean_supports: true,
@@ -500,8 +562,68 @@ export default function Home() {
               )}
             </div>
 
+            {/* PASEK TELEMETRII SLICERA: CZAS DRUKU, WAGA FILAMENTU, DŁUGOŚĆ ŚCIEŻKI */}
+            {analysisData && analysisData.instant_pricing !== false && (
+              <div className="z-10 py-2 px-3 rounded-2xl bg-slate-50/95 border border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs mb-2">
+                <div className="flex items-center gap-4">
+                  {/* Czas druku */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm">⏱️</span>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Czas druku</span>
+                      <span className="font-extrabold text-slate-800">
+                        {analysisData.print_time_formatted || (analysisData.print_time_hours ? `${analysisData.print_time_hours}h` : "~2h 15m")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Waga filamentu */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm">⚖️</span>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Waga materiału</span>
+                      <span className="font-extrabold text-slate-800">
+                        {analysisData.filament_weight_g ? `${analysisData.filament_weight_g} g` : `${Math.round(volume * 1.24 * (0.35 + (infill/100)*0.65))} g`}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Długość filamentu */}
+                  {analysisData.filament_length_m && (
+                    <div className="hidden sm:flex items-center gap-1.5">
+                      <span className="text-sm">📏</span>
+                      <div>
+                        <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Długość</span>
+                        <span className="font-extrabold text-slate-800">
+                          {analysisData.filament_length_m} m
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Status silnika slicera */}
+                <div className="flex items-center gap-1.5 ml-auto">
+                  {isReslicing ? (
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#EF4444] bg-red-50 px-2.5 py-1 rounded-full border border-red-200/70 animate-pulse">
+                      <svg className="animate-spin w-3 h-3 text-[#EF4444]" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Przeliczam G-Code...
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200 shadow-xs flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span>{analysisData.slicer_engine === "prusa-slicer-cli" ? "PrusaSlicer CLI" : "G-Code Core"}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Dolny pasek ceny lub statusu RFQ */}
-            <div className="flex items-end justify-between z-10 pt-4 border-t border-slate-200/70">
+            <div className="flex items-end justify-between z-10 pt-3 border-t border-slate-200/70">
               {analysisData && analysisData.instant_pricing === false ? (
                 <>
                   <div>

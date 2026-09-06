@@ -46,3 +46,11 @@ def get_file_url(object_name: str, expires_in: int = 3600) -> str:
         Params={"Bucket": R2_BUCKET_NAME, "Key": object_name},
         ExpiresIn=expires_in,
     )
+
+
+def download_file_from_r2(object_name: str, target_path: str):
+    """Pobiera plik z Cloudflare R2."""
+    if not R2_BUCKET_NAME:
+        raise ValueError("R2_BUCKET_NAME nie jest skonfigurowany.")
+    s3_client.download_file(R2_BUCKET_NAME, object_name, target_path)
+

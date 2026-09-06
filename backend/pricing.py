@@ -64,3 +64,53 @@ def calculate_price(volume_cm3: float, bbox_mm: list[float], material: str,
         "note": "Wycena szacunkowa. Ostateczna cena moze sie roznic po weryfikacji przez operatora.",
     }
 
+
+def calculate_price_from_slicer(
+    print_time_hours: float,
+    filament_weight_g: float,
+    material: str = "PLA",
+    quantity: int = 1,
+    layer_height: float = 0.20,
+    price_per_cm3: float = None,
+) -> dict:
+    """
+    Precyzyjna kalkulacja kosztowa oparta na rzeczywistych metadanych ze slicera:
+    - print_time_hours: realny czas wygenerowany przez slicer na podstawie ścieżki głowicy
+    - filament_weight_g: waga materiału w gramach z wyliczenia G-code
+    - material_cost: koszt tworzywa (z bazy danych lub z katalogu materiałów)
+    - machine_cost: koszt roboczogodziny drukarki
+    - base_fee + mnożnik marży + mnożnik dokładności warstwy
+    """
+    mat = MATERIALS.get(material, MATERIALS["PLA"])
+
+    # Jeśli podano stawkę za cm3 z bazy, przelicz na cenę za gram wg gęstości
+    density = mat.get("density_g_cm3", 1.24)
+    if price_per_cm3 and price_per_cm3 > 0:
+        price_per_g = price_per_cm3 / density
+    else:
+        price_per_g = mat["price_per_kg"] / 1000.0
+
+    material_cost = filament_weight_g * price_per_g
+    machine_cost = print_time_hours * MACHINE_RATE_PLN_PER_HOUR
+
+    # Narzut za wysokość warstwy (0.12 mm wymaga większej precyzji i kalibracji stołu)
+    layer_multiplier = 1.25 if abs(layer_height - 0.12) < 0.02 else (0.88 if abs(layer_height - 0.28) < 0.02 else 1.0)
+
+    # Obliczenie ceny jednostkowej (zabezpieczenie minimalnej ceny 15.00 PLN)
+    unit_cost = max(15.00, ((material_cost + machine_cost) * MARGIN_MULTIPLIER + BASE_FEE_PLN) * layer_multiplier)
+    total_cost = unit_cost * quantity
+
+    return {
+        "material": material,
+        "quantity": quantity,
+        "layer_height_mm": layer_height,
+        "filament_weight_g": round(filament_weight_g, 1),
+        "print_time_hours": round(print_time_hours, 2),
+        "material_cost_pln": round(material_cost, 2),
+        "machine_cost_pln": round(machine_cost, 2),
+        "base_fee_pln": float(BASE_FEE_PLN),
+        "unit_price_pln": round(unit_cost, 2),
+        "total_price_pln": round(total_cost, 2),
+        "engine": "slicer-based-pricing",
+    }
+

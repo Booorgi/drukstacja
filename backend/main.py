@@ -11,7 +11,7 @@ import uuid
 import traceback
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import trimesh
@@ -29,10 +29,14 @@ from analysis import (
     ARCHIVE_EXTENSIONS,
     UnsupportedFileType,
 )
-from pricing import calculate_price, MATERIALS
-from storage import upload_file_to_r2, get_file_url
+from pricing import calculate_price, calculate_price_from_slicer, MATERIALS
+from storage import upload_file_to_r2, get_file_url, download_file_from_r2
 from slicer import convert_step_to_stl, run_slicer
 from orientation import auto_orient_mesh
+
+# Katalog cache dla wygenerowanych i zorientowanych siatek STL do szybkiego ponownego cięcia
+MODELS_CACHE_DIR = os.path.join(tempfile.gettempdir(), "drukstacja_cache")
+os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
 
 # Inicjalizacja aplikacji FastAPI
 app = FastAPI(title="Drukstacja API", version="0.5.0")
@@ -55,6 +59,15 @@ class QuoteRequest(BaseModel):
     material: str = "PLA"
     quantity: int = 1
     infill_percent: int = 20
+
+
+class ResliceRequest(BaseModel):
+    preview_stl_key: str | None = None
+    file_key: str | None = None
+    layer_height: float = 0.20
+    infill: int = 20
+    filament_type: str = "PLA"
+    quantity: int = 1
 
 
 REMBG_AVAILABLE = False
@@ -369,7 +382,12 @@ async def vectorize_image_ai(
         raise HTTPException(status_code=500, detail=f"Błąd wektoryzacji: {str(e)}")
 @app.post("/analyze")
 @app.post("/api/analyze-model")
-async def analyze_model_endpoint(file: UploadFile = File(...)):
+async def analyze_model_endpoint(
+    file: UploadFile = File(...),
+    layer_height: float = Form(0.20),
+    infill: int = Form(20),
+    filament_type: str = Form("PLA"),
+):
     """
     Hybrydowa analiza plików produkcyjnych (standard JLCPCB / PCBWay):
     - Pliki 3D Mesh / CAD i archiwa z modelami: instant 3D geometry + slicing
@@ -448,6 +466,13 @@ async def analyze_model_endpoint(file: UploadFile = File(...)):
                     oriented_mesh.export(oriented_stl_path)
 
                     preview_stl_key = f"models/{unique_id}_oriented.stl"
+                    # Zapisujemy kopię w lokalnym katalogu cache do błyskawicznego reslicowania
+                    try:
+                        cached_path = os.path.join(MODELS_CACHE_DIR, f"{unique_id}_oriented.stl")
+                        shutil.copyfile(oriented_stl_path, cached_path)
+                    except Exception as c_err:
+                        print(f"[WARN] Błąd zapisu do lokalnego cache: {c_err}")
+
                     with open(oriented_stl_path, "rb") as f_stl:
                         upload_file_to_r2(
                             file_obj=f_stl,
@@ -459,17 +484,42 @@ async def analyze_model_endpoint(file: UploadFile = File(...)):
                     result["preview_stl_url"] = preview_stl_url
                     result["orientation"] = orientation_info
 
-                    # Slicing
+                    # Slicing z parametrami przesłanymi z frontu
                     try:
-                        slice_data = run_slicer(oriented_stl_path, infill=20, layer_height=0.2)
-                        result["print_time_exact"] = slice_data.get("print_time")
-                        result["filament_weight_g_exact"] = slice_data.get("filament_g")
+                        slice_data = run_slicer(
+                            oriented_stl_path,
+                            infill=int(infill),
+                            layer_height=float(layer_height),
+                            filament_type=filament_type,
+                        )
+                        result["slicer_engine"] = slice_data.get("engine")
+                        result["print_time_hours"] = slice_data.get("print_time_hours")
+                        result["print_time_formatted"] = slice_data.get("print_time_formatted")
+                        result["filament_weight_g"] = slice_data.get("filament_weight_g")
+                        result["filament_length_m"] = slice_data.get("filament_length_m")
+                        result["filament_volume_cm3"] = slice_data.get("filament_volume_cm3")
+                        result["layer_height"] = float(layer_height)
+                        result["infill"] = int(infill)
+                        result["filament_type"] = filament_type
                         result["has_supports"] = slice_data.get("has_supports", False)
                         result["support_lines"] = slice_data.get("support_lines", [])
+
+                        # Wycena na podstawie metadanych ze slicera
+                        price_info = calculate_price_from_slicer(
+                            print_time_hours=result["print_time_hours"] or 1.0,
+                            filament_weight_g=result["filament_weight_g"] or 20.0,
+                            material=filament_type,
+                            quantity=1,
+                            layer_height=float(layer_height),
+                        )
+                        result["price_breakdown"] = price_info
+                        result["unit_price"] = price_info["unit_price_pln"]
                     except Exception as slice_err:
                         print(f"[WARN] Slicer error: {slice_err}")
-                        result["print_time_exact"] = None
-                        result["filament_weight_g_exact"] = None
+                        result["print_time_hours"] = None
+                        result["print_time_formatted"] = None
+                        result["filament_weight_g"] = None
+                        result["filament_length_m"] = None
                         result["has_supports"] = False
                         result["support_lines"] = []
 
@@ -521,6 +571,69 @@ def quote(req: QuoteRequest):
         infill_percent=req.infill_percent,
     )
     return result
+
+
+@app.post("/api/reslice-model")
+def reslice_model_endpoint(req: ResliceRequest):
+    """
+    Ponowne slice'owanie modelu w czasie rzeczywistym z nowymi parametrami
+    (layer_height, infill, filament_type) bez konieczności re-uploadu pliku z przeglądarki.
+    """
+    key = req.preview_stl_key or req.file_key
+    if not key:
+        raise HTTPException(status_code=400, detail="Brak parametru preview_stl_key lub file_key.")
+
+    base_name = os.path.basename(key)
+    local_cached = os.path.join(MODELS_CACHE_DIR, base_name)
+
+    if not os.path.exists(local_cached):
+        # Sprawdź dopasowanie w lokalnym katalogu cache po identyfikatorze
+        uuid_prefix = base_name.split("_")[0]
+        matches = [f for f in os.listdir(MODELS_CACHE_DIR) if f.startswith(uuid_prefix)]
+        if matches:
+            local_cached = os.path.join(MODELS_CACHE_DIR, matches[0])
+        else:
+            try:
+                download_file_from_r2(key, local_cached)
+            except Exception as dl_err:
+                print(f"[WARN] Błąd pobierania modelu do reslicowania: {dl_err}")
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Plik modelu nie został odnaleziony na serwerze ({key}). Proszę wgrać plik ponownie."
+                )
+
+    slice_data = run_slicer(
+        stl_path=local_cached,
+        infill=int(req.infill),
+        layer_height=float(req.layer_height),
+        filament_type=req.filament_type,
+    )
+
+    price_info = calculate_price_from_slicer(
+        print_time_hours=slice_data.get("print_time_hours") or 1.0,
+        filament_weight_g=slice_data.get("filament_weight_g") or 20.0,
+        material=req.filament_type,
+        quantity=req.quantity,
+        layer_height=float(req.layer_height),
+    )
+
+    return {
+        "success": True,
+        "engine": slice_data.get("engine"),
+        "print_time_hours": slice_data.get("print_time_hours"),
+        "print_time_formatted": slice_data.get("print_time_formatted"),
+        "filament_weight_g": slice_data.get("filament_weight_g"),
+        "filament_length_m": slice_data.get("filament_length_m"),
+        "filament_volume_cm3": slice_data.get("filament_volume_cm3"),
+        "layer_height": float(req.layer_height),
+        "infill": int(req.infill),
+        "filament_type": req.filament_type,
+        "has_supports": slice_data.get("has_supports", False),
+        "support_lines": slice_data.get("support_lines", []),
+        "price_breakdown": price_info,
+        "unit_price": price_info["unit_price_pln"],
+        "total_price": price_info["total_price_pln"],
+    }
 
 
 def get_db_connection():
