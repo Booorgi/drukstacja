@@ -773,88 +773,111 @@ const KeychainViewer3D = dynamic(
 // -------------------------------------------------------------
 // KOMPONENT SELEKTORA Z PODZIAŁEM NA KATEGORIE I PRÓBKAMI DUAL/TRI
 // -------------------------------------------------------------
+import { TIERS, MATERIAL_TYPES, FILAMENT_DATABASE } from "../lib/filament";
+
 function SunluColorPaletteSelector({ selectedFilament, onSelectColor }) {
-  const [activeCategory, setActiveCategory] = useState("PLA_PLUS");
-  const availableColors = SUNLU_CATALOG.colors[activeCategory] || [];
+  const [selectedTier, setSelectedTier] = useState("standard");
+  const [selectedType, setSelectedType] = useState("PLA");
+
+  const filteredColors = useMemo(() => {
+    return FILAMENT_DATABASE.filter((item) => {
+      const matchTier = selectedTier === "all" || item.tier === selectedTier;
+      const matchType = selectedType === "all" || item.type === selectedType;
+      return matchTier && matchType;
+    });
+  }, [selectedTier, selectedType]);
 
   return (
     <div className="space-y-2.5 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
-      {/* Kafelki zakładek kategorii */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-        {SUNLU_CATALOG.categories.map((cat) => (
+      {/* 1. Przełącznik Klasy (Standard vs Premium) */}
+      <div className="flex items-center gap-1.5 pb-1 overflow-x-auto scrollbar-thin">
+        {TIERS.map((t) => (
           <button
-            key={cat.id}
+            key={t.id}
             type="button"
-            onClick={() => setActiveCategory(cat.id)}
-            className={`px-3 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition ${
-              activeCategory === cat.id
-                ? "bg-slate-900 text-white shadow-sm"
-                : "bg-white text-slate-600 hover:bg-slate-200 border border-slate-200"
-            }`}
+            onClick={() => setSelectedTier(t.id)}
+            className={`px-3 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition ${selectedTier === t.id
+              ? "bg-[#EF4444] text-white shadow-sm"
+              : "bg-white text-slate-600 hover:bg-slate-200 border border-slate-200"
+              }`}
           >
-            {cat.label}
+            {t.label}
           </button>
         ))}
       </div>
 
-      {/* Siatka próbek kolorów */}
-      <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-thin">
-        {availableColors.map((item) => {
-          const isSelected = selectedFilament?.id === item.id;
-
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onSelectColor(item)}
-              title={`${item.name} (${item.type})`}
-              className={`relative flex-shrink-0 w-7 h-7 rounded-full overflow-hidden transition-transform cursor-pointer ${
-                isSelected ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110" : "hover:scale-105 border border-slate-300"
+      {/* 2. Wybór Rodzaju (PLA, Silk, PET-G, Flex itp.) */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+        {MATERIAL_TYPES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setSelectedType(t.id)}
+            className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition ${selectedType === t.id
+              ? "bg-slate-900 text-white shadow-sm"
+              : "bg-white text-slate-600 hover:bg-slate-200 border border-slate-200"
               }`}
-            >
-              {/* Próbka Single Color */}
-              {item.type === "single" && (
-                <div className="w-full h-full" style={{ backgroundColor: item.hex }} />
-              )}
-
-              {/* Próbka Dual Color (Podzielona 50/50 na skos) */}
-              {item.type === "dual" && (
-                <div
-                  className="w-full h-full"
-                  style={{
-                    background: `linear-gradient(135deg, ${item.colors[0]} 50%, ${item.colors[1]} 50%)`,
-                  }}
-                />
-              )}
-
-              {/* Próbka Tri Color (3 kolory) */}
-              {item.type === "tri" && (
-                <div
-                  className="w-full h-full"
-                  style={{
-                    background: `linear-gradient(120deg, ${item.colors[0]} 33%, ${item.colors[1]} 33%, ${item.colors[1]} 66%, ${item.colors[2]} 66%)`,
-                  }}
-                />
-              )}
-
-              {/* Próbka Rainbow */}
-              {item.type === "rainbow" && (
-                <div
-                  className="w-full h-full"
-                  style={{
-                    background: `linear-gradient(90deg, ${item.colors.join(", ")})`,
-                  }}
-                />
-              )}
-            </button>
-          );
-        })}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* Wybrana nazwa z oznaczeniem */}
+      {/* 3. Próbki kolorów */}
+      <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-thin min-h-[38px]">
+        {filteredColors.length === 0 ? (
+          <span className="text-[11px] text-slate-400 italic">Brak koloru w tej kombinacji</span>
+        ) : (
+          filteredColors.map((item) => {
+            const isSelected = selectedFilament?.id === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onSelectColor(item)}
+                title={item.name}
+                className={`relative flex-shrink-0 w-7 h-7 rounded-full overflow-hidden transition-transform cursor-pointer ${isSelected
+                  ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110"
+                  : "hover:scale-105 border border-slate-300"
+                  }`}
+              >
+                {item.category === "single" && (
+                  <div className="w-full h-full" style={{ backgroundColor: item.hex }} />
+                )}
+                {item.category === "dual" && (
+                  <div
+                    className="w-full h-full"
+                    style={{
+                      background: `linear-gradient(135deg, ${item.colors[0]} 50%, ${item.colors[1]} 50%)`,
+                    }}
+                  />
+                )}
+                {item.category === "tri" && (
+                  <div
+                    className="w-full h-full"
+                    style={{
+                      background: `linear-gradient(120deg, ${item.colors[0]} 33%, ${item.colors[1]} 33%, ${item.colors[1]} 66%, ${item.colors[2]} 66%)`,
+                    }}
+                  />
+                )}
+                {item.category === "rainbow" && (
+                  <div
+                    className="w-full h-full"
+                    style={{
+                      background: `linear-gradient(90deg, ${item.colors.join(", ")})`,
+                    }}
+                  />
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      {/* 4. Nazwa aktywnego materiału */}
       <div className="flex items-center justify-between pt-1 border-t border-slate-200 text-[11px] font-semibold text-slate-500">
-        <span>Aktywny:</span>
-        <span className="text-slate-900 font-bold truncate max-w-[200px]">
+        <span>Wybrany:</span>
+        <span className="text-slate-900 font-bold truncate max-w-[220px]">
           {selectedFilament?.name || "Brak"}
         </span>
       </div>
@@ -1190,7 +1213,7 @@ export default function KeychainGenerator() {
       const { error } = await supabase.from("orders").insert({
         user_id: user.id,
         file_name: `Brelok [${shapeType.toUpperCase()}]: ${imageFileName} (${baseFilament.name})`,
-        material: `Sunlu ${baseFilament.name}`,
+        material: `${baseFilament.tier === "premium" ? "Premium" : "Standard"} (${baseFilament.name})`,
         technology: "FDM Multi-Color AMS",
         layer_height: "0.20 mm",
         infill: 100,
@@ -1274,7 +1297,7 @@ export default function KeychainGenerator() {
       {/* GŁÓWNY MODUŁ */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 pb-10 flex items-center justify-center">
         <div className="bg-white rounded-[32px] border border-slate-200/80 shadow-[0_25px_70px_rgba(0,0,0,0.06)] w-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-[640px]">
-          
+
           {/* LEWA STRONA: 3D VIEWPORT */}
           <div className="lg:col-span-7 bg-gradient-to-b from-[#F8FAFC] to-[#EDF2F7] relative flex flex-col justify-between p-6 md:p-8">
             <div className="flex items-center justify-between z-10">
@@ -1286,8 +1309,8 @@ export default function KeychainGenerator() {
                   {shapeType === "circle"
                     ? "Podkładka / Brelok Okrągły"
                     : shapeType === "rect"
-                    ? "Tabliczka Prostokątna"
-                    : "Płaskorzeźba Hexagon"}
+                      ? "Tabliczka Prostokątna"
+                      : "Płaskorzeźba Hexagon"}
                 </h1>
               </div>
 
@@ -1296,11 +1319,10 @@ export default function KeychainGenerator() {
                 <button
                   type="button"
                   onClick={() => setLayerViewEnabled(!layerViewEnabled)}
-                  className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border shadow-sm transition cursor-pointer ${
-                    layerViewEnabled
-                      ? "bg-[#EF4444] text-white border-red-400"
-                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
-                  }`}
+                  className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border shadow-sm transition cursor-pointer ${layerViewEnabled
+                    ? "bg-[#EF4444] text-white border-red-400"
+                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                    }`}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -1407,7 +1429,7 @@ export default function KeychainGenerator() {
           {/* PRAWA STRONA: MODUŁ PARAMETRÓW */}
           <div className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-white border-l border-slate-100">
             <div className="space-y-4">
-              
+
               {/* 1. SELEKTOR KOLORU BAZY Z KATEGORIAMI */}
               <div>
                 <span className="text-xs font-bold uppercase text-slate-400 block mb-1.5 tracking-wider">
@@ -1432,11 +1454,10 @@ export default function KeychainGenerator() {
                       key={tab.id}
                       type="button"
                       onClick={() => setActiveTab(tab.id)}
-                      className={`py-2 text-[11px] font-bold rounded-xl transition ${
-                        activeTab === tab.id
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
+                      className={`py-2 text-[11px] font-bold rounded-xl transition ${activeTab === tab.id
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"
+                        }`}
                     >
                       {tab.label}
                     </button>
@@ -1456,11 +1477,10 @@ export default function KeychainGenerator() {
                       <div
                         key={s.id}
                         onClick={() => setShapeType(s.id)}
-                        className={`p-2.5 rounded-2xl border flex flex-col items-center justify-center text-center cursor-pointer transition ${
-                          shapeType === s.id
-                            ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm font-bold"
-                            : "border-slate-200 hover:border-slate-300 text-slate-700"
-                        }`}
+                        className={`p-2.5 rounded-2xl border flex flex-col items-center justify-center text-center cursor-pointer transition ${shapeType === s.id
+                          ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm font-bold"
+                          : "border-slate-200 hover:border-slate-300 text-slate-700"
+                          }`}
                       >
                         <span className="text-xs font-bold block">{s.label}</span>
                         <span className="text-[10px] text-slate-400">{s.sub}</span>
@@ -1476,9 +1496,8 @@ export default function KeychainGenerator() {
                     <button
                       type="button"
                       onClick={() => setHasHole(!hasHole)}
-                      className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition ${
-                        hasHole ? "bg-[#EF4444] justify-end" : "bg-slate-300 justify-start"
-                      }`}
+                      className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition ${hasHole ? "bg-[#EF4444] justify-end" : "bg-slate-300 justify-start"
+                        }`}
                     >
                       <div className="bg-white w-4 h-4 rounded-full shadow-md" />
                     </button>
@@ -1659,11 +1678,10 @@ export default function KeychainGenerator() {
                             key={font.id}
                             type="button"
                             onClick={() => setTextFont(font.id)}
-                            className={`px-2 py-1.5 rounded-xl text-[11px] font-bold transition border ${
-                              textFont === font.id
-                                ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
-                                : "border-slate-200 text-slate-600 hover:border-slate-300"
-                            }`}
+                            className={`px-2 py-1.5 rounded-xl text-[11px] font-bold transition border ${textFont === font.id
+                              ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
+                              : "border-slate-200 text-slate-600 hover:border-slate-300"
+                              }`}
                           >
                             {font.name}
                           </button>
@@ -1736,11 +1754,10 @@ export default function KeychainGenerator() {
                               setTextOffsetX(0);
                               setTextOffsetY(0);
                             }}
-                            className={`py-1.5 rounded-xl text-[11px] font-bold border transition ${
-                              textPosition === pos.id && textOffsetX === 0 && textOffsetY === 0
-                                ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
-                                : "border-slate-200 text-slate-600 hover:border-slate-300"
-                            }`}
+                            className={`py-1.5 rounded-xl text-[11px] font-bold border transition ${textPosition === pos.id && textOffsetX === 0 && textOffsetY === 0
+                              ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
+                              : "border-slate-200 text-slate-600 hover:border-slate-300"
+                              }`}
                           >
                             {pos.label}
                           </button>
@@ -1943,7 +1960,7 @@ export default function KeychainGenerator() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl p-6 text-center space-y-4">
             <h2 className="text-lg font-black text-slate-900">Podgląd wektoryzacji {detectedColors.length}-Color</h2>
-            
+
             {/* Podgląd wykrytych kolorów */}
             <div className="flex items-center justify-center gap-1.5">
               {detectedColors.map((hex, i) => (
