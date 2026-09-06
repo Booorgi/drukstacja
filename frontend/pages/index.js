@@ -16,27 +16,47 @@ const StlViewer3D = dynamic(
       import("three-stdlib"),
     ]).then(([fiber, drei, stdlib]) => {
       const { Canvas } = fiber;
-      const { OrbitControls, Center } = drei;
+      const { OrbitControls, Center, Bounds } = drei;
       const { STLLoader } = stdlib;
 
       function StlModel({ url, color }) {
         const [geometry, setGeometry] = useState(null);
+        const [error, setError] = useState(false);
 
         useEffect(() => {
           if (!url) return;
+          setError(false);
           const loader = new STLLoader();
-          loader.load(url, (geo) => {
-            geo.computeVertexNormals();
-            setGeometry(geo);
-          });
+
+          loader.load(
+            url,
+            (geo) => {
+              geo.computeVertexNormals();
+              geo.center();
+              setGeometry(geo);
+            },
+            undefined,
+            (err) => {
+              console.error("Błąd ładowania geometrii STL:", err);
+              setError(true);
+            }
+          );
         }, [url]);
+
+        if (error) {
+          return null;
+        }
 
         if (!geometry) return null;
 
         return (
-          <Center>
+          <Center top>
             <mesh geometry={geometry}>
-              <meshStandardMaterial color={color} roughness={0.35} metalness={0.05} />
+              <meshStandardMaterial
+                color={color}
+                roughness={0.3}
+                metalness={0.1}
+              />
             </mesh>
           </Center>
         );
@@ -44,12 +64,14 @@ const StlViewer3D = dynamic(
 
       return function Viewer({ modelUrl, color }) {
         return (
-          <Canvas camera={{ position: [0, 40, 100], fov: 45 }}>
-            <ambientLight intensity={1.1} />
-            <directionalLight position={[30, 60, 40]} intensity={1.8} />
-            <directionalLight position={[-30, 30, -30]} intensity={0.6} />
-            <StlModel url={modelUrl} color={color} />
-            <OrbitControls makeDefault minDistance={20} maxDistance={300} />
+          <Canvas camera={{ position: [0, 60, 120], fov: 45 }}>
+            <ambientLight intensity={1.2} />
+            <directionalLight position={[40, 80, 50]} intensity={1.8} />
+            <directionalLight position={[-40, 40, -40]} intensity={0.6} />
+            <Bounds fit clip observe margin={1.2}>
+              <StlModel url={modelUrl} color={color} />
+            </Bounds>
+            <OrbitControls makeDefault minDistance={10} maxDistance={400} />
           </Canvas>
         );
       };
@@ -115,8 +137,15 @@ export default function Home() {
     if (!file) return;
 
     setSelectedFile(file);
-    setModelPreviewUrl(URL.createObjectURL(file));
     setIsAnalyzing(true);
+    setAnalysisData(null);
+
+    const isDirectStl = file.name.toLowerCase().endsWith(".stl");
+    if (isDirectStl) {
+      setModelPreviewUrl(URL.createObjectURL(file));
+    } else {
+      setModelPreviewUrl(null);
+    }
 
     const formData = new FormData();
     formData.append("file", file);
@@ -134,8 +163,12 @@ export default function Home() {
 
       const data = await res.json();
       setAnalysisData(data);
+
+      if (data.preview_stl_url) {
+        setModelPreviewUrl(data.preview_stl_url);
+      }
     } catch (err) {
-      alert("Błąd analizy: " + err.message);
+      alert("Błąd analizy pliku: " + err.message);
     } finally {
       setIsAnalyzing(false);
     }
@@ -143,7 +176,7 @@ export default function Home() {
 
   const volume = analysisData?.volume_cm3 || 32.5;
   const matConfig = MATERIALS_LIST.find((m) => m.id === selectedMaterial);
-  const unitPrice = (Math.max(15, volume * (matConfig?.pricePerCm3 || 0.45) * (1 + infill / 100))).toFixed(2);
+  const unitPrice = Math.max(15, volume * (matConfig?.pricePerCm3 || 0.45) * (1 + infill / 100)).toFixed(2);
   const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
 
   async function handleAddToCart() {
@@ -260,7 +293,14 @@ export default function Home() {
 
             {/* Viewport 3D */}
             <div className="relative w-full h-[380px] md:h-[430px] my-auto flex items-center justify-center">
-              {modelPreviewUrl ? (
+              {isAnalyzing ? (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs font-bold text-slate-700">
+                    Konwertuję geometrię STEP i slicuję model...
+                  </span>
+                </div>
+              ) : modelPreviewUrl ? (
                 <StlViewer3D modelUrl={modelPreviewUrl} color={selectedColor} />
               ) : (
                 <div
@@ -282,7 +322,7 @@ export default function Home() {
               )}
             </div>
 
-            {/* Dolny pasek ceny i dodawania do koszyka */}
+            {/* Dolny pasek ceny */}
             <div className="flex items-end justify-between z-10 pt-4 border-t border-slate-200/70">
               <div>
                 <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
@@ -329,7 +369,6 @@ export default function Home() {
           {/* PRAWA STRONA: MODUŁ PARAMETRÓW */}
           <div className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-white border-l border-slate-100">
             <div className="space-y-6">
-              {/* Ukryty input */}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -338,7 +377,7 @@ export default function Home() {
                 onChange={handleFileUpload}
               />
 
-              {/* Upload przycisk */}
+              {/* Upload pliku */}
               <div>
                 <span className="text-xs font-bold uppercase text-slate-400 block mb-2 tracking-wider">
                   Plik CAD:
@@ -357,7 +396,7 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Kolor podglądu */}
+              {/* Kolor filamentu */}
               <div>
                 <span className="text-xs font-bold uppercase text-slate-400 block mb-2 tracking-wider">
                   Kolor filamentu:
@@ -379,7 +418,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Wybór materiału (Kapsułki) */}
+              {/* Materiał */}
               <div>
                 <span className="text-xs font-bold uppercase text-slate-400 block mb-3 tracking-wider">
                   Materiał:
@@ -402,7 +441,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Wypełnienie (Infill) */}
+              {/* Infill */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
                 <div className="flex justify-between text-xs font-bold text-slate-700">
                   <span>Wypełnienie wnętrza (Infill)</span>
@@ -425,9 +464,13 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Stopka karty */}
+            {/* Wymiary modelu */}
             <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-medium text-slate-400">
-              <span>Pole stołu: 256×256×256 mm</span>
+              <span>
+                {analysisData?.dimensions_mm
+                  ? `Wymiary: ${analysisData.dimensions_mm[0]}×${analysisData.dimensions_mm[1]}×${analysisData.dimensions_mm[2]} mm`
+                  : "Pole robocze: 256×256×256 mm"}
+              </span>
               <span>Dokładność: ±0.1 mm</span>
             </div>
           </div>
