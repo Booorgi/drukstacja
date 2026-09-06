@@ -108,14 +108,35 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
         if keep_bg:
             alpha_resized = np.ones((new_h, new_w), dtype=bool)
         else:
-            # Inteligentny FloodFill z 4 rogów dla obrazów bez przezroczystości
+            # 1. Próba klasycznego FloodFill
             flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
             bgr_flood = bgr_clean.copy()
-            diff_tol = (25, 25, 25)
+            diff_tol = (28, 28, 28)
             for seed in [(0, 0), (new_w - 1, 0), (0, new_h - 1), (new_w - 1, new_h - 1)]:
                 cv2.floodFill(bgr_flood, flood_mask, seed, (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
             bg_mask = (flood_mask[1:-1, 1:-1] == 1)
-            alpha_resized = ~bg_mask
+
+            # 2. Jeśli tło to gradient i FloodFill wyciął za mało (< 12% powierzchni),
+            # używamy adaptacyjnego GrabCut z ramki brzegowej
+            bg_ratio = np.sum(bg_mask) / (new_w * new_h)
+            if bg_ratio < 0.12:
+                try:
+                    gc_mask = np.zeros((new_h, new_w), np.uint8)
+                    # Definiujemy prostokąt obiektu (z 4% marginesem na tło wokół)
+                    margin_x = max(int(new_w * 0.04), 2)
+                    margin_y = max(int(new_h * 0.04), 2)
+                    rect = (margin_x, margin_y, new_w - 2 * margin_x, new_h - 2 * margin_y)
+                    
+                    bgd_model = np.zeros((1, 65), np.float64)
+                    fgd_model = np.zeros((1, 65), np.float64)
+                    
+                    cv2.grabCut(bgr_clean, gc_mask, rect, bgd_model, fgd_model, iterCount=3, mode=cv2.GC_INIT_WITH_RECT)
+                    # 0 i 2 to tło
+                    alpha_resized = (gc_mask == 1) | (gc_mask == 3)
+                except Exception:
+                    alpha_resized = ~bg_mask
+            else:
+                alpha_resized = ~bg_mask
 
     pixels = bgr_clean[alpha_resized].reshape(-1, 3)
     if len(pixels) < n_colors:
