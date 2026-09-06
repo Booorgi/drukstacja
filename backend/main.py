@@ -61,9 +61,9 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
     if img is None:
-        raise ValueError("Błąd odczytu pliku graficznego.")
+        raise ValueError("Błąd odczytu grafiki.")
 
-    # 1. Obsługa przezroczystości alfa
+    # 1. Sprawdzenie przezroczystości alfa
     has_alpha = False
     if len(img.shape) == 3 and img.shape[2] == 4:
         alpha_raw = img[:, :, 3] > 20
@@ -74,13 +74,13 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     else:
         bgr = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
-    target_dim = 420
+    target_dim = 400
     h, w = bgr.shape[:2]
     scale = target_dim / max(h, w)
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
     bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    # 2. Usuwanie tła / wyciąganie sylwetki (Silhouette Mask)
+    # 2. DEFINITYWNE ODCINANIE TŁA (NIGDY WIĘCEJ KWADRATOWEJ PŁYTY)
     if has_alpha:
         fg_mask = cv2.resize(
             alpha_mask.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
@@ -88,101 +88,97 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     elif keep_bg:
         fg_mask = np.ones((new_h, new_w), dtype=bool)
     else:
-        gray = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2GRAY)
-        # Adaptacyjny filtr tła
-        blurred = cv2.bilateralFilter(gray, 9, 75, 75)
-        _, thresh = cv2.threshold(blurred, 235, 255, cv2.THRESH_BINARY_INV)
-        
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+        # Płynny FloodFill z 4 narożników
+        flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
+        bgr_flood = bgr_resized.copy()
+        diff = (22, 22, 22)
+        for seed in [(0, 0), (new_w - 1, 0), (0, new_h - 1), (new_w - 1, new_h - 1)]:
+            cv2.floodFill(bgr_flood, flood_mask, seed, (0, 255, 0), diff, diff, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
+        bg_candidate = (flood_mask[1:-1, 1:-1] == 1)
 
-        # Znajdź największy element centralny
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(closed)
+        # Wypełniamy ewentualne dziury wewnątrz tła przy krawędziach
+        fg_candidate = ~bg_candidate
+        
+        # Wyciągamy komponent psa w centrum
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(fg_candidate.astype(np.uint8))
         best_label = -1
         max_area = 0
-        cx, cy = new_w / 2, new_h / 2
+        cx_mid, cy_mid = new_w / 2, new_h / 2
 
         for i in range(1, num_labels):
             area = stats[i, cv2.CC_STAT_AREA]
-            bx, by, bw, bh = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP], stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
-            if bw > 0.98 * new_w and bh > 0.98 * new_h:
+            bw = stats[i, cv2.CC_STAT_WIDTH]
+            bh = stats[i, cv2.CC_STAT_HEIGHT]
+            # Odrzucamy ramkę tła
+            if bw >= (new_w - 2) and bh >= (new_h - 2):
                 continue
-            dist = np.hypot(centroids[i][0] - cx, centroids[i][1] - cy)
+            dist = np.hypot(centroids[i][0] - cx_mid, centroids[i][1] - cy_mid)
             if area > max_area and dist < (max(new_w, new_h) * 0.45):
                 max_area = area
                 best_label = i
 
         if best_label != -1:
             fg_mask = (labels == best_label)
-            # Wypełnienie dziur wewnątrz sylwetki psa (żeby baza pod spodem była pełna!)
-            fg_mask = cv2.morphologyEx(fg_mask.astype(np.uint8) * 255, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))) > 0
         else:
-            fg_mask = np.ones((new_h, new_w), dtype=bool)
+            fg_mask = fg_candidate
 
-    # 3. Ekstrakcja czarnych linii i detali (Nos, Oczy, Obrysy fafli jak w Bambu)
+    # 3. WYODRĘBNIANIE DETALI OCZU (HIGHLIGHTS + LINIE)
     gray = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
     gray_clahe = clahe.apply(gray)
+
+    # A. Ciemne detale: źrenice, nos, fałdy
+    dark_mask = (gray_clahe < 65) & fg_mask
     
-    # Detekcja krawędzi i ciemnych detali
-    dark_details_mask = (gray_clahe < 70) & fg_mask
-    dark_details_mask = cv2.morphologyEx(dark_details_mask.astype(np.uint8) * 255, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))) > 0
+    # B. Białe błyski w oczach (Highlighty) i biała łatka na pysku
+    highlights_mask = (gray_clahe > 215) & fg_mask
 
-    # 4. Kwantyzacja kolorów pośrednich (Kolor sierści, cienie)
-    # Wybieramy piksele obiektu, które nie są czarnymi liniami
-    body_pixels_mask = fg_mask & (~dark_details_mask)
-    body_pixels = bgr_resized[body_pixels_mask].reshape(-1, 3)
+    # C. Ciało (piksele pomiędzy czernią a bielą)
+    mid_body_mask = fg_mask & (~dark_mask) & (~highlights_mask)
+    body_pixels = bgr_resized[mid_body_mask].reshape(-1, 3)
 
-    if len(body_pixels) < (n_colors - 1):
+    if len(body_pixels) < 20:
         body_pixels = bgr_resized[fg_mask].reshape(-1, 3)
-        body_pixels_mask = fg_mask
+        mid_body_mask = fg_mask
 
-    # K-Means dla 3 kolorów ciała + 1 kolor dedykowany na czerń detali = 4 kolory
-    n_body_colors = max(1, n_colors - 1)
-    kmeans = KMeans(n_clusters=n_body_colors, random_state=42, n_init=3)
+    # 4. KWANTYZACJA DLA 2 ODCIENI SIERŚCI (Jasny brąz i Ciemny brąz)
+    kmeans = KMeans(n_clusters=2, random_state=42, n_init=3)
     kmeans.fit(body_pixels)
+    centers = kmeans.cluster_centers_.astype(int)
 
-    body_centers = kmeans.cluster_centers_.astype(int)
-    # Sortujemy kolory ciała od najjaśniejszego do najciemniejszego (jasny brąz -> ciemny brąz)
-    brightness = [np.mean(c) for c in body_centers]
-    sorted_order = np.argsort(brightness)[::-1] # Od najjaśniejszego
-    body_centers = body_centers[sorted_order]
+    # Sortujemy kolory: jaśniejszy brąz, ciemniejszy brąz
+    if np.mean(centers[0]) < np.mean(centers[1]):
+        centers = centers[::-1]
 
-    # Składamy 4 kolory: [Najjaśniejszy, Pośredni, Ciemny, Głęboka Czerń na detale]
-    hex_colors = [f"#{c[2]:02x}{c[1]:02x}{c[0]:02x}".upper() for c in body_centers]
-    hex_colors.append("#1A1A1A") # Ostatni kolor: czyste detale i obrysy
+    hex_light_brown = f"#{centers[0][2]:02x}{centers[0][1]:02x}{centers[0][0]:02x}".upper()
+    hex_dark_brown = f"#{centers[1][2]:02x}{centers[1][1]:02x}{centers[1][0]:02x}".upper()
+    hex_black = "#181818"   # Detale, nos, obrys
+    hex_white = "#F4F4F4"   # Pysk i bliki w oczach
 
-    # 5. Tworzenie warstw MakerWorld (Stacking)
-    # Warstwa 1: Cała sylwetka (Silhouette - brak prześwitów podłoża!)
-    # Warstwa 2: Średni brąz
-    # Warstwa 3: Ciemny brąz
-    # Warstwa 4: Czarne detale, oczy, nos
+    # 4 Precyzyjne warstwy do druku:
+    final_colors = [hex_light_brown, hex_dark_brown, hex_black, hex_white]
+
+    # Mapowanie masek warstw:
     layer_masks = []
-    
-    # Warstwa 1 (Baza/Podkład): cała sylwetka
+
+    # Warstwa 1: Podkład ciała (tylko sylwetka psa, ŻADNEGO tła!)
     layer_masks.append(fg_mask.astype(np.uint8) * 255)
 
-    # Kwantyzacja ciała
-    body_labels = np.full((new_h, new_w), -1, dtype=int)
-    body_labels[body_pixels_mask] = kmeans.labels_
+    # Warstwa 2: Ciemny brąz (łaty i cienie na uszach)
+    labels_map = np.full((new_h, new_w), -1, dtype=int)
+    labels_map[mid_body_mask] = kmeans.labels_
+    dark_brown_idx = 1 if np.mean(centers[0]) > np.mean(centers[1]) else 0
+    layer_masks.append((labels_map == dark_brown_idx).astype(np.uint8) * 255)
 
-    # Mapowanie posortowanych klastrów
-    for orig_idx in sorted_order[1:]:
-        c_mask = (body_labels == orig_idx).astype(np.uint8) * 255
-        # Delikatne poszerzenie, by zlikwidować szpary
-        c_mask = cv2.dilate(c_mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
-        layer_masks.append(c_mask)
+    # Warstwa 3: Głęboka czerń (nos, krawędzie, źrenice z wyciętym środkiem na błysk)
+    # Usuwamy błysk ze środka oka, żeby nie zalać go czernią!
+    pupils_and_lines = dark_mask & (~highlights_mask)
+    layer_masks.append(pupils_and_lines.astype(np.uint8) * 255)
 
-    # Uzupełnij warstwy pośrednie jeśli zabrakło
-    while len(layer_masks) < 3:
-        layer_masks.append(np.zeros((new_h, new_w), dtype=np.uint8))
+    # Warstwa 4: Biel / Błysk oka i biała łata
+    layer_masks.append(highlights_mask.astype(np.uint8) * 255)
 
-    # Ostatnia warstwa: Czarne obrysy, oczy, nos
-    line_mask = dark_details_mask.astype(np.uint8) * 255
-    line_mask = cv2.dilate(line_mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2)))
-    layer_masks.append(line_mask)
-
-    # 6. Centrowanie i wektoryzacja do SVG z zaokrąglonymi krzywymi
+    # 5. Centrowanie sylwetki psa w breloku
     y_idx, x_idx = np.where(fg_mask)
     if len(x_idx) > 0 and len(y_idx) > 0:
         min_x, max_x = np.min(x_idx), np.max(x_idx)
@@ -207,45 +203,47 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
         if not np.any(mask):
             continue
 
-        # Wygładzenie krawędzi (Bézier-like smoothing)
-        mask = cv2.GaussianBlur(mask, (3, 3), 0)
-        _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
-        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS)
+        # Wygładzenie organiczne
+        mask = cv2.medianBlur(mask, 3)
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_KCOS)
 
         paths = []
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            if area < (12 if l_idx == 3 else 25): # Detale linii mogą być mniejsze
-                continue
+        if contours:
+            for cnt_idx, cnt in enumerate(contours):
+                area = cv2.contourArea(cnt)
+                # Dla błysku oka (warstwa 4) dopuszczamy bardzo małe punkty!
+                min_a = 4 if l_idx == 3 else (10 if l_idx == 2 else 20)
+                if area < min_a:
+                    continue
 
-            perimeter = cv2.arcLength(cnt, True)
-            epsilon = 0.0012 * perimeter # Bardziej gęste próbkowanie łuków
-            approx = cv2.approxPolyDP(cnt, epsilon, True)
+                perimeter = cv2.arcLength(cnt, True)
+                epsilon = 0.0012 * perimeter
+                approx = cv2.approxPolyDP(cnt, epsilon, True)
 
-            pts = approx.reshape(-1, 2)
-            if len(pts) < 3:
-                continue
+                pts = approx.reshape(-1, 2)
+                if len(pts) < 3:
+                    continue
 
-            def map_pt(pt):
-                nx = 50.0 + (pt[0] - center_x) * scale_fit
-                ny = 50.0 + (pt[1] - center_y) * scale_fit
-                return nx, ny
+                def map_pt(pt):
+                    nx = 50.0 + (pt[0] - center_x) * scale_fit
+                    ny = 50.0 + (pt[1] - center_y) * scale_fit
+                    return nx, ny
 
-            start_x, start_y = map_pt(pts[0])
-            d = f"M {start_x:.2f} {start_y:.2f} "
-            for pt in pts[1:]:
-                x, y = map_pt(pt)
-                d += f"L {x:.2f} {y:.2f} "
-            d += "Z "
-            paths.append(d)
+                start_x, start_y = map_pt(pts[0])
+                d = f"M {start_x:.2f} {start_y:.2f} "
+                for pt in pts[1:]:
+                    x, y = map_pt(pt)
+                    d += f"L {x:.2f} {y:.2f} "
+                d += "Z "
+                paths.append(d)
 
         c_id = color_ids[l_idx]
-        c_hex = hex_colors[l_idx]
+        c_hex = final_colors[l_idx]
         paths_str = "".join([f'<path d="{p}"/>' for p in paths])
         svg_output.append(f'<g id="{c_id}" fill="{c_hex}">{paths_str}</g>')
 
     svg_output.append("</svg>")
-    return "".join(svg_output), hex_colors
+    return "".join(svg_output), final_colors
 
 
 @app.get("/")
