@@ -753,10 +753,11 @@ export default function KeychainGenerator() {
   // Warstwy motywu
   const [layersConfig, setLayersConfig] = useState([
     { id: 1, name: "Warstwa 1 (Baza)", filament: SUNLU_CATALOG.colors.PLA_PLUS[1], thickness: 0.6 },
-    { id: 2, name: "Warstwa 2 (Ciało)", filament: SUNLU_CATALOG.colors.PLA_PLUS[5], thickness: 0.8 },
-    { id: 3, name: "Warstwa 3 (Cienie)", filament: SUNLU_CATALOG.colors.PLA_PLUS[4], thickness: 1.0 },
-    { id: 4, name: "Warstwa 4 (Detale)", filament: SUNLU_CATALOG.colors.PLA_PLUS[0], thickness: 1.2 },
+    { id: 2, name: "Warstwa 2 (Ciało)", filament: SUNLU_CATALOG.colors.PLA_PLUS[5], thickness: 0.7 },
+    { id: 3, name: "Warstwa 3 (Cienie)", filament: SUNLU_CATALOG.colors.PLA_PLUS[4], thickness: 0.8 },
+    { id: 4, name: "Warstwa 4 (Detale)", filament: SUNLU_CATALOG.colors.PLA_PLUS[0], thickness: 0.9 },
   ]);
+
 
   // --- NOWE: Tekst na breloku ---
   const [textContent, setTextContent] = useState("");
@@ -953,7 +954,7 @@ export default function KeychainGenerator() {
     }
 
     if (detectedColors.length > 0) {
-      const defaultThicknesses = [0.6, 0.8, 1.0, 1.2, 1.4, 1.6];
+      const defaultThicknesses = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1];
       const total = detectedColors.length;
 
       const newLayers = detectedColors.map((hex, idx) => {
@@ -968,7 +969,7 @@ export default function KeychainGenerator() {
           id: idx + 1,
           name: layerRole,
           filament: filament,
-          thickness: defaultThicknesses[idx] || (0.6 + idx * 0.2),
+          thickness: defaultThicknesses[idx] || (0.6 + idx * 0.1),
         };
       });
       setLayersConfig(newLayers);

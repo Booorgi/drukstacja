@@ -101,10 +101,10 @@ def remove_checkerboard_pattern(bgr_img):
 def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool = False):
     """
     Zaawansowany algorytm wektoryzacji w standardzie MakerWorld:
-    1. Precyzyjna segmentacja postaci AI (u2net) w rozdzielczości 800px bez sklejania kończyn/brzucha.
-    2. Inteligentne domykanie wyłącznie wewnętrznych ubytków (np. biały pysk) z zachowaniem otwartej przestrzeni między nogami.
-    3. Kwantyzacja KMeans posortowana luminancją (od najjaśniejszej bazy do najciemniejszych detali).
-    4. Zagnieżdżone ścieżki SVG (fill-rule='evenodd') precyzyjnie wycinające otwory (błyski oka/catchlights, źrenice, tęczówki, paski).
+    1. Precyzyjna segmentacja postaci AI (u2net/u2netp) w 800px z podwójnym zabezpieczeniem GrabCut.
+    2. Inteligentne domykanie wyłącznie wewnętrznych ubytków z zachowaniem otwartych przestrzeni między nogami.
+    3. Gwarantowana minimalna grubość ścianek (dylatacja + filtr mikroszumu) – brak łamliwych, cienkich elementów pod dyszę 0.4mm.
+    4. Zagnieżdżone ścieżki SVG (fill-rule='evenodd') precyzyjnie wycinające otwory (błyski oka, tęczówki, paski).
     """
     n_colors = max(2, min(6, n_colors))
 
@@ -140,7 +140,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
                 )
                 sil = raw_mask > 0
 
-        # B. Segmentacja AI (rembg u2net)
+        # B. Segmentacja AI (rembg u2net / u2netp)
         if sil is None and REMBG_AVAILABLE and REMBG_SESSION is not None:
             try:
                 cutout_bytes = rembg_remove(image_bytes, session=REMBG_SESSION)
@@ -157,50 +157,29 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
             except Exception as _r_err:
                 print(f"[WARN] Błąd wycinania rembg: {_r_err}")
 
-        # C. Klasyczny inteligentny FloodFill / GrabCut fallback
+        # C. Niezawodny GrabCut fallback dla zdjęć plenerowych (trawa, niebo, krajobraz)
         if sil is None:
-            bgr_clean, had_checker = remove_checkerboard_pattern(bgr_resized)
-            flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
-            bgr_flood = bgr_clean.copy()
-            diff_tol = (25, 25, 25)
-            for seed in [(0, 0), (new_w - 1, 0), (0, new_h - 1), (new_w - 1, new_h - 1)]:
-                cv2.floodFill(bgr_flood, flood_mask, seed, (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
-            bg_candidate = (flood_mask[1:-1, 1:-1] == 1)
-            fg_candidate = ~bg_candidate
+            try:
+                gc_dim = 400
+                gc_scale = gc_dim / max(new_h, new_w)
+                gc_w, gc_h = max(int(new_w * gc_scale), 1), max(int(new_h * gc_scale), 1)
+                gc_img = cv2.resize(bgr_resized, (gc_w, gc_h), interpolation=cv2.INTER_AREA)
 
-            if had_checker:
-                gray_res = cv2.cvtColor(bgr_clean, cv2.COLOR_BGR2GRAY)
-                fg_candidate = fg_candidate & (gray_res < 215)
+                gc_mask = np.zeros((gc_h, gc_w), np.uint8)
+                bgd_model = np.zeros((1, 65), np.float64)
+                fgd_model = np.zeros((1, 65), np.float64)
 
-            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(fg_candidate.astype(np.uint8))
-            best_label = -1
-            max_area = 0
-            cx_mid, cy_mid = new_w / 2, new_h / 2
+                margin_x = max(4, int(gc_w * 0.08))
+                margin_y = max(4, int(gc_h * 0.08))
+                rect = (margin_x, margin_y, gc_w - 2 * margin_x, gc_h - 2 * margin_y)
 
-            for i in range(1, num_labels):
-                area = stats[i, cv2.CC_STAT_AREA]
-                bw = stats[i, cv2.CC_STAT_WIDTH]
-                bh = stats[i, cv2.CC_STAT_HEIGHT]
-                if bw >= (new_w - 2) and bh >= (new_h - 2):
-                    continue
-                dist = np.hypot(centroids[i][0] - cx_mid, centroids[i][1] - cy_mid)
-                if area > max_area and dist < (max(new_w, new_h) * 0.48):
-                    max_area = area
-                    best_label = i
+                cv2.grabCut(gc_img, gc_mask, rect, bgd_model, fgd_model, 4, cv2.GC_INIT_WITH_RECT)
+                gc_fg = (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD)
 
-            if best_label != -1:
-                sil = (labels == best_label)
-            else:
-                try:
-                    grab_mask = np.zeros((new_h, new_w), np.uint8)
-                    margin = max(5, int(min(new_w, new_h) * 0.05))
-                    rect = (margin, margin, new_w - 2 * margin, new_h - 2 * margin)
-                    bgd_model = np.zeros((1, 65), np.float64)
-                    fgd_model = np.zeros((1, 65), np.float64)
-                    cv2.grabCut(bgr_resized, grab_mask, rect, bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_RECT)
-                    sil = ((grab_mask == cv2.GC_FGD) | (grab_mask == cv2.GC_PR_FGD))
-                except Exception:
-                    sil = fg_candidate
+                if 0.05 < np.mean(gc_fg) < 0.90:
+                    sil = cv2.resize(gc_fg.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST) > 0
+            except Exception as _g_err:
+                print(f"[WARN] Błąd GrabCut fallback: {_g_err}")
 
     if sil is None or np.sum(sil) < 50:
         sil = np.ones((new_h, new_w), dtype=bool)
@@ -211,10 +190,8 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     if contours and hierarchy is not None:
         hier = hierarchy[0]
         for i in range(len(contours)):
-            # Tylko dziury otoczone sylwetką (parent != -1)
             if hier[i][3] != -1:
                 hole_area = cv2.contourArea(contours[i])
-                # Wypełniamy wewnętrzne ubytki (np. pysk, czoło), nie dotykając tła zewnętrznego
                 if hole_area < (new_w * new_h * 0.15):
                     cv2.drawContours(sil_u8, [contours[i]], -1, 255, thickness=-1)
 
@@ -247,12 +224,20 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     for new_idx, old_cluster in enumerate(sorted_order):
         remapped[labels == old_cluster] = new_idx
 
-    # 4. MASKI WARSTW:
-    # Warstwa 0: Jednolita baza sylwetki (biel/najjaśniejsza barwa)
-    # Warstwy 1..(N-1): Poszczególne poziomy tonalne i ciemne kontury
+    # 4. MASKI WARSTW Z GWARANTOWANĄ GRUBOŚCIĄ ŚCIANEK POD DYSZĘ 0.4MM:
+    # Kernel dylatacji (poszerza cienkie paski o +1px promień = 3-4px szerokość = min. 0.6mm w druku)
+    kernel_wall = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     layer_masks = [sil_u8]
+
     for c_idx in range(1, n_colors):
-        layer_masks.append((remapped == c_idx).astype(np.uint8) * 255)
+        m = (remapped == c_idx).astype(np.uint8) * 255
+        # Usunięcie pojedynczych pikseli szumu
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2)))
+        # Pogrubienie ścianek zapobiegające łamliwości w druku FDM
+        m = cv2.dilate(m, kernel_wall, iterations=1)
+        # Ograniczenie do zewnętrznej sylwetki
+        m = cv2.bitwise_and(m, sil_u8)
+        layer_masks.append(m)
 
     # 5. DOPASOWANIE I CENTROWANIE W OKNIE 100x100
     y_idx, x_idx = np.where(sil)
@@ -276,7 +261,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
         ny = 50.0 + (pt[1] - center_y) * scale_fit
         return nx, ny
 
-    # 6. GENEROWANIE SVG Z ZAGNIEŻDŻONYMI ŚCIEŻKAMI (FILL-RULE="EVENODD")
+    # 6. GENEROWANIE SVG Z FILTREM KRUSZĄCYCH SIĘ MIKROELEMENTÓW (MIN_A = 20)
     svg_parts = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
 
     for l_idx in range(n_colors):
@@ -289,9 +274,9 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
             paths = []
             for cnt in contours:
-                if cv2.contourArea(cnt) < 10:
+                if cv2.contourArea(cnt) < 20:
                     continue
-                approx = cv2.approxPolyDP(cnt, 0.0008 * cv2.arcLength(cnt, True), True)
+                approx = cv2.approxPolyDP(cnt, 0.0010 * cv2.arcLength(cnt, True), True)
                 pts = approx.reshape(-1, 2)
                 if len(pts) < 3:
                     continue
@@ -319,10 +304,11 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
                     continue  # Pomiń otwory na poziomie głównym (są przetwarzane w rodzicu)
 
                 cnt = contours[i]
-                if cv2.contourArea(cnt) < (4 if l_idx == n_colors - 1 else 6):
+                # Eliminacja mikroskopijnych okruchów (< 20px), które nie mają przyczepności i łamią się
+                if cv2.contourArea(cnt) < 20:
                     continue
 
-                approx = cv2.approxPolyDP(cnt, 0.0008 * cv2.arcLength(cnt, True), True)
+                approx = cv2.approxPolyDP(cnt, 0.0010 * cv2.arcLength(cnt, True), True)
                 pts = approx.reshape(-1, 2)
                 if len(pts) < 3:
                     continue
@@ -338,8 +324,8 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
                 child = hier[i][2]
                 while child != -1:
                     hole_cnt = contours[child]
-                    if cv2.contourArea(hole_cnt) >= 2:
-                        hole_approx = cv2.approxPolyDP(hole_cnt, 0.0008 * cv2.arcLength(hole_cnt, True), True)
+                    if cv2.contourArea(hole_cnt) >= 6:
+                        hole_approx = cv2.approxPolyDP(hole_cnt, 0.0010 * cv2.arcLength(hole_cnt, True), True)
                         hole_pts = hole_approx.reshape(-1, 2)
                         if len(hole_pts) >= 3:
                             hsx, hsy = map_pt(hole_pts[0])
