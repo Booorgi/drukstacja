@@ -2031,7 +2031,15 @@ export default function KeychainGenerator() {
       )}
 
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onLoginSuccess={(u) => setUser(u)} />
-      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} items={cartItems} onRemoveItem={() => fetchCart(user?.id)} />
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        items={cartItems}
+        onRemoveItem={(removedId) => {
+          setCartItems((prev) => prev.filter((it) => it.id !== removedId));
+          if (user?.id) fetchCart(user.id);
+        }}
+      />
     </div>
   );
 }

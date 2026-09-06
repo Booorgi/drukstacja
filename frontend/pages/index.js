@@ -243,6 +243,11 @@ export default function Home() {
     return STL_MATERIALS.filter((m) => m.group === selectedMaterialGroup);
   }, [selectedMaterialGroup]);
 
+  const currentIndex = useMemo(() => {
+    const idx = filteredMaterials.findIndex((m) => m.id === selectedMaterial);
+    return idx >= 0 ? idx : 0;
+  }, [filteredMaterials, selectedMaterial]);
+
   function handleSelectMaterial(matId) {
     setSelectedMaterial(matId);
     const targetMat = STL_MATERIALS.find((m) => m.id === matId);
@@ -252,6 +257,26 @@ export default function Home() {
         setSelectedColor(targetMat.colors[0].hex);
       }
     }
+  }
+
+  function handleSelectGroup(groupId) {
+    setSelectedMaterialGroup(groupId);
+    const list = groupId === "all" ? STL_MATERIALS : STL_MATERIALS.filter((m) => m.group === groupId);
+    if (list.length > 0 && !list.some((m) => m.id === selectedMaterial)) {
+      handleSelectMaterial(list[0].id);
+    }
+  }
+
+  function handlePrevMaterial() {
+    if (filteredMaterials.length === 0) return;
+    const prevIdx = (currentIndex - 1 + filteredMaterials.length) % filteredMaterials.length;
+    handleSelectMaterial(filteredMaterials[prevIdx].id);
+  }
+
+  function handleNextMaterial() {
+    if (filteredMaterials.length === 0) return;
+    const nextIdx = (currentIndex + 1) % filteredMaterials.length;
+    handleSelectMaterial(filteredMaterials[nextIdx].id);
   }
 
   const [infill, setInfill] = useState(20);
@@ -630,16 +655,16 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* SEKCJA MATERIAŁU I KOLORU (NOWOCZESNA WYCENIARKA INŻYNIERYJNA) */}
-              <div className="space-y-3.5">
-                {/* 1. Nagłówek i Taby Kategorii */}
+              {/* SEKCJA MATERIAŁU - SUWAK / KARUZELA JAK NA RYSUNKU UŻYTKOWNIKA */}
+              <div className="space-y-3">
+                {/* Nagłówek i Taby Kategorii */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">
                       Wybierz Materiał Drukarki:
                     </span>
-                    <span className="text-[11px] font-bold text-slate-400">
-                      {filteredMaterials.length} do wyboru
+                    <span className="text-[11px] font-extrabold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      {currentIndex + 1} z {filteredMaterials.length}
                     </span>
                   </div>
 
@@ -651,7 +676,7 @@ export default function Home() {
                         <button
                           key={grp.id}
                           type="button"
-                          onClick={() => setSelectedMaterialGroup(grp.id)}
+                          onClick={() => handleSelectGroup(grp.id)}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                             isActive
                               ? "bg-slate-900 text-white shadow-sm ring-1 ring-slate-900"
@@ -665,99 +690,137 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 2. Karty materiałów — przewijana lista z parametrami technicznymi */}
-                <div className="max-h-[250px] overflow-y-auto space-y-2 pr-1 scrollbar-thin">
-                  {filteredMaterials.map((mat) => {
-                    const isSelected = selectedMaterial === mat.id;
-                    return (
-                      <div
-                        key={mat.id}
-                        onClick={() => handleSelectMaterial(mat.id)}
-                        className={`p-3 rounded-2xl border transition-all cursor-pointer ${
-                          isSelected
-                            ? "border-[#EF4444] bg-red-50/40 ring-2 ring-[#EF4444]/20 shadow-sm"
-                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
-                        }`}
-                      >
-                        {/* Wiersz tytułowy + Badge + Cena */}
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className={`text-xs font-bold ${isSelected ? "text-[#EF4444]" : "text-slate-900"}`}>
-                                {mat.name}
-                              </span>
-                              {mat.badge && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                                  {mat.badge}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-relaxed">
-                              {mat.desc}
-                            </p>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <span className="text-xs font-black text-slate-900 block">
-                              {mat.pricePerCm3.toFixed(2)} zł
-                            </span>
-                            <span className="text-[9px] text-slate-400 uppercase font-semibold">
-                              / cm³
-                            </span>
-                          </div>
-                        </div>
+                {/* SUWAK MATERIAŁU: [ ← ] [ KARTA Z OPISEM ] [ → ] */}
+                <div className="flex items-center gap-2">
+                  {/* Przycisk W LEWO ← */}
+                  <button
+                    type="button"
+                    onClick={handlePrevMaterial}
+                    title="Poprzedni materiał"
+                    className="w-10 h-10 md:w-11 md:h-11 rounded-2xl bg-white hover:bg-slate-100 active:scale-95 text-slate-700 hover:text-slate-900 border border-slate-200 shadow-sm flex items-center justify-center transition-all flex-shrink-0 cursor-pointer"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
 
-                        {/* Właściwości techniczne */}
-                        <div className="flex items-center flex-wrap gap-1.5 mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-500 font-medium">
-                          <span className="bg-slate-100 px-2 py-0.5 rounded-md">
-                            🌡️ HDT: <strong className="text-slate-700">{mat.hdt}</strong>
-                          </span>
-                          <span className="bg-slate-100 px-2 py-0.5 rounded-md">
-                            ⚡ <strong className="text-slate-700">{mat.tensileStrength}</strong>
-                          </span>
-                          <span className="bg-slate-100 px-2 py-0.5 rounded-md">
-                            🛡️ UV: <strong className="text-slate-700">{mat.uvResistance}</strong>
+                  {/* GŁÓWNA KARTA MATERIAŁU Z OPISEM */}
+                  <div className="flex-1 bg-white border-2 border-slate-200 hover:border-slate-300 rounded-3xl p-4 shadow-sm transition-all space-y-2.5 relative overflow-hidden">
+                    {/* Tytuł + Badge + Cena */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
+                            {matConfig.badge || "Standard"}
                           </span>
                         </div>
+                        <h3 className="text-base font-black text-slate-900 tracking-tight mt-1 truncate">
+                          {matConfig.name}
+                        </h3>
                       </div>
+                      <div className="text-right flex-shrink-0 bg-red-50 border border-red-100 px-2.5 py-1 rounded-xl">
+                        <span className="text-xs font-black text-[#EF4444] block">
+                          {matConfig.pricePerCm3.toFixed(2)} zł
+                        </span>
+                        <span className="text-[9px] text-slate-400 uppercase font-bold">
+                          / cm³
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* OPIS MATERIAŁU */}
+                    <p className="text-xs text-slate-600 leading-relaxed font-medium bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                      {matConfig.desc}
+                    </p>
+
+                    {/* PARAMETRY TECHNICZNE */}
+                    <div className="grid grid-cols-3 gap-1.5 text-center">
+                      <div className="bg-slate-50 p-1.5 rounded-xl border border-slate-100">
+                        <span className="text-[9px] font-bold text-slate-400 block uppercase">HDT Temp</span>
+                        <span className="text-[11px] font-black text-slate-800">{matConfig.hdt}</span>
+                      </div>
+                      <div className="bg-slate-50 p-1.5 rounded-xl border border-slate-100">
+                        <span className="text-[9px] font-bold text-slate-400 block uppercase">Wytrzymałość</span>
+                        <span className="text-[11px] font-black text-slate-800 truncate block" title={matConfig.tensileStrength}>
+                          {matConfig.tensileStrength}
+                        </span>
+                      </div>
+                      <div className="bg-slate-50 p-1.5 rounded-xl border border-slate-100">
+                        <span className="text-[9px] font-bold text-slate-400 block uppercase">Odporność</span>
+                        <span className="text-[11px] font-black text-slate-800 truncate block" title={matConfig.uvResistance}>
+                          {matConfig.uvResistance}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* DEDYKOWANY WYBÓR KOLORÓW DLA TEGO MATERIAŁU */}
+                    <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-bold text-slate-600">
+                        <span className="text-[11px] text-slate-400 uppercase tracking-wider">Kolor filamentu:</span>
+                        <span className="text-slate-900 font-extrabold flex items-center gap-1.5 text-[11px]">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full border border-slate-300 inline-block flex-shrink-0"
+                            style={{ backgroundColor: selectedColor }}
+                          />
+                          <span className="truncate max-w-[130px]">{activeColorObj?.name || "Wybrany"}</span>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-thin min-h-[36px]">
+                        {matConfig.colors?.map((c) => {
+                          const isSelected = selectedColor === c.hex;
+                          return (
+                            <button
+                              key={c.id || c.hex}
+                              type="button"
+                              onClick={() => setSelectedColor(c.hex)}
+                              title={c.name}
+                              className={`w-7 h-7 rounded-full transition-all cursor-pointer flex-shrink-0 ${
+                                isSelected
+                                  ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110 shadow-md"
+                                  : "hover:scale-105 border border-slate-300"
+                              }`}
+                              style={{ backgroundColor: c.hex }}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Przycisk W PRAWO → */}
+                  <button
+                    type="button"
+                    onClick={handleNextMaterial}
+                    title="Następny materiał"
+                    className="w-10 h-10 md:w-11 md:h-11 rounded-2xl bg-white hover:bg-slate-100 active:scale-95 text-slate-700 hover:text-slate-900 border border-slate-200 shadow-sm flex items-center justify-center transition-all flex-shrink-0 cursor-pointer"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* KROPKI POZYCJI (PAGINATION DOTS) */}
+                <div className="flex items-center justify-center gap-1.5 pt-1">
+                  {filteredMaterials.map((mat, idx) => {
+                    const isActive = idx === currentIndex;
+                    return (
+                      <button
+                        key={mat.id}
+                        type="button"
+                        onClick={() => handleSelectMaterial(mat.id)}
+                        title={mat.name}
+                        className={`h-2 rounded-full transition-all cursor-pointer ${
+                          isActive
+                            ? "w-6 bg-[#EF4444]"
+                            : "w-2 bg-slate-300 hover:bg-slate-400"
+                        }`}
+                      />
                     );
                   })}
                 </div>
-
-                {/* 3. Dedykowany wybór kolorów dla wybranego materiału */}
-                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200/80 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-600">
-                    <span>Kolor dla: {matConfig?.name}</span>
-                    <span className="text-slate-900 font-extrabold flex items-center gap-1.5">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full border border-slate-300 inline-block flex-shrink-0"
-                        style={{ backgroundColor: selectedColor }}
-                      />
-                      <span className="truncate max-w-[140px]">{activeColorObj?.name || "Wybrany"}</span>
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-thin min-h-[36px]">
-                    {matConfig?.colors?.map((c) => {
-                      const isSelected = selectedColor === c.hex;
-                      return (
-                        <button
-                          key={c.id || c.hex}
-                          type="button"
-                          onClick={() => setSelectedColor(c.hex)}
-                          title={c.name}
-                          className={`w-7 h-7 rounded-full transition-all cursor-pointer flex-shrink-0 ${
-                            isSelected
-                              ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110 shadow-md"
-                              : "hover:scale-105 border border-slate-300"
-                          }`}
-                          style={{ backgroundColor: c.hex }}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
-
 
               {/* Infill */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
@@ -796,7 +859,16 @@ export default function Home() {
       </main>
 
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onLoginSuccess={(u) => setUser(u)} />
-      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} items={cartItems} onRemoveItem={() => fetchCart(user?.id)} />
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        items={cartItems}
+        onRemoveItem={(removedId) => {
+          setCartItems((prev) => prev.filter((it) => it.id !== removedId));
+          if (user?.id) fetchCart(user.id);
+        }}
+      />
+
     </div>
   );
 }
