@@ -30,12 +30,72 @@ const StlViewer3D = dynamic(
             url,
             (geo) => {
               geo.computeVertexNormals();
-              // Wyśrodkowanie w osiach X i Z
-              geo.center();
-              // Postawienie spodu modelu dokładnie na stole (Y = 0)
+
+              // -------------------------------------------------------------
+              // AUTO-ORIENTATION / LAY ON FLATTEST FACE (JAK W SLICERZE)
+              // -------------------------------------------------------------
+              const pos = geo.attributes.position;
+              if (pos && pos.count > 0) {
+                // 1. Zbieramy wektory normalne wszystkich ścianek i ich powierzchnie
+                const faceData = [];
+                const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
+                const ab = new THREE.Vector3(), ac = new THREE.Vector3(), fn = new THREE.Vector3();
+
+                for (let i = 0; i < pos.count; i += 3) {
+                  pA.fromBufferAttribute(pos, i);
+                  pB.fromBufferAttribute(pos, i + 1);
+                  pC.fromBufferAttribute(pos, i + 2);
+
+                  ab.subVectors(pB, pA);
+                  ac.subVectors(pC, pA);
+                  fn.crossVectors(ab, ac);
+                  const area = fn.length() * 0.5;
+                  fn.normalize();
+
+                  if (area > 0.01) {
+                    faceData.push({ normal: fn.clone(), area });
+                  }
+                }
+
+                // 2. Klastrujemy ścianki o podobnych wektorach normalnych (tolerancja kątowa ~8 st.)
+                const clusters = [];
+                faceData.forEach((f) => {
+                  let found = false;
+                  for (let c of clusters) {
+                    if (c.normal.dot(f.normal) > 0.98) {
+                      c.totalArea += f.area;
+                      found = true;
+                      break;
+                    }
+                  }
+                  if (!found) {
+                    clusters.push({ normal: f.normal.clone(), totalArea: f.area });
+                  }
+                });
+
+                // 3. Wybieramy płaszczyznę o największym polu powierzchni (najstabilniejsza baza)
+                if (clusters.length > 0) {
+                  clusters.sort((a, b) => b.totalArea - a.totalArea);
+                  const bestNormal = clusters[0].normal;
+
+                  // Chcemy, aby wektor normalny tej największej bazy celował w dół stołu (0, -1, 0)
+                  const targetDown = new THREE.Vector3(0, -1, 0);
+                  const q = new THREE.Quaternion().setFromUnitVectors(bestNormal, targetDown);
+                  geo.applyQuaternion(q);
+                }
+              }
+
+              // 4. Centrujemy model w osiach X i Z
               geo.computeBoundingBox();
-              const minY = geo.boundingBox.min.y;
-              geo.translate(0, -minY, 0);
+              const box = geo.boundingBox;
+              const centerX = (box.min.x + box.max.x) / 2;
+              const centerZ = (box.min.z + box.max.z) / 2;
+              const minY = box.min.y;
+
+              // Ustawiamy podstawę idealnie na wysokości stołu (Y = 0)
+              geo.translate(-centerX, -minY, -centerZ);
+              geo.computeVertexNormals();
+
               setGeometry(geo);
             },
             undefined,
@@ -43,7 +103,7 @@ const StlViewer3D = dynamic(
           );
         }, [url]);
 
-        // Wyliczanie precyzyjnych powierzchni wymagających podpór (Nawisy > 45 st.)
+        // Wyliczanie powierzchni podpór (Nawisy > 45 st.)
         const supportMeshGeometry = useMemo(() => {
           if (!geometry || !showSupports) return null;
 
@@ -51,29 +111,23 @@ const StlViewer3D = dynamic(
           if (!pos) return null;
 
           const supportTriangles = [];
-          const pA = new THREE.Vector3();
-          const pB = new THREE.Vector3();
-          const pC = new THREE.Vector3();
-          const cb = new THREE.Vector3();
-          const ab = new THREE.Vector3();
-          const faceNormal = new THREE.Vector3();
+          const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
+          const ab = new THREE.Vector3(), ac = new THREE.Vector3(), fn = new THREE.Vector3();
 
           for (let i = 0; i < pos.count; i += 3) {
             pA.fromBufferAttribute(pos, i);
             pB.fromBufferAttribute(pos, i + 1);
             pC.fromBufferAttribute(pos, i + 2);
 
-            // Wektor normalny ścianki
-            cb.subVectors(pC, pB);
-            ab.subVectors(pA, pB);
-            cb.cross(ab).normalize();
-            faceNormal.copy(cb);
+            ab.subVectors(pB, pA);
+            ac.subVectors(pC, pA);
+            fn.crossVectors(ab, ac).normalize();
 
-            // Sprawdzamy kąt zwisu względem pionu (Oś Y w Three.js skierowana w dół: Ny < -0.707 to zwis > 45°)
-            // Odrzucamy idealnie płaski spód stykający się ze stołem (y bliskie 0)
-            const isTouchingBed = pA.y < 0.2 && pB.y < 0.2 && pC.y < 0.2;
+            // Pomiń trójkąty, które przylegają bezpośrednio do stołu (y bliskie 0)
+            const isBedLayer = pA.y < 0.15 && pB.y < 0.15 && pC.y < 0.15;
 
-            if (faceNormal.y < -0.707 && !isTouchingBed) {
+            // Zwis większy niż 45° (składowa Y normalnej < -0.707)
+            if (fn.y < -0.707 && !isBedLayer) {
               supportTriangles.push(
                 pA.x, pA.y, pA.z,
                 pB.x, pB.y, pB.z,
@@ -85,10 +139,7 @@ const StlViewer3D = dynamic(
           if (supportTriangles.length === 0) return null;
 
           const sGeo = new THREE.BufferGeometry();
-          sGeo.setAttribute(
-            "position",
-            new THREE.Float32BufferAttribute(supportTriangles, 3)
-          );
+          sGeo.setAttribute("position", new THREE.Float32BufferAttribute(supportTriangles, 3));
           sGeo.computeVertexNormals();
           return sGeo;
         }, [geometry, showSupports]);
@@ -97,16 +148,12 @@ const StlViewer3D = dynamic(
 
         return (
           <group>
-            {/* Główny model CAD */}
+            {/* Główny model CAD spoczywający na stole */}
             <mesh geometry={geometry} castShadow receiveShadow>
-              <meshStandardMaterial
-                color={color}
-                roughness={0.35}
-                metalness={0.1}
-              />
+              <meshStandardMaterial color={color} roughness={0.35} metalness={0.08} />
             </mesh>
 
-            {/* Czerwone podświetlenie powierzchni podpór (jak w slicerze) */}
+            {/* Czerwone podświetlenie nawisów / podpór */}
             {supportMeshGeometry && (
               <mesh geometry={supportMeshGeometry}>
                 <meshBasicMaterial
