@@ -20,84 +20,100 @@ export const KEYCHAIN_CATEGORIES = [
 
 export const KEYCHAIN_FILAMENTS = {
   PLA: [
-    { id: "kc_pla_white", name: "Czysta Biel", hex: "#E6E6E2", type: "single", roughness: 0.4 },
-    { id: "kc_pla_bone", name: "Kość Słoniowa", hex: "#ECE4D8", type: "single", roughness: 0.4 },
-    { id: "kc_pla_black", name: "Głęboka Czerń", hex: "#222222", type: "single", roughness: 0.4 },
-    { id: "kc_pla_grey", name: "Szary Standard", hex: "#6B6E6E", type: "single", roughness: 0.4 },
-    { id: "kc_pla_dark_gray", name: "Ciemnoszary", hex: "#474A4D", type: "single", roughness: 0.4 },
-    { id: "kc_pla_red", name: "Ognista Czerwień", hex: "#B34044", type: "single", roughness: 0.4 },
-    { id: "kc_pla_dark_red", name: "Bordo / Ciemnoczerwony", hex: "#8A171A", type: "single", roughness: 0.4 },
-    { id: "kc_pla_blue", name: "Kobaltowy Błękit", hex: "#0063A0", type: "single", roughness: 0.4 },
-    { id: "kc_pla_sky", name: "Błękit Nieba", hex: "#0CB7CC", type: "single", roughness: 0.4 },
-    { id: "kc_pla_navy", name: "Granatowy", hex: "#133E7C", type: "single", roughness: 0.4 },
-    { id: "kc_pla_green", name: "Żywa Zieleń", hex: "#4EE349", type: "single", roughness: 0.4 },
-    { id: "kc_pla_dark_green", name: "Ciemna Zieleń", hex: "#145A32", type: "single", roughness: 0.4 },
-    { id: "kc_pla_yellow", name: "Czysty Żółty", hex: "#FFBD2C", type: "single", roughness: 0.4 },
-    { id: "kc_pla_orange", name: "Pomarańczowy", hex: "#E65C00", type: "single", roughness: 0.4 },
-    { id: "kc_pla_purple", name: "Fiolet", hex: "#8887C5", type: "single", roughness: 0.4 },
-    { id: "kc_pla_pink", name: "Różowy", hex: "#E881A6", type: "single", roughness: 0.4 },
-    { id: "kc_pla_skin", name: "Cielisty Beż", hex: "#F7BEA1", type: "single", roughness: 0.4 },
-    { id: "kc_pla_brown", name: "Ciepły Brąz", hex: "#8E6B4E", type: "single", roughness: 0.4 },
-    { id: "kc_pla_silver", name: "Srebrny", hex: "#8A8D8F", type: "single", roughness: 0.4 },
-    { id: "kc_pla_gold", name: "Złoty Standard", hex: "#D4AF37", type: "single", roughness: 0.4 },
-    { id: "kc_pla_copper", name: "Miedź Standard", hex: "#A0522D", type: "single", roughness: 0.4 },
+    { id: "kc_pla_white", name: "Czysta Biel", hex: "#E6E6E2", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_bone", name: "Kość Słoniowa", hex: "#ECE4D8", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_black", name: "Głęboka Czerń", hex: "#222222", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_grey", name: "Szary Standard", hex: "#6B6E6E", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_dark_gray", name: "Ciemnoszary", hex: "#474A4D", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_red", name: "Ognista Czerwień", hex: "#B34044", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_dark_red", name: "Bordo / Ciemnoczerwony", hex: "#8A171A", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_blue", name: "Kobaltowy Błękit", hex: "#0063A0", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_sky", name: "Błękit Nieba", hex: "#0CB7CC", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_navy", name: "Granatowy", hex: "#133E7C", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_green", name: "Żywa Zieleń", hex: "#4EE349", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_dark_green", name: "Ciemna Zieleń", hex: "#145A32", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_yellow", name: "Czysty Żółty", hex: "#FFBD2C", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_orange", name: "Pomarańczowy", hex: "#E65C00", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_purple", name: "Fiolet", hex: "#8887C5", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_pink", name: "Różowy", hex: "#E881A6", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_skin", name: "Cielisty Beż", hex: "#F7BEA1", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_brown", name: "Ciepły Brąz", hex: "#8E6B4E", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_silver", name: "Srebrny", hex: "#8A8D8F", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_gold", name: "Złoty Standard", hex: "#D4AF37", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
+    { id: "kc_pla_copper", name: "Miedź Standard", hex: "#A0522D", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.38, roughness: 0.40, metalness: 0.05, in_stock: true },
   ],
   MATTE: [
-    { id: "kc_mat_white", name: "Matte Czysta Biel", hex: "#F1F2F6", type: "single", roughness: 0.90 },
-    { id: "kc_mat_black", name: "Matte Głęboka Czerń", hex: "#1E1E1E", type: "single", roughness: 0.90 },
-    { id: "kc_mat_gray", name: "Matte Szary Neutralny", hex: "#747D8C", type: "single", roughness: 0.90 },
-    { id: "kc_mat_graphite", name: "Matte Grafit Ciemny", hex: "#2F3542", type: "single", roughness: 0.90 },
-    { id: "kc_mat_red", name: "Matte Karminowa Czerwień", hex: "#FF4757", type: "single", roughness: 0.90 },
-    { id: "kc_mat_blue", name: "Matte Błękit Kobalt", hex: "#1E90FF", type: "single", roughness: 0.90 },
-    { id: "kc_mat_green", name: "Matte Soczysta Zieleń", hex: "#2ED573", type: "single", roughness: 0.90 },
-    { id: "kc_mat_yellow", name: "Matte Ciepły Żółty", hex: "#FFA502", type: "single", roughness: 0.90 },
-    { id: "kc_mat_satin_pearl", name: "Satin Jedwabista Perła", hex: "#EDECE8", type: "single", roughness: 0.65 },
-    { id: "kc_mat_satin_black", name: "Satin Satynowa Czerń", hex: "#28292B", type: "single", roughness: 0.65 },
+    { id: "kc_mat_white", name: "Matte Czysta Biel", hex: "#F1F2F6", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.42, roughness: 0.90, metalness: 0.0, in_stock: true },
+    { id: "kc_mat_black", name: "Matte Głęboka Czerń", hex: "#1E1E1E", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.42, roughness: 0.90, metalness: 0.0, in_stock: true },
+    { id: "kc_mat_gray", name: "Matte Szary Neutralny", hex: "#747D8C", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.42, roughness: 0.90, metalness: 0.0, in_stock: true },
+    { id: "kc_mat_graphite", name: "Matte Grafit Ciemny", hex: "#2F3542", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.42, roughness: 0.90, metalness: 0.0, in_stock: true },
+    { id: "kc_mat_red", name: "Matte Karminowa Czerwień", hex: "#FF4757", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.42, roughness: 0.90, metalness: 0.0, in_stock: true },
+    { id: "kc_mat_blue", name: "Matte Błękit Kobalt", hex: "#1E90FF", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.42, roughness: 0.90, metalness: 0.0, in_stock: true },
+    { id: "kc_mat_green", name: "Matte Soczysta Zieleń", hex: "#2ED573", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.42, roughness: 0.90, metalness: 0.0, in_stock: true },
+    { id: "kc_mat_yellow", name: "Matte Ciepły Żółty", hex: "#FFA502", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.42, roughness: 0.90, metalness: 0.0, in_stock: true },
+    { id: "kc_mat_satin_pearl", name: "Satin Jedwabista Perła", hex: "#EDECE8", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.42, roughness: 0.65, metalness: 0.05, in_stock: true },
+    { id: "kc_mat_satin_black", name: "Satin Satynowa Czerń", hex: "#28292B", tier: "standard", type: "PLA", category: "single", price_per_cm3: 0.42, roughness: 0.65, metalness: 0.05, in_stock: true },
   ],
   SILK: [
-    { id: "kc_silk_gold", name: "Silk Złoty", hex: "#D4AF37", type: "single", metalness: 0.40, roughness: 0.22 },
-    { id: "kc_silk_silver", name: "Silk Srebrny", hex: "#A6A8A9", type: "single", metalness: 0.45, roughness: 0.22 },
-    { id: "kc_silk_copper", name: "Silk Miedź", hex: "#B87333", type: "single", metalness: 0.40, roughness: 0.22 },
-    { id: "kc_silk_blue", name: "Silk Błękitny", hex: "#33ACD4", type: "single", metalness: 0.25, roughness: 0.22 },
-    { id: "kc_silk_red", name: "Silk Czerwony", hex: "#C83232", type: "single", metalness: 0.25, roughness: 0.22 },
-    { id: "kc_silk_green", name: "Silk Szmaragdowy", hex: "#27AE60", type: "single", metalness: 0.25, roughness: 0.22 },
-    { id: "kc_silk_purple", name: "Silk Fioletowy", hex: "#9B59B6", type: "single", metalness: 0.25, roughness: 0.22 },
-    { id: "kc_silk_candy", name: "Silk Candy Róż", hex: "#ED8E93", type: "single", metalness: 0.25, roughness: 0.22 },
-    { id: "kc_silk_black", name: "Silk Grafit / Czerń", hex: "#444444", type: "single", metalness: 0.35, roughness: 0.22 },
-    { id: "kc_silk_white", name: "Silk Perłowy Biały", hex: "#F0F0EE", type: "single", metalness: 0.20, roughness: 0.22 },
+    { id: "kc_silk_gold", name: "Silk Złoty", hex: "#D4AF37", tier: "premium", type: "SILK", category: "single", price_per_cm3: 0.50, metalness: 0.40, roughness: 0.22, in_stock: true },
+    { id: "kc_silk_silver", name: "Silk Srebrny", hex: "#A6A8A9", tier: "premium", type: "SILK", category: "single", price_per_cm3: 0.50, metalness: 0.45, roughness: 0.22, in_stock: true },
+    { id: "kc_silk_copper", name: "Silk Miedź", hex: "#B87333", tier: "premium", type: "SILK", category: "single", price_per_cm3: 0.50, metalness: 0.40, roughness: 0.22, in_stock: true },
+    { id: "kc_silk_blue", name: "Silk Błękitny", hex: "#33ACD4", tier: "premium", type: "SILK", category: "single", price_per_cm3: 0.50, metalness: 0.25, roughness: 0.22, in_stock: true },
+    { id: "kc_silk_red", name: "Silk Czerwony", hex: "#C83232", tier: "premium", type: "SILK", category: "single", price_per_cm3: 0.50, metalness: 0.25, roughness: 0.22, in_stock: true },
+    { id: "kc_silk_green", name: "Silk Szmaragdowy", hex: "#27AE60", tier: "premium", type: "SILK", category: "single", price_per_cm3: 0.50, metalness: 0.25, roughness: 0.22, in_stock: true },
+    { id: "kc_silk_purple", name: "Silk Fioletowy", hex: "#9B59B6", tier: "premium", type: "SILK", category: "single", price_per_cm3: 0.50, metalness: 0.25, roughness: 0.22, in_stock: true },
+    { id: "kc_silk_candy", name: "Silk Candy Róż", hex: "#ED8E93", tier: "premium", type: "SILK", category: "single", price_per_cm3: 0.50, metalness: 0.25, roughness: 0.22, in_stock: true },
+    { id: "kc_silk_black", name: "Silk Grafit / Czerń", hex: "#444444", tier: "premium", type: "SILK", category: "single", price_per_cm3: 0.50, metalness: 0.35, roughness: 0.22, in_stock: true },
+    { id: "kc_silk_white", name: "Silk Perłowy Biały", hex: "#F0F0EE", tier: "premium", type: "SILK", category: "single", price_per_cm3: 0.50, metalness: 0.20, roughness: 0.22, in_stock: true },
   ],
   WOOD: [
-    { id: "kc_wood_birch", name: "Drewno Jasna Brzoza / Sosna", hex: "#D7BA89", type: "single", roughness: 0.94, metalness: 0.0 },
-    { id: "kc_wood_oak", name: "Drewno Dąb Naturalny", hex: "#B48A5E", type: "single", roughness: 0.94, metalness: 0.0 },
-    { id: "kc_wood_walnut", name: "Drewno Ciemny Orzech", hex: "#70482B", type: "single", roughness: 0.94, metalness: 0.0 },
-    { id: "kc_wood_ebony", name: "Drewno Hebanowe", hex: "#3E2718", type: "single", roughness: 0.94, metalness: 0.0 },
+    { id: "kc_wood_birch", name: "Drewno Jasna Brzoza / Sosna", hex: "#D7BA89", tier: "premium", type: "WOOD", category: "single", price_per_cm3: 0.55, roughness: 0.94, metalness: 0.0, in_stock: true },
+    { id: "kc_wood_oak", name: "Drewno Dąb Naturalny", hex: "#B48A5E", tier: "premium", type: "WOOD", category: "single", price_per_cm3: 0.55, roughness: 0.94, metalness: 0.0, in_stock: true },
+    { id: "kc_wood_walnut", name: "Drewno Ciemny Orzech", hex: "#70482B", tier: "premium", type: "WOOD", category: "single", price_per_cm3: 0.55, roughness: 0.94, metalness: 0.0, in_stock: true },
+    { id: "kc_wood_ebony", name: "Drewno Hebanowe", hex: "#3E2718", tier: "premium", type: "WOOD", category: "single", price_per_cm3: 0.55, roughness: 0.94, metalness: 0.0, in_stock: true },
   ],
   DUAL: [
-    { id: "kc_dual_red_blue", name: "Dual Czerwony / Niebieski", hex: "#6F4FA6", colors: ["#C0292B", "#0984E3"], type: "dual" },
-    { id: "kc_dual_black_gold", name: "Dual Czarny / Złoty", hex: "#7D6F3C", colors: ["#1E272C", "#D4AF37"], type: "dual" },
-    { id: "kc_dual_red_gold", name: "Dual Czerwony / Złoty", hex: "#D56F34", colors: ["#D63031", "#D4AF37"], type: "dual" },
-    { id: "kc_dual_pink_gold", name: "Dual Różowy / Złoty", hex: "#E89470", colors: ["#FD79A8", "#D4AF37"], type: "dual" },
-    { id: "kc_dual_black_white", name: "Dual Czarny / Biały", hex: "#868D90", colors: ["#1E272C", "#DFE6E9"], type: "dual" },
-    { id: "kc_dual_black_green", name: "Dual Czarny / Zieleń", hex: "#167666", colors: ["#1E272C", "#00B894"], type: "dual" },
-    { id: "kc_dual_black_purple", name: "Dual Czarny / Fiolet", hex: "#4C488F", colors: ["#1E272C", "#6C5CE7"], type: "dual" },
-    { id: "kc_dual_blue_green", name: "Dual Błękit / Zieleń", hex: "#059EBC", colors: ["#0984E3", "#00B894"], type: "dual" },
-    { id: "kc_dual_green_purple", name: "Dual Zieleń / Fiolet", hex: "#368A8E", colors: ["#00B894", "#6C5CE7"], type: "dual" },
+    { id: "kc_dual_red_blue", name: "Dual Czerwony / Niebieski", hex: "#6F4FA6", colors: ["#C0292B", "#0984E3"], tier: "premium", type: "MULTICOLOR", category: "dual", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_dual_black_gold", name: "Dual Czarny / Złoty", hex: "#7D6F3C", colors: ["#1E272C", "#D4AF37"], tier: "premium", type: "MULTICOLOR", category: "dual", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_dual_red_gold", name: "Dual Czerwony / Złoty", hex: "#D56F34", colors: ["#D63031", "#D4AF37"], tier: "premium", type: "MULTICOLOR", category: "dual", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_dual_pink_gold", name: "Dual Różowy / Złoty", hex: "#E89470", colors: ["#FD79A8", "#D4AF37"], tier: "premium", type: "MULTICOLOR", category: "dual", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_dual_black_white", name: "Dual Czarny / Biały", hex: "#868D90", colors: ["#1E272C", "#DFE6E9"], tier: "premium", type: "MULTICOLOR", category: "dual", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_dual_black_green", name: "Dual Czarny / Zieleń", hex: "#167666", colors: ["#1E272C", "#00B894"], tier: "premium", type: "MULTICOLOR", category: "dual", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_dual_black_purple", name: "Dual Czarny / Fiolet", hex: "#4C488F", colors: ["#1E272C", "#6C5CE7"], tier: "premium", type: "MULTICOLOR", category: "dual", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_dual_blue_green", name: "Dual Błękit / Zieleń", hex: "#059EBC", colors: ["#0984E3", "#00B894"], tier: "premium", type: "MULTICOLOR", category: "dual", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_dual_green_purple", name: "Dual Zieleń / Fiolet", hex: "#368A8E", colors: ["#00B894", "#6C5CE7"], tier: "premium", type: "MULTICOLOR", category: "dual", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
   ],
   TRI: [
-    { id: "kc_tri_ryb", name: "Tri Czerwony / Żółty / Błękit", hex: "#B58080", colors: ["#D63031", "#FDCB6E", "#0984E3"], type: "tri" },
-    { id: "kc_tri_bgp", name: "Tri Błękit / Zieleń / Fiolet", hex: "#2789C0", colors: ["#0984E3", "#00B894", "#6C5CE7"], type: "tri" },
-    { id: "kc_tri_ryg", name: "Tri Czerwony / Żółty / Zieleń", hex: "#A7B33C", colors: ["#D63031", "#F1C40F", "#2ECC71"], type: "tri" },
-    { id: "kc_tri_bgpur", name: "Tri Czarny / Złoty / Fiolet", hex: "#83796E", colors: ["#2C3E50", "#D4AF37", "#8E44AD"], type: "tri" },
+    { id: "kc_tri_ryb", name: "Tri Czerwony / Żółty / Błękit", hex: "#B58080", colors: ["#D63031", "#FDCB6E", "#0984E3"], tier: "premium", type: "MULTICOLOR", category: "tri", price_per_cm3: 0.65, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_tri_bgp", name: "Tri Błękit / Zieleń / Fiolet", hex: "#2789C0", colors: ["#0984E3", "#00B894", "#6C5CE7"], tier: "premium", type: "MULTICOLOR", category: "tri", price_per_cm3: 0.65, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_tri_ryg", name: "Tri Czerwony / Żółty / Zieleń", hex: "#A7B33C", colors: ["#D63031", "#F1C40F", "#2ECC71"], tier: "premium", type: "MULTICOLOR", category: "tri", price_per_cm3: 0.65, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_tri_bgpur", name: "Tri Czarny / Złoty / Fiolet", hex: "#83796E", colors: ["#2C3E50", "#D4AF37", "#8E44AD"], tier: "premium", type: "MULTICOLOR", category: "tri", price_per_cm3: 0.65, roughness: 0.28, metalness: 0.15, in_stock: true },
   ],
   RAINBOW: [
-    { id: "kc_rainbow_1", name: "Rainbow Classic (Tęcza)", hex: "#A29BFE", colors: ["#E84393", "#FDCB6E", "#00B894", "#0984E3"], type: "rainbow" },
-    { id: "kc_rainbow_2", name: "Rainbow Pastel Candy", hex: "#FBC531", colors: ["#FF7675", "#FFEAA7", "#55EFC4", "#74B9FF"], type: "rainbow" },
-    { id: "kc_rainbow_3", name: "Rainbow Jesień / Forest", hex: "#B9770E", colors: ["#D35400", "#F39C12", "#27AE60", "#2C3E50"], type: "rainbow" },
+    { id: "kc_rainbow_1", name: "Rainbow Classic (Tęcza)", hex: "#A29BFE", colors: ["#E84393", "#FDCB6E", "#00B894", "#0984E3"], tier: "premium", type: "MULTICOLOR", category: "rainbow", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_rainbow_2", name: "Rainbow Pastel Candy", hex: "#FBC531", colors: ["#FF7675", "#FFEAA7", "#55EFC4", "#74B9FF"], tier: "premium", type: "MULTICOLOR", category: "rainbow", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
+    { id: "kc_rainbow_3", name: "Rainbow Jesień / Forest", hex: "#B9770E", colors: ["#D35400", "#F39C12", "#27AE60", "#2C3E50"], tier: "premium", type: "MULTICOLOR", category: "rainbow", price_per_cm3: 0.60, roughness: 0.28, metalness: 0.15, in_stock: true },
   ]
 };
 
 // Spłaszczona lista kolorów brelokowych (używana m.in. do autodetekcji kolorów AI)
 export const ALL_KEYCHAIN_COLORS = Object.values(KEYCHAIN_FILAMENTS).flat();
+
+// Funkcja pomocnicza do pobierania filamentów z backendu FastAPI / PostgreSQL z automatycznym fallbackiem
+export async function fetchFilamentsFromApi(apiUrl = process.env.NEXT_PUBLIC_API_URL) {
+  try {
+    const base = apiUrl ? apiUrl.replace(/\/+$/, "") : "";
+    const res = await fetch(`${base}/api/filaments`);
+    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+    const data = await res.json();
+    if (data && data.success && Array.isArray(data.filaments) && data.filaments.length > 0) {
+      return data.filaments;
+    }
+  } catch (err) {
+    console.warn("Nie udało się pobrać filamentów z bazy PostgreSQL (Railway), używam danych lokalnych:", err);
+  }
+  return ALL_KEYCHAIN_COLORS;
+}
 
 // Kompatybilność wsteczna z poprzednimi odwołaniami
 export const SUNLU_CATALOG = {

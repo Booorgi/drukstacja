@@ -10,6 +10,7 @@ import {
   KEYCHAIN_CATEGORIES,
   KEYCHAIN_FILAMENTS,
   ALL_KEYCHAIN_COLORS,
+  fetchFilamentsFromApi,
 } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -83,32 +84,36 @@ const KeychainViewer3D = dynamic(
           if (!filamentInfo) {
             return new THREE.MeshStandardMaterial({
               color: "#3C3C3C",
-              roughness: 0.4,
+              roughness: 0.40,
               metalness: 0.05,
               clippingPlanes,
             });
           }
 
-          // DLA ZWYKŁYCH FILAMENTÓW (PLA+, PETG, SILK SINGLE)
-          if (filamentInfo.type === "single" || !filamentInfo.colors) {
+          const cat = (filamentInfo.category || filamentInfo.type || "single").toLowerCase();
+          const roughnessVal = typeof filamentInfo.roughness === "number" ? filamentInfo.roughness : 0.38;
+          const metalnessVal = typeof filamentInfo.metalness === "number" ? filamentInfo.metalness : 0.08;
+
+          // DLA ZWYKŁYCH FILAMENTÓW (PLA, MATTE, PETG, SILK SINGLE, WOOD, TECH, CF)
+          if (cat === "single" || !filamentInfo.colors || !Array.isArray(filamentInfo.colors) || filamentInfo.colors.length === 0) {
             return new THREE.MeshStandardMaterial({
-              color: filamentInfo.hex,
-              roughness: filamentInfo.roughness ?? 0.38,
-              metalness: filamentInfo.metalness ?? 0.08,
+              color: filamentInfo.hex || "#E6E6E2",
+              roughness: roughnessVal,
+              metalness: metalnessVal,
               clippingPlanes,
             });
           }
 
           // DLA DUAL-COLOR (PRZEJŚCIE 2 KOLORÓW W ZALEŻNOŚCI OD KĄTA KAMERY)
-          if (filamentInfo.type === "dual") {
+          if (cat === "dual") {
             const mat = new THREE.MeshStandardMaterial({
-              roughness: 0.28,
-              metalness: 0.15,
+              roughness: roughnessVal,
+              metalness: metalnessVal,
               clippingPlanes,
             });
 
             const colA = new THREE.Color(filamentInfo.colors[0]);
-            const colB = new THREE.Color(filamentInfo.colors[1]);
+            const colB = new THREE.Color(filamentInfo.colors[1] || filamentInfo.colors[0]);
 
             mat.onBeforeCompile = (shader) => {
               shader.uniforms.uColorA = { value: colA };
@@ -153,15 +158,18 @@ const KeychainViewer3D = dynamic(
             return mat;
           }
 
-          // DLA TRI-COLOR (3 KOLORY WOKÓŁ OSI OBROTU MODELU)
-          if (filamentInfo.type === "tri" || filamentInfo.type === "rainbow") {
+          // DLA TRI-COLOR ORAZ RAINBOW (3+ KOLORY WOKÓŁ OSI OBROTU MODELU)
+          if (cat === "tri" || cat === "rainbow") {
             const mat = new THREE.MeshStandardMaterial({
-              roughness: 0.28,
-              metalness: 0.18,
+              roughness: roughnessVal,
+              metalness: metalnessVal,
               clippingPlanes,
             });
 
             const colors = filamentInfo.colors.slice(0, 3).map((c) => new THREE.Color(c));
+            while (colors.length < 3) {
+              colors.push(colors[0] || new THREE.Color("#E6E6E2"));
+            }
 
             mat.onBeforeCompile = (shader) => {
               shader.uniforms.uC1 = { value: colors[0] };
@@ -216,8 +224,9 @@ const KeychainViewer3D = dynamic(
           }
 
           return new THREE.MeshStandardMaterial({
-            color: filamentInfo.hex,
-            roughness: 0.4,
+            color: filamentInfo.hex || "#3C3C3C",
+            roughness: roughnessVal,
+            metalness: metalnessVal,
             clippingPlanes,
           });
         }, [filamentInfo, clippingPlanes]);
@@ -776,62 +785,160 @@ const KeychainViewer3D = dynamic(
 );
 
 // -------------------------------------------------------------
-// DEDYKOWANY SELEKTOR MATERIAŁÓW DLA GENERATORA BRELOKÓW
-// Skupiony wyłącznie na palecie PLA (Standard, Matte, Silk, Wood, Dual, Tri, Rainbow)
+// SELEKTOR MATERIAŁÓW I FILAMENTÓW (Baza PostgreSQL Railway / Fallback)
+// Podział na Segmenty: STANDARD vs PREMIUM + filtrowanie po typie materiału
 // -------------------------------------------------------------
-function SunluColorPaletteSelector({ selectedFilament, onSelectColor }) {
-  // Wykrywamy kategorię aktualnie wybranego filamentu
-  const initialCategory = useMemo(() => {
-    if (!selectedFilament) return "PLA";
-    for (const [catId, filList] of Object.entries(KEYCHAIN_FILAMENTS)) {
-      if (filList.some((f) => f.id === selectedFilament.id || f.name === selectedFilament.name)) {
-        return catId;
-      }
-    }
-    return "PLA";
-  }, [selectedFilament]);
+function getFilamentGroup(f) {
+  if (!f) return "PLA";
+  const cat = (f.category || "").toLowerCase();
+  if (cat === "dual") return "DUAL";
+  if (cat === "tri") return "TRI";
+  if (cat === "rainbow") return "RAINBOW";
+  const type = (f.type || "").toUpperCase();
+  if (type === "SILK") return "SILK";
+  if (type === "WOOD") return "WOOD";
+  if (type === "PETG") return "PETG";
+  if (type === "FLEX") return "FLEX";
+  if (type === "TECH") return "TECH";
+  if (type === "COMPOSITE") return "COMPOSITE";
+  if (type === "PLA" && (f.roughness >= 0.6 || (f.name && f.name.toLowerCase().includes("mat")))) {
+    return "MATTE";
+  }
+  return "PLA";
+}
 
-  const [activeCategory, setActiveCategory] = useState(initialCategory);
+const GROUP_LABELS = {
+  ALL: { label: "Wszystkie", badge: null },
+  PLA: { label: "PLA Standard", badge: "Gładki" },
+  MATTE: { label: "Matte", badge: "Aksamit" },
+  PETG: { label: "PET-G", badge: "Użytkowy" },
+  SILK: { label: "Silk Błysk", badge: "Jedwab" },
+  WOOD: { label: "Wood Drewno", badge: "Naturalny" },
+  DUAL: { label: "Dual-Color", badge: "2-kolory" },
+  TRI: { label: "Tri-Color", badge: "3-kolory" },
+  RAINBOW: { label: "Rainbow", badge: "Tęcza" },
+  FLEX: { label: "Flex TPU", badge: "Guma" },
+  TECH: { label: "Techniczne", badge: "Outdoor" },
+  COMPOSITE: { label: "Carbon CF", badge: "Kompozyt" },
+};
 
-  // Synchronizacja przy zmianie z zewnątrz
+function SunluColorPaletteSelector({ selectedFilament, onSelectColor, filaments }) {
+  const allList = useMemo(() => {
+    return (filaments && filaments.length > 0) ? filaments : ALL_KEYCHAIN_COLORS;
+  }, [filaments]);
+
+  // Ustal segment (tier) początkowy
+  const [activeTier, setActiveTier] = useState(() => {
+    return selectedFilament?.tier === "premium" ? "premium" : "standard";
+  });
+
+  const [activeGroup, setActiveGroup] = useState("ALL");
+
+  // Synchronizacja segmentu przy zmianie filamentu z zewnątrz
   useEffect(() => {
-    if (selectedFilament) {
-      for (const [catId, filList] of Object.entries(KEYCHAIN_FILAMENTS)) {
-        if (filList.some((f) => f.id === selectedFilament.id || f.name === selectedFilament.name)) {
-          setActiveCategory(catId);
-          break;
-        }
-      }
+    if (selectedFilament?.tier && selectedFilament.tier !== activeTier) {
+      setActiveTier(selectedFilament.tier);
     }
   }, [selectedFilament?.id]);
 
-  const currentFilaments = KEYCHAIN_FILAMENTS[activeCategory] || [];
+  // Filamenty dostępne w danym segmencie (Standard vs Premium)
+  const tierFilaments = useMemo(() => {
+    return allList.filter((f) => {
+      if (f.in_stock === false) return false;
+      const t = (f.tier || "standard").toLowerCase();
+      return t === activeTier;
+    });
+  }, [allList, activeTier]);
+
+  // Grupy materiałów obecne w wybranym segmencie
+  const availableGroups = useMemo(() => {
+    const present = new Set(tierFilaments.map(getFilamentGroup));
+    const groups = ["ALL"];
+    for (const g of Object.keys(GROUP_LABELS)) {
+      if (g !== "ALL" && present.has(g)) {
+        groups.push(g);
+      }
+    }
+    return groups;
+  }, [tierFilaments]);
+
+  // Jeśli aktywna grupa nie występuje w danym segmencie, zresetuj do 'ALL'
+  useEffect(() => {
+    if (!availableGroups.includes(activeGroup)) {
+      setActiveGroup("ALL");
+    }
+  }, [availableGroups, activeGroup]);
+
+  // Filamenty po filtrze grupy
+  const displayedFilaments = useMemo(() => {
+    if (activeGroup === "ALL") return tierFilaments;
+    return tierFilaments.filter((f) => getFilamentGroup(f) === activeGroup);
+  }, [tierFilaments, activeGroup]);
 
   return (
     <div className="space-y-2.5 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 shadow-inner">
-      {/* 1. Przełącznik kategorii (Czysta, dedykowana lista PLA dla breloków) */}
+      {/* 1. SELEKTOR SEGMENTU: STANDARD vs PREMIUM */}
+      <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
+        <div className="flex items-center gap-1 bg-slate-200/80 p-0.5 rounded-xl">
+          <button
+            type="button"
+            onClick={() => setActiveTier("standard")}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+              activeTier === "standard"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <span>🌟 Standard</span>
+            <span className="text-[10px] text-slate-400 font-normal">
+              ({allList.filter((f) => (f.tier || "standard") === "standard" && f.in_stock !== false).length})
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTier("premium")}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+              activeTier === "premium"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <span>💎 Premium</span>
+            <span className="text-[10px] text-slate-400 font-normal">
+              ({allList.filter((f) => f.tier === "premium" && f.in_stock !== false).length})
+            </span>
+          </button>
+        </div>
+
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 hidden sm:inline">
+          {activeTier === "standard" ? "Ekonomiczny & Solidny" : "Efektowne wykończenie"}
+        </span>
+      </div>
+
+      {/* 2. PRZEŁĄCZNIK TYPÓW MATERIAŁU DLA WYBRANEGO SEGMENTU */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-        {KEYCHAIN_CATEGORIES.map((cat) => {
-          const isActive = activeCategory === cat.id;
+        {availableGroups.map((grpId) => {
+          const info = GROUP_LABELS[grpId] || { label: grpId, badge: null };
+          const isActive = activeGroup === grpId;
           return (
             <button
-              key={cat.id}
+              key={grpId}
               type="button"
-              onClick={() => setActiveCategory(cat.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+              onClick={() => setActiveGroup(grpId)}
+              className={`px-2.5 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
                 isActive
                   ? "bg-slate-900 text-white shadow-sm ring-1 ring-slate-900"
                   : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200"
               }`}
             >
-              <span>{cat.label}</span>
-              {cat.badge && (
+              <span>{info.label}</span>
+              {info.badge && (
                 <span
-                  className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold ${
+                  className={`text-[9px] px-1.5 py-0.2 rounded-md font-semibold ${
                     isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
                   }`}
                 >
-                  {cat.badge}
+                  {info.badge}
                 </span>
               )}
             </button>
@@ -839,28 +946,28 @@ function SunluColorPaletteSelector({ selectedFilament, onSelectColor }) {
         })}
       </div>
 
-      {/* 2. Próbki kolorów dla wybranej kategorii */}
+      {/* 3. PRÓBKI KOLORÓW DLA WYBRANEJ KATEGORII */}
       <div className="flex items-center gap-2 overflow-x-auto py-1.5 scrollbar-thin min-h-[42px]">
-        {currentFilaments.length === 0 ? (
-          <span className="text-[11px] text-slate-400 italic">Brak próbek w tej kategorii</span>
+        {displayedFilaments.length === 0 ? (
+          <span className="text-[11px] text-slate-400 italic">Brak dostępnych filamentów w tej grupie</span>
         ) : (
-          currentFilaments.map((item) => {
+          displayedFilaments.map((item) => {
             const isSelected = selectedFilament?.id === item.id || selectedFilament?.name === item.name;
-            const itemType = item.type || item.category || "single";
+            const itemCat = item.category || item.type || "single";
 
             return (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => onSelectColor(item)}
-                title={item.name}
+                title={`${item.name} (${item.price_per_cm3 ? Number(item.price_per_cm3).toFixed(2) + ' zł/cm³' : ''})`}
                 className={`relative flex-shrink-0 w-8 h-8 rounded-full overflow-hidden transition-all cursor-pointer shadow-sm ${
                   isSelected
                     ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110 shadow-md"
                     : "hover:scale-105 border border-slate-300/80"
                 }`}
               >
-                {itemType === "single" && (
+                {itemCat === "single" && (
                   <div
                     className="w-full h-full"
                     style={{
@@ -869,7 +976,7 @@ function SunluColorPaletteSelector({ selectedFilament, onSelectColor }) {
                     }}
                   />
                 )}
-                {itemType === "dual" && item.colors && (
+                {itemCat === "dual" && item.colors && (
                   <div
                     className="w-full h-full"
                     style={{
@@ -877,15 +984,15 @@ function SunluColorPaletteSelector({ selectedFilament, onSelectColor }) {
                     }}
                   />
                 )}
-                {itemType === "tri" && item.colors && (
+                {itemCat === "tri" && item.colors && (
                   <div
                     className="w-full h-full"
                     style={{
-                      background: `linear-gradient(120deg, ${item.colors[0]} 33%, ${item.colors[1]} 33%, ${item.colors[1]} 66%, ${item.colors[2]} 66%)`,
+                      background: `linear-gradient(120deg, ${item.colors[0]} 33%, ${item.colors[1]} 33%, ${item.colors[1]} 66%, ${item.colors[2] || item.colors[1]} 66%)`,
                     }}
                   />
                 )}
-                {itemType === "rainbow" && item.colors && (
+                {itemCat === "rainbow" && item.colors && (
                   <div
                     className="w-full h-full"
                     style={{
@@ -899,7 +1006,7 @@ function SunluColorPaletteSelector({ selectedFilament, onSelectColor }) {
         )}
       </div>
 
-      {/* 3. Wybrany kolor i informacja */}
+      {/* 4. WYBRANY KOLOR, TYP I CENA ZA CM³ Z BAZY DANYCH */}
       <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs font-semibold text-slate-500">
         <div className="flex items-center gap-1.5 truncate max-w-[280px]">
           <span className="text-slate-400">Wybrany:</span>
@@ -914,10 +1021,28 @@ function SunluColorPaletteSelector({ selectedFilament, onSelectColor }) {
           <span className="text-slate-900 font-bold truncate">
             {selectedFilament?.name || "Domyślny"}
           </span>
+          {selectedFilament?.tier && (
+            <span
+              className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                selectedFilament.tier === "premium"
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {selectedFilament.tier}
+            </span>
+          )}
         </div>
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-          PLA Bambu AMS
-        </span>
+        <div className="flex items-center gap-2">
+          {selectedFilament?.price_per_cm3 && (
+            <span className="text-[11px] font-bold text-slate-700">
+              {Number(selectedFilament.price_per_cm3).toFixed(2)} zł/cm³
+            </span>
+          )}
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            BAMBU AMS
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -928,6 +1053,9 @@ export default function KeychainGenerator() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState([]);
+
+  // Dynamiczna baza materiałów i filamentów (PostgreSQL Railway / Fallback)
+  const [filaments, setFilaments] = useState(ALL_KEYCHAIN_COLORS);
 
   // Kształt bazy i wymiary
   const [shapeType, setShapeType] = useState("hexagon");
@@ -1241,6 +1369,35 @@ export default function KeychainGenerator() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Dynamiczne ładowanie listy dostępnych materiałów z endpointu GET /api/filaments (PostgreSQL Railway)
+  useEffect(() => {
+    let isMounted = true;
+    async function loadFilaments() {
+      try {
+        const loaded = await fetchFilamentsFromApi(API_URL);
+        if (isMounted && Array.isArray(loaded) && loaded.length > 0) {
+          setFilaments(loaded);
+          // Zaktualizuj referencje wybranych filamentów o aktualne dane z bazy (ceny, nazwy, roughness, metalness)
+          setBaseFilament((prev) => loaded.find((f) => f.id === prev?.id) || prev || loaded[0]);
+          setStrokeFilament((prev) => loaded.find((f) => f.id === prev?.id) || prev || loaded[0]);
+          setTextFilament((prev) => loaded.find((f) => f.id === prev?.id) || prev || loaded[0]);
+          setLayersConfig((prev) =>
+            prev.map((l) => ({
+              ...l,
+              filament: loaded.find((f) => f.id === l.filament?.id) || l.filament,
+            }))
+          );
+        }
+      } catch (err) {
+        console.warn("Błąd podczas pobierania filamentów z backendu:", err);
+      }
+    }
+    loadFilaments();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   async function handleAddToCart() {
     if (!user) {
       setIsAuthOpen(true);
@@ -1255,10 +1412,14 @@ export default function KeychainGenerator() {
       const dimX = shapeType === "rect" ? baseWidth : baseDiameter;
       const dimY = shapeType === "rect" ? baseHeight : baseDiameter;
 
+      const tierLabel = (baseFilament?.tier || "standard") === "premium" ? "Premium" : "Standard";
+      const materialType = baseFilament?.type || "PLA";
+      const materialName = baseFilament?.name || "Standard";
+
       const { error } = await supabase.from("orders").insert({
         user_id: user.id,
-        file_name: `Brelok [${shapeType.toUpperCase()}]: ${imageFileName} (${baseFilament.name})`,
-        material: `PLA Multi-Color AMS (${baseFilament.name})`,
+        file_name: `Brelok [${shapeType.toUpperCase()}]: ${imageFileName} (${materialName})`,
+        material: `${materialType} [${tierLabel}] - ${materialName}`,
         technology: "FDM Multi-Color AMS",
         layer_height: "0.20 mm",
         infill: 100,
@@ -1483,6 +1644,7 @@ export default function KeychainGenerator() {
                 <SunluColorPaletteSelector
                   selectedFilament={baseFilament}
                   onSelectColor={(fil) => setBaseFilament(fil)}
+                  filaments={filaments}
                 />
               </div>
 
@@ -1608,6 +1770,7 @@ export default function KeychainGenerator() {
                           <SunluColorPaletteSelector
                             selectedFilament={strokeFilament}
                             onSelectColor={(fil) => setStrokeFilament(fil)}
+                            filaments={filaments}
                           />
                         </div>
                       </div>
@@ -1853,6 +2016,7 @@ export default function KeychainGenerator() {
                     <SunluColorPaletteSelector
                       selectedFilament={textFilament}
                       onSelectColor={(fil) => setTextFilament(fil)}
+                      filaments={filaments}
                     />
                   </div>
                 </div>
@@ -1876,6 +2040,7 @@ export default function KeychainGenerator() {
                       </div>
                       <SunluColorPaletteSelector
                         selectedFilament={layer.filament}
+                        filaments={filaments}
                         onSelectColor={(fil) => {
                           setLayersConfig((prev) => {
                             const next = [...prev];

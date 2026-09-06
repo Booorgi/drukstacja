@@ -473,3 +473,76 @@ def quote(req: QuoteRequest):
         infill_percent=req.infill_percent,
     )
     return result
+
+
+def get_db_connection():
+    """Zwraca połączenie z bazą PostgreSQL jeśli skonfigurowano DATABASE_URL."""
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        return None
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    try:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        return psycopg2.connect(db_url, cursor_factory=RealDictCursor)
+    except Exception as e:
+        print(f"[WARN] Nie można połączyć z bazą PostgreSQL: {e}")
+        return None
+
+
+@app.get("/api/filaments")
+def get_filaments():
+    """
+    Zwraca listę wszystkich filamentów dostępnych w magazynie (in_stock = true)
+    z bazy PostgreSQL na Railway, posortowanych według tier, type i name.
+    """
+    conn = get_db_connection()
+    if conn:
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT 
+                            id, 
+                            name, 
+                            tier, 
+                            type, 
+                            category, 
+                            hex, 
+                            colors, 
+                            price_per_cm3, 
+                            in_stock, 
+                            roughness, 
+                            metalness
+                        FROM filaments 
+                        WHERE in_stock = true 
+                        ORDER BY 
+                            CASE WHEN tier = 'standard' THEN 1 ELSE 2 END,
+                            type ASC,
+                            name ASC;
+                    """)
+                    rows = cur.fetchall()
+                    results = []
+                    for row in rows:
+                        item = dict(row)
+                        if item.get("price_per_cm3") is not None:
+                            item["price_per_cm3"] = float(item["price_per_cm3"])
+                        if item.get("roughness") is not None:
+                            item["roughness"] = float(item["roughness"])
+                        if item.get("metalness") is not None:
+                            item["metalness"] = float(item["metalness"])
+                        results.append(item)
+                    return {"success": True, "source": "database", "filaments": results}
+        except Exception as e:
+            print(f"[WARN] Błąd odczytu z tabeli filaments: {e}")
+        finally:
+            conn.close()
+
+    # Fallback w przypadku braku bazy
+    try:
+        from db_setup import SEED_FILAMENTS
+        fallback = [dict(item, in_stock=True) for item in SEED_FILAMENTS]
+        return {"success": True, "source": "fallback", "filaments": fallback}
+    except Exception as err:
+        return {"success": False, "error": str(err), "filaments": []}
