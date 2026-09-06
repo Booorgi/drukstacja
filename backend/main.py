@@ -1025,18 +1025,6 @@ def download_order_3mf(
     clean_order_id = str(order_id)
     clean_prefix = clean_order_id[:8].lower()
 
-    # 0. Szybkie sprawdzenie czy gotowy plik .3MF już istnieje w cache
-    if os.path.exists(PROJECTS_3MF_CACHE_DIR):
-        for existing_3mf in os.listdir(PROJECTS_3MF_CACHE_DIR):
-            if existing_3mf.endswith(".3mf") and clean_prefix in existing_3mf.lower():
-                full_path = os.path.join(PROJECTS_3MF_CACHE_DIR, existing_3mf)
-                if os.path.getsize(full_path) > 100:
-                    return FileResponse(
-                        full_path,
-                        media_type="application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
-                        filename=existing_3mf,
-                    )
-
     def parse_clean_float(val, default_val):
         try:
             if isinstance(val, (int, float)):
