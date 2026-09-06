@@ -209,20 +209,20 @@ export const SUNLU_CATALOG = {
 // 2. PEŁNY KATALOG INŻYNIERYJNY DLA WYCENIARKI MODELI 3D (STL / CAD)
 // -------------------------------------------------------------------------
 export const STL_MATERIAL_GROUPS = [
-  { id: "all", label: "Wszystkie materiały" },
-  { id: "standard", label: "Podstawowe & Wizualne", desc: "PLA, PET-G, Silk – estetyka, niska cena" },
-  { id: "tech", label: "Techniczne & Outdoor", desc: "ASA, ABS, PCTG, PP – odporność UV, temp. do 110°C" },
-  { id: "flex", label: "Elastyczne (Guma)", desc: "TPU 95A / Flex – uszczelki, odbojniki, amortyzacja" },
-  { id: "composite", label: "Kompozyty Carbon", desc: "PA12-CF15, PCTG-CF10 – wzmocnione włóknem węglowym" },
+  { id: "all", label: "Wszystkie" },
+  { id: "standard", label: "Podstawowe & Wizualne", desc: "PLA Tough, Matte, Silk, PET-G" },
+  { id: "tech", label: "Techniczne & Outdoor", desc: "PETG FR, ABS, ASA, PCTG, PA12 CF, TPU" },
 ];
 
 export const STL_MATERIALS = [
-  // STANDARD
+  // 1. PLA TOUGH / STANDARD
   {
     id: "PLA_STANDARD",
+    aliases: ["pla", "PLA", "PLA_STANDARD"],
     group: "standard",
     name: "PLA Tough / Standard",
     badge: "Najpopularniejszy",
+    slicerType: "PLA",
     desc: "Najwyższa precyzja wymiarowa i gładkość detali. Idealny do prototypów, obudów i figurek.",
     pricePerCm3: 0.38,
     ratePerG: 0.27,
@@ -239,17 +239,21 @@ export const STL_MATERIALS = [
       { id: "c_green", name: "Soczysta Zieleń", hex: "#388E3C" },
       { id: "c_yellow", name: "Czysty Żółty", hex: "#FBC02D" },
       { id: "c_orange", name: "Nasycony Pomarańcz", hex: "#F57C00" },
-    ]
+    ],
   },
+
+  // 2. PLA MATTE / SATIN
   {
     id: "PLA_MATTE",
+    aliases: ["pla_matte", "PLA_MATTE", "Matte"],
     group: "standard",
     name: "PLA Matte / Satin",
     badge: "Elegancki Mat",
+    slicerType: "PLA Matte",
     desc: "Aksamitne, matowe wykończenie powierzchni doskonale maskujące warstwy druku.",
     pricePerCm3: 0.42,
     ratePerG: 0.28,
-    density: 1.24,
+    density: 1.22,
     hdt: "55°C",
     tensileStrength: "Wysoka",
     uvResistance: "Średnia",
@@ -260,13 +264,42 @@ export const STL_MATERIALS = [
       { id: "cm_graphite", name: "Matte Grafit", hex: "#2F3542" },
       { id: "cm_red", name: "Matte Karmin", hex: "#FF4757" },
       { id: "cm_blue", name: "Matte Błękit", hex: "#1E90FF" },
-    ]
+    ],
   },
+
+  // 3. PLA SILK
+  {
+    id: "PLA_SILK",
+    aliases: ["pla_silk", "PLA_SILK", "Silk"],
+    group: "standard",
+    name: "PLA Silk / Jedwabisty",
+    badge: "Metaliczny Połysk",
+    slicerType: "PLA Silk",
+    desc: "Błyszczące, jedwabiste wykończenie z metalicznym refleksem światła dla modeli ozdobnych.",
+    pricePerCm3: 0.46,
+    ratePerG: 0.29,
+    density: 1.24,
+    hdt: "55°C",
+    tensileStrength: "Wysoka",
+    uvResistance: "Średnia",
+    colors: [
+      { id: "cs_gold", name: "Silk Złoty", hex: "#D4AF37" },
+      { id: "cs_silver", name: "Silk Srebrny", hex: "#A6A8A9" },
+      { id: "cs_copper", name: "Silk Miedź", hex: "#B87333" },
+      { id: "cs_blue", name: "Silk Błękitny", hex: "#33ACD4" },
+      { id: "cs_red", name: "Silk Czerwony", hex: "#C83232" },
+      { id: "cs_green", name: "Silk Szmaragdowy", hex: "#27AE60" },
+    ],
+  },
+
+  // 4. PETG STANDARD
   {
     id: "PETG_TOUGH",
+    aliases: ["petg", "PETG", "PETG_TOUGH"],
     group: "standard",
-    name: "PET-G Odporny",
+    name: "PETG Standard",
     badge: "Użytkowy",
+    slicerType: "PETG",
     desc: "Trwały, wodoodporny materiał o podwyższonej odporności termicznej i chemicznej.",
     pricePerCm3: 0.44,
     ratePerG: 0.30,
@@ -275,22 +308,89 @@ export const STL_MATERIALS = [
     tensileStrength: "Bardzo wysoka",
     uvResistance: "Dobra",
     colors: [
-      { id: "c_petg_black", name: "PET-G Czarny", hex: "#1A1A1A" },
-      { id: "c_petg_white", name: "PET-G Biały", hex: "#F8F9FA" },
-      { id: "c_petg_grey", name: "PET-G Szary", hex: "#6C757D" },
-      { id: "c_petg_clear", name: "PET-G Transparent Clear", hex: "#E9ECEF" },
-      { id: "c_petg_blue", name: "PET-G Niebieski", hex: "#0D6EFD" },
-      { id: "c_petg_red", name: "PET-G Czerwony", hex: "#DC3545" },
-    ]
+      { id: "c_petg_black", name: "PETG Czarny", hex: "#1A1A1A" },
+      { id: "c_petg_white", name: "PETG Biały", hex: "#F8F9FA" },
+      { id: "c_petg_grey", name: "PETG Szary", hex: "#6C757D" },
+      { id: "c_petg_clear", name: "PETG Transparent Clear", hex: "#E9ECEF" },
+      { id: "c_petg_blue", name: "PETG Niebieski", hex: "#0D6EFD" },
+      { id: "c_petg_red", name: "PETG Czerwony", hex: "#DC3545" },
+    ],
   },
 
-  // TECHNICZNE & OUTDOOR
+  // 5. PCTG WYSOKA UDARNOŚĆ
+  {
+    id: "PCTG_PRO",
+    aliases: ["pctg", "PCTG", "PCTG_PRO"],
+    group: "tech",
+    name: "PCTG Wysoka Udarność",
+    badge: "Ekstremalna Udarność",
+    slicerType: "PCTG",
+    desc: "Zaawansowany polimer o kilkukrotnie wyższej udarności niż PET-G. Wyjątkowo odporny na pękanie dynamiczne.",
+    pricePerCm3: 0.60,
+    ratePerG: 0.35,
+    density: 1.23,
+    hdt: "76°C",
+    tensileStrength: "Ekstremalna",
+    uvResistance: "Dobra",
+    colors: [
+      { id: "c_pctg_black", name: "PCTG Czarny", hex: "#17181A" },
+      { id: "c_pctg_grey", name: "PCTG Szary", hex: "#64748B" },
+      { id: "c_pctg_trans", name: "PCTG Transparentny/Mleczny", hex: "#E9ECEF" },
+    ],
+  },
+
+  // 6. PETG FR SAMOGASNĄCY UL94 V-0
+  {
+    id: "PETG_FR",
+    aliases: ["petg_fr", "PETG FR", "PETG_FR"],
+    group: "tech",
+    name: "PETG FR Samogasnący",
+    badge: "Trudnopalny UL94 V-0",
+    slicerType: "PETG FR",
+    desc: "Certyfikowany materiał trudnopalny zgodny ze światową normą UL94 V-0 (gaśnie w <10s). Bezpieczny do elektroniki i szaf sterowniczych.",
+    pricePerCm3: 0.85,
+    ratePerG: 0.45,
+    density: 1.29,
+    hdt: "78°C",
+    tensileStrength: "Bardzo wysoka",
+    uvResistance: "Dobra",
+    colors: [
+      { id: "c_petgfr_black", name: "PETG FR Czarny", hex: "#111111" },
+      { id: "c_petgfr_white", name: "PETG FR Biały", hex: "#F8FAFC" },
+    ],
+  },
+
+  // 7. ABS PRZEMYSŁOWY
+  {
+    id: "ABS_INDUSTRY",
+    aliases: ["abs", "ABS", "ABS_INDUSTRY"],
+    group: "tech",
+    name: "ABS Przemysłowy",
+    badge: "Odporny termicznie",
+    slicerType: "ABS",
+    desc: "Przemysłowy standard o wysokiej sztywności i twardości. Odporny na uderzenia i podwyższone temperatury.",
+    pricePerCm3: 0.52,
+    ratePerG: 0.26,
+    density: 1.05,
+    hdt: "90°C",
+    tensileStrength: "Wysoka udarność",
+    uvResistance: "Średnia",
+    colors: [
+      { id: "c_abs_black", name: "ABS Czarny", hex: "#1a1a1a" },
+      { id: "c_abs_white", name: "ABS Biały", hex: "#FFFFFF" },
+      { id: "c_abs_grey", name: "ABS Szary", hex: "#64748B" },
+    ],
+  },
+
+  // 8. ASA ODPORNY UV & OUTDOOR
   {
     id: "ASA_UV",
+    aliases: ["asa", "ASA", "ASA_UV"],
     group: "tech",
     name: "ASA Odporny UV & Outdoor",
-    badge: "Do Zastosowań Zewnętrznych",
-    desc: "Materiał stworzony na zewnątrz i do motoryzacji. Odporny na promienie słoneczne UV, deszcz i mróz.",
+    badge: "Odporny UV & Outdoor",
+    slicerType: "ASA",
+    desc: "Polimer stworzony do ekspozycji na zewnątrz i do automotive. Wyjątkowo odporny na promieniowanie słoneczne UV, deszcz i mróz.",
     pricePerCm3: 0.65,
     ratePerG: 0.35,
     density: 1.07,
@@ -302,117 +402,51 @@ export const STL_MATERIALS = [
       { id: "c_asa_white", name: "ASA Czysty Biały", hex: "#F8F9FA" },
       { id: "c_asa_grey", name: "ASA Szary Techniczny", hex: "#6C757D" },
       { id: "c_asa_klein", name: "ASA Klein Blue", hex: "#1729AB" },
-    ]
-  },
-  {
-    id: "ABS_INDUSTRY",
-    group: "tech",
-    name: "ABS Przemysłowy",
-    badge: "Wysoka Udarność",
-    desc: "Klasyczny materiał inżynieryjny o wysokiej sztywności, twardości i odporności na uderzenia.",
-    pricePerCm3: 0.58,
-    ratePerG: 0.30,
-    density: 1.05,
-    hdt: "90°C",
-    tensileStrength: "Wysoka",
-    uvResistance: "Średnia",
-    colors: [
-      { id: "c_abs_black", name: "ABS Czarny", hex: "#212529" },
-      { id: "c_abs_white", name: "ABS Biały", hex: "#F8F9FA" },
-      { id: "c_abs_grey", name: "ABS Szary", hex: "#495057" },
-    ]
-  },
-  {
-    id: "PCTG_PRO",
-    group: "tech",
-    name: "PCTG Ultra-Wytrzymały",
-    badge: "Wytrzymałość Uderzeniowa",
-    desc: "Ewolucja PET-G o kilkukrotnie wyższej odporności na pękanie i uderzenia dynamiczne.",
-    pricePerCm3: 0.60,
-    ratePerG: 0.34,
-    density: 1.23,
-    hdt: "76°C",
-    tensileStrength: "Ekstremalna",
-    uvResistance: "Dobra",
-    colors: [
-      { id: "c_pctg_black", name: "PCTG Czarny", hex: "#17181A" },
-      { id: "c_pctg_trans", name: "PCTG Krystaliczny Clear", hex: "#E9ECEF" },
-      { id: "c_pctg_blue", name: "PCTG Transparent Błękit", hex: "#0288D1" },
-    ]
-  },
-  {
-    id: "PP_TECH",
-    group: "tech",
-    name: "PP Polipropylen Chemioodporny",
-    badge: "Odporność Chemiczna",
-    desc: "Wyjątkowa odporność na agresywne chemikalia, kwasy i rozpuszczalniki. Atestowana niska gęstość.",
-    pricePerCm3: 0.75,
-    ratePerG: 0.48,
-    density: 0.90,
-    hdt: "85°C",
-    tensileStrength: "Elastyczno-wytrzymała",
-    uvResistance: "Dobra",
-    colors: [
-      { id: "c_pp_nat", name: "PP Mleczny Naturalny", hex: "#EDEDE8" },
-      { id: "c_pp_black", name: "PP Czarny Techniczny", hex: "#202124" },
-    ]
+    ],
   },
 
-  // ELASTYCZNE (FLEX / TPU)
+  // 9. PA12 CF (NYLON Z WŁÓKNEM WĘGLOWYM)
+  {
+    id: "PA12_CF15",
+    aliases: ["pa12_cf", "PA12 CF", "PA12_CF15", "PA-CF"],
+    group: "tech",
+    name: "PA12 CF Włókno Węglowe",
+    badge: "Kompozyt Carbon",
+    slicerType: "PA12 CF",
+    desc: "Strukturalny kompozyt nylonu wzmocniony w 15% ciętym włóknem węglowym. Zastępuje aluminium w robotyce i częściach maszyn.",
+    pricePerCm3: 1.25,
+    ratePerG: 0.75,
+    density: 1.15,
+    hdt: "155°C",
+    tensileStrength: "Ekstremalna sztywność",
+    uvResistance: "Bardzo dobra",
+    colors: [
+      { id: "c_pa12cf_black", name: "Głęboki matowy antracyt / karbon", hex: "#1c1d21" },
+    ],
+  },
+
+  // 10. TPU 95A / GUMA
   {
     id: "TPU_FLEX",
-    group: "flex",
-    name: "TPU 95A / Flex Gumowy",
-    badge: "Elastyczny / Amortyzujący",
-    desc: "Termoplastyczny poliuretan o twardości 95A. Idealny na uszczelki, odbojniki, etui i elastyczne złącza.",
+    aliases: ["tpu", "tpu_95a", "TPU 95A", "TPU_FLEX", "FLEX"],
+    group: "tech",
+    name: "TPU 95A / Guma",
+    badge: "Elastyczna Guma 95A",
+    slicerType: "TPU",
+    desc: "Elastyczny elastomer poliuretanowy o twardości 95A Shore'a. Znakomicie tłumi drgania, powraca do pierwotnego kształtu.",
     pricePerCm3: 0.70,
     ratePerG: 0.45,
     density: 1.21,
     hdt: "60°C",
-    tensileStrength: "Elastyczna guma (300% rozciągliwości)",
+    tensileStrength: "Sprężysta guma",
     uvResistance: "Bardzo dobra",
     colors: [
       { id: "c_tpu_black", name: "Flex TPU Czarny", hex: "#212529" },
       { id: "c_tpu_white", name: "Flex TPU Biały", hex: "#F8F9FA" },
       { id: "c_tpu_red", name: "Flex TPU Czerwony", hex: "#DC3545" },
       { id: "c_tpu_blue", name: "Flex TPU Błękitny", hex: "#0D6EFD" },
-      { id: "c_tpu_yellow", name: "Flex TPU Żółty Neon", hex: "#FFC107" },
-    ]
+    ],
   },
-
-  // KOMPOZYTY (CARBON FIBER)
-  {
-    id: "PA12_CF15",
-    group: "composite",
-    name: "Nylon PA12 + CF15 (Włókno Węglowe)",
-    badge: "Klasa Przemysłowa",
-    desc: "Nylon wzmocniony w 15% ciętym włóknem węglowym. Zastępuje stopy aluminium w częściach maszyn i dronach.",
-    pricePerCm3: 1.15,
-    ratePerG: 0.65,
-    density: 1.25,
-    hdt: "155°C",
-    tensileStrength: "Ekstremalna sztywność",
-    uvResistance: "Maksymalna",
-    colors: [
-      { id: "c_pa12cf_black", name: "Carbon Fiber Grafitowy Mat", hex: "#252628" },
-    ]
-  },
-  {
-    id: "PCTG_CF10",
-    group: "composite",
-    name: "PCTG + CF10 Carbon",
-    badge: "Sztywny & Lekki",
-    desc: "PCTG z dodatkiem 10% włókna węglowego. Bezskurczowy, sztywny i matowo wykończony.",
-    pricePerCm3: 0.95,
-    ratePerG: 0.55,
-    density: 1.28,
-    hdt: "85°C",
-    tensileStrength: "Bardzo wysoka",
-    uvResistance: "Bardzo dobra",
-    colors: [
-      { id: "c_pctgcf_black", name: "Carbon Czarny Mat", hex: "#222325" },
-    ]
-  }
 ];
 
 // Backwards compatibility aliases

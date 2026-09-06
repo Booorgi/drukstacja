@@ -41,6 +41,9 @@ export default function Home() {
 
   const filteredMaterials = useMemo(() => {
     if (selectedMaterialGroup === "all") return STL_MATERIALS;
+    if (selectedMaterialGroup === "tech") {
+      return STL_MATERIALS.filter((m) => m.group === "tech" || m.group === "composite" || m.group === "flex");
+    }
     return STL_MATERIALS.filter((m) => m.group === selectedMaterialGroup);
   }, [selectedMaterialGroup]);
 
@@ -50,19 +53,47 @@ export default function Home() {
   }, [filteredMaterials, selectedMaterial]);
 
   function handleSelectMaterial(matId) {
-    setSelectedMaterial(matId);
-    const targetMat = STL_MATERIALS.find((m) => m.id === matId);
-    if (targetMat && targetMat.colors && targetMat.colors.length > 0) {
-      const hasColor = targetMat.colors.some((c) => c.hex === selectedColor);
-      if (!hasColor) {
-        setSelectedColor(targetMat.colors[0].hex);
+    const targetMat = STL_MATERIALS.find(
+      (m) =>
+        m.id === matId ||
+        m.id.toLowerCase() === String(matId).toLowerCase() ||
+        (m.aliases && m.aliases.some((al) => al.toLowerCase() === String(matId).toLowerCase()))
+    );
+    if (!targetMat) return;
+
+    setSelectedMaterial(targetMat.id);
+
+    // Jeśli materiał nie znajduje się w aktualnie aktywnym filtrze grupy, zresetuj grupę do "all"
+    if (selectedMaterialGroup !== "all") {
+      const isVisibleInGroup =
+        selectedMaterialGroup === "tech"
+          ? targetMat.group === "tech" || targetMat.group === "composite" || targetMat.group === "flex"
+          : targetMat.group === selectedMaterialGroup;
+      if (!isVisibleInGroup) {
+        setSelectedMaterialGroup("all");
       }
+    }
+
+    // Ustaw domyślny kolor wybranego tworzywa
+    if (targetMat.colors && targetMat.colors.length > 0) {
+      setSelectedColor(targetMat.colors[0].hex);
+    }
+
+    // Jeśli wybrano materiał techniczny (inny niż PLA), automatycznie zablokuj dyszę 0.2 mm i wymuś 0.4 mm
+    const isPla = targetMat.id.toUpperCase().includes("PLA");
+    if (!isPla) {
+      setNozzleSize(0.4);
     }
   }
 
   function handleSelectGroup(groupId) {
     setSelectedMaterialGroup(groupId);
-    const list = groupId === "all" ? STL_MATERIALS : STL_MATERIALS.filter((m) => m.group === groupId);
+    const list =
+      groupId === "all"
+        ? STL_MATERIALS
+        : groupId === "tech"
+        ? STL_MATERIALS.filter((m) => m.group === "tech" || m.group === "composite" || m.group === "flex")
+        : STL_MATERIALS.filter((m) => m.group === groupId);
     if (list.length > 0 && !list.some((m) => m.id === selectedMaterial)) {
       handleSelectMaterial(list[0].id);
     }
@@ -348,7 +379,7 @@ export default function Home() {
             layer_height: parseFloat(layerHeight),
             nozzle_size: parseFloat(nozzleSize),
             infill: parseInt(infill),
-            filament_type: matConfig?.name?.split(" ")[0] || "PLA",
+            filament_type: matConfig?.slicerType || matConfig?.name?.split(" ")[0] || "PLA",
             quantity: quantity,
           }),
         });
@@ -423,26 +454,29 @@ export default function Home() {
     const id = matConfig?.id || "";
     const group = matConfig?.group || "";
 
+    if (id.includes("FR")) {
+      return ["Szafy sterownicze i aparatura modułowa", "Obudowy elektroniki z atestem UL94 V-0", "Części zasilaczy i automatyki przemysłowej", "Elementy szyn DIN i złącza"];
+    }
     if (id.includes("ASA")) {
       return ["Elementy zewnętrzne i outdoor", "Części motoryzacyjne", "Obudowy czujników i kamer", "Uchwyty paneli solarnych"];
     }
     if (id.includes("PLA")) {
       return ["Prototypy koncepcyjne", "Obudowy urządzeń domowych", "Makiety architektoniczne", "Figurki i detale o wysokiej precyzji"];
     }
-    if (id.includes("PETG") || id.includes("PCTG")) {
-      return ["Uchwyty użytkowe i narzędzia", "Elementy odporne na uderzenia", "Pojemniki i obudowy szczelne", "Części maszyn i osłony"];
+    if (id.includes("PCTG")) {
+      return ["Elementy uderzeniowe i ochronne", "Osłony maszyn i dozowniki", "Uchwyty o wysokiej trwałości dynamicznej", "Zastosowania wymagające udarności"];
+    }
+    if (id.includes("PETG")) {
+      return ["Uchwyty użytkowe i narzędzia", "Elementy odporne na wilgoć", "Pojemniki i obudowy szczelne", "Części maszyn i osłony"];
     }
     if (id.includes("ABS")) {
       return ["Elementy o wysokiej udarności", "Obudowy elektroniki przemysłowej", "Adaptery i złączki warsztatowe", "Części narażone na obciążenia"];
     }
-    if (id.includes("PP")) {
-      return ["Pojemniki na chemikalia i płyny", "Sprzęt laboratoryjny", "Elementy instalacji płynowych", "Części o niskim tarciu"];
-    }
-    if (group === "flex") {
-      return ["Uszczelki i dławiki", "Odbojniki i amortyzatory drgań", "Elastyczne chwytaki i osłony", "Etui ochronne"];
-    }
-    if (group === "composite" || id.includes("CF")) {
+    if (id.includes("CF") || id.includes("PA12")) {
       return ["Ramiona dronów i robotyka", "Elementy konstrukcyjne o skrajnej sztywności", "Części motorsport i wyczynowe", "Szablony produkcyjne i formy"];
+    }
+    if (group === "flex" || id.includes("TPU")) {
+      return ["Uszczelki i dławiki", "Odbojniki i amortyzatory drgań", "Elastyczne chwytaki i osłony", "Etui ochronne"];
     }
     return ["Prototypy inżynieryjne", "Elementy użytkowe", "Obudowy", "Części zamienne"];
   }, [matConfig]);
@@ -452,9 +486,10 @@ export default function Home() {
     const id = matConfig?.id || "";
     const group = matConfig?.group || "";
     if (id.includes("PP")) return "Ekstremalna (Kwasy, zasady, rozpuszczalniki)";
-    if (id.includes("PETG") || id.includes("PCTG") || id.includes("ASA")) return "Wysoka (Oleje, smary, woda, chemia myjąca)";
-    if (group === "composite") return "Wysoka (Środowisko przemysłowe i paliwa)";
-    if (group === "flex") return "Dobra (Tłuszcze, oleje mineralne)";
+    if (id.includes("FR") || id.includes("PETG") || id.includes("PCTG") || id.includes("ASA")) return "Wysoka (Oleje, smary, woda, chemia myjąca)";
+    if (id.includes("PA12") || id.includes("CF")) return "Wysoka (Środowisko przemysłowe i paliwa)";
+    if (group === "flex" || id.includes("TPU")) return "Dobra (Tłuszcze, oleje mineralne)";
+    if (id.includes("ABS")) return "Dobra (Alkohole, zasady, oleje)";
     return "Standardowa (Odporność domowa)";
   }, [matConfig]);
 

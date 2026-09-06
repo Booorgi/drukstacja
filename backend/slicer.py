@@ -19,16 +19,58 @@ FILAMENT_DENSITIES = {
     "PLA Silk": 1.24,
     "PLA Matte": 1.22,
     "PETG": 1.27,
-    "PCTG": 1.25,
-    "ABS": 1.04,
+    "PETG FR": 1.29,
+    "PETG_FR": 1.29,
+    "PCTG": 1.23,
+    "ABS": 1.05,
     "ASA": 1.07,
     "TPU": 1.21,
     "FLEX": 1.21,
     "PP": 0.90,
-    "PA-CF": 1.25,
+    "PA12 CF": 1.15,
+    "PA12_CF": 1.15,
+    "PA-CF": 1.15,
     "PETG-CF": 1.30,
     "PLA-CF": 1.28,
 }
+
+# Profile temperaturowe i chłodzenia dla slicera
+MATERIAL_PROFILES = {
+    "PLA": {"temp": 215, "bed_temp": 60, "fan": 100},
+    "PLA Silk": {"temp": 220, "bed_temp": 60, "fan": 100},
+    "PLA Matte": {"temp": 215, "bed_temp": 60, "fan": 100},
+    "PETG": {"temp": 235, "bed_temp": 75, "fan": 50},
+    "PETG FR": {"temp": 245, "bed_temp": 80, "fan": 40},
+    "PETG_FR": {"temp": 245, "bed_temp": 80, "fan": 40},
+    "PCTG": {"temp": 240, "bed_temp": 75, "fan": 40},
+    "ABS": {"temp": 245, "bed_temp": 100, "fan": 15},
+    "ASA": {"temp": 250, "bed_temp": 100, "fan": 20},
+    "PA12 CF": {"temp": 280, "bed_temp": 100, "fan": 10},
+    "PA12_CF": {"temp": 280, "bed_temp": 100, "fan": 10},
+    "PA-CF": {"temp": 280, "bed_temp": 100, "fan": 10},
+    "TPU": {"temp": 220, "bed_temp": 50, "fan": 80},
+    "PP": {"temp": 225, "bed_temp": 85, "fan": 50},
+}
+
+
+def get_filament_density(filament_type: str) -> float:
+    """Zwraca gęstość w g/cm3 dla danego tworzywa."""
+    name_clean = str(filament_type or "").upper().replace("_", " ").replace("-", " ")
+    for k, v in sorted(FILAMENT_DENSITIES.items(), key=lambda x: len(x[0]), reverse=True):
+        clean_k = k.upper().replace("_", " ").replace("-", " ")
+        if clean_k in name_clean:
+            return v
+    return 1.24
+
+
+def get_material_profile(filament_type: str) -> dict:
+    """Zwraca profil temperaturowy dla danego filamentu."""
+    name_clean = str(filament_type or "").upper().replace("_", " ").replace("-", " ")
+    for k, v in sorted(MATERIAL_PROFILES.items(), key=lambda x: len(x[0]), reverse=True):
+        clean_k = k.upper().replace("_", " ").replace("-", " ")
+        if clean_k in name_clean:
+            return v
+    return MATERIAL_PROFILES["PLA"]
 
 
 def convert_step_to_stl(step_path: str, output_stl_path: str) -> str:
@@ -172,7 +214,7 @@ def simulate_slicing_fallback(
     Oblicza trajektorię, obrysy (perimeters), wypełnienie oraz czas druku na podstawie
     fizycznej geometrii bryły 3D i parametrów dyszy.
     """
-    density = FILAMENT_DENSITIES.get(filament_type.upper(), 1.24)
+    density = get_filament_density(filament_type)
     volume_cm3 = 30.0
     height_z_mm = 40.0
 
@@ -310,6 +352,14 @@ def run_slicer(
             stl_path
         ]
 
+        profile = get_material_profile(filament_type)
+        cmd.extend([
+            f"--temperature={profile['temp']}",
+            f"--first-layer-temperature={profile['temp']}",
+            f"--bed-temperature={profile['bed_temp']}",
+            f"--first-layer-bed-temperature={profile['bed_temp']}",
+        ])
+
         if support_material:
             cmd.extend([
                 "--support-material",
@@ -397,7 +447,7 @@ def run_slicer(
 
         # Jeśli slicer nie wygenerował wagi, policz z objętości lub długości
         if filament_g <= 0.0 and filament_cm3 > 0.0:
-            density = FILAMENT_DENSITIES.get(filament_type.upper(), 1.24)
+            density = get_filament_density(filament_type)
             filament_g = round(filament_cm3 * density, 1)
 
         return {

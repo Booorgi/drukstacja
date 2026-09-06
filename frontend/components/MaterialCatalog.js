@@ -88,7 +88,7 @@ export const ENGINEERING_MATERIALS = [
   },
   {
     id: "petg_fr",
-    configId: "PETG_TOUGH",
+    configId: "PETG_FR",
     name: "PETG FR",
     chemicalName: "Flame Retardant PET-G (Samogasnący)",
     status: "available",

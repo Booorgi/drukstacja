@@ -14,13 +14,19 @@ PRICE_PER_GRAM = {
     "PLA Silk": 0.29,
     "PLA Matte": 0.28,
     "PETG": 0.30,
-    "PCTG": 0.34,
-    "ABS": 0.30,
+    "PETG FR": 0.45,
+    "PETG_FR": 0.45,
+    "PCTG": 0.35,
+    "ABS": 0.26,
     "ASA": 0.35,
+    "PA12 CF": 0.75,
+    "PA12_CF": 0.75,
+    "PA12-CF": 0.75,
+    "PA-CF": 0.75,
     "TPU": 0.45,
+    "TPU 95A": 0.45,
     "FLEX": 0.45,
     "PP": 0.48,
-    "PA-CF": 0.65,
     "PETG-CF": 0.55,
     "PLA-CF": 0.48,
 }
@@ -32,20 +38,31 @@ SMALL_ORDER_SURCHARGE_PLN = 0.0  # Opcjonalna dopłata, jeśli włączona w poli
 # Domyślne parametry materiałowe (gęstość do przeliczania cm3 na gramy)
 MATERIALS = {
     "PLA": {"price_per_kg": 90, "density_g_cm3": 1.24, "rate_per_g": 0.27},
+    "PLA Tough": {"price_per_kg": 90, "density_g_cm3": 1.24, "rate_per_g": 0.27},
+    "PLA Matte": {"price_per_kg": 95, "density_g_cm3": 1.22, "rate_per_g": 0.28},
+    "PLA Silk": {"price_per_kg": 105, "density_g_cm3": 1.24, "rate_per_g": 0.29},
     "PETG": {"price_per_kg": 110, "density_g_cm3": 1.27, "rate_per_g": 0.30},
-    "ABS": {"price_per_kg": 95, "density_g_cm3": 1.04, "rate_per_g": 0.30},
+    "PETG FR": {"price_per_kg": 180, "density_g_cm3": 1.29, "rate_per_g": 0.45},
+    "PETG_FR": {"price_per_kg": 180, "density_g_cm3": 1.29, "rate_per_g": 0.45},
+    "PCTG": {"price_per_kg": 130, "density_g_cm3": 1.23, "rate_per_g": 0.35},
+    "ABS": {"price_per_kg": 95, "density_g_cm3": 1.05, "rate_per_g": 0.26},
     "ASA": {"price_per_kg": 120, "density_g_cm3": 1.07, "rate_per_g": 0.35},
+    "PA12 CF": {"price_per_kg": 320, "density_g_cm3": 1.15, "rate_per_g": 0.75},
+    "PA12_CF": {"price_per_kg": 320, "density_g_cm3": 1.15, "rate_per_g": 0.75},
+    "PA-CF": {"price_per_kg": 320, "density_g_cm3": 1.15, "rate_per_g": 0.75},
     "TPU": {"price_per_kg": 150, "density_g_cm3": 1.21, "rate_per_g": 0.45},
-    "PA-CF": {"price_per_kg": 260, "density_g_cm3": 1.25, "rate_per_g": 0.65},
+    "TPU 95A": {"price_per_kg": 150, "density_g_cm3": 1.21, "rate_per_g": 0.45},
+    "PP": {"price_per_kg": 170, "density_g_cm3": 0.90, "rate_per_g": 0.48},
     "Resin (SLA)": {"price_per_kg": 250, "density_g_cm3": 1.10, "rate_per_g": 0.55},
 }
 
 
 def get_material_rate_per_g(material_name: str) -> float:
     """Zwraca stawkę za gram dla wybranego typu filamentu."""
-    name_upper = material_name.upper()
-    for key, rate in PRICE_PER_GRAM.items():
-        if key.upper() in name_upper:
+    name_upper = str(material_name or "").upper().replace("_", " ").replace("-", " ")
+    for key, rate in sorted(PRICE_PER_GRAM.items(), key=lambda x: len(x[0]), reverse=True):
+        clean_key = key.upper().replace("_", " ").replace("-", " ")
+        if clean_key in name_upper:
             return rate
     return 0.27  # domyślny PLA
 
