@@ -234,10 +234,10 @@ const KeychainViewer3D = dynamic(
 
       return function Viewer(props) {
         return (
-          <Canvas camera={{ position: [0, 45, 125], fov: 45 }}>
-            <ambientLight intensity={0.8} />
-            <directionalLight position={[25, 50, 35]} intensity={1.5} />
-            <directionalLight position={[-25, 20, -25]} intensity={0.5} />
+          <Canvas camera={{ position: [0, 35, 115], fov: 45 }}>
+            <ambientLight intensity={1.1} />
+            <directionalLight position={[30, 60, 40]} intensity={1.8} />
+            <directionalLight position={[-30, 30, -30]} intensity={0.6} />
             <KeychainMesh {...props} />
             <OrbitControls makeDefault minDistance={30} maxDistance={280} />
           </Canvas>
@@ -252,13 +252,9 @@ export default function KeychainGenerator() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState([]);
-  const [isGeneratorsOpen, setIsGeneratorsOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const genMenuRef = useRef(null);
-  const userMenuRef = useRef(null);
 
   // Kształt bazy i wymiary
-  const [shapeType, setShapeType] = useState("hexagon");
+  const [shapeType, setShapeType] = useState("circle"); // 'rect' | 'circle' | 'hexagon'
   const [baseColor, setBaseColor] = useState("#0B0F17");
   const [baseWidth, setBaseWidth] = useState(65);
   const [baseHeight, setBaseHeight] = useState(50);
@@ -266,12 +262,15 @@ export default function KeychainGenerator() {
   const [baseThickness, setBaseThickness] = useState(3.0);
   const [hasHole, setHasHole] = useState(true);
 
+  // Aktywna zakładka w konfiguratorze (jak w konfiguratorze Hondy)
+  const [activeTab, setActiveTab] = useState("shape"); // 'shape' | 'graphic' | 'layers'
+
   // Skalowanie oraz pozycja motywu
   const [graphicScale, setGraphicScale] = useState(75);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
 
-  // Warstwy (kaskada grubości chroniąca detale)
+  // Warstwy (kaskada grubości)
   const [layersConfig, setLayersConfig] = useState([
     { id: 1, name: "Warstwa 1 (Baza)", color: "#0B0F17", thickness: 0.6 },
     { id: 2, name: "Warstwa 2 (Ciało)", color: "#00E5FF", thickness: 0.8 },
@@ -295,12 +294,13 @@ export default function KeychainGenerator() {
   const [detectedColors, setDetectedColors] = useState([]);
 
   const [uploadedSvg, setUploadedSvg] = useState(DEFAULT_SVG);
-  const [imageFileName, setImageFileName] = useState("Wybierz plik");
+  const [imageFileName, setImageFileName] = useState("Wybierz grafikę");
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
   const [isProcessingImg, setIsProcessingImg] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Cena dynamiczna
   const areaCm2 =
     shapeType === "rect"
       ? (baseWidth * baseHeight) / 100
@@ -314,23 +314,6 @@ export default function KeychainGenerator() {
       next[index] = { ...next[index], [key]: val };
       return next;
     });
-  }
-
-  function resetSingleLayerColor(index) {
-    if (originalColors[index]) {
-      updateLayer(index, "color", originalColors[index]);
-    }
-  }
-
-  function resetAllColorsToOriginal() {
-    if (originalColors.length > 0) {
-      setLayersConfig((prev) =>
-        prev.map((layer, idx) => ({
-          ...layer,
-          color: originalColors[idx] || layer.color,
-        }))
-      );
-    }
   }
 
   function handleFileSelected(e) {
@@ -414,11 +397,6 @@ export default function KeychainGenerator() {
     }
   }
 
-  function handleTryAgain() {
-    setIsConversionPreviewOpen(false);
-    setIsPreprocessingOpen(true);
-  }
-
   function handleConfirmConversion() {
     if (generatedSvgPreview) {
       setUploadedSvg(generatedSvgPreview);
@@ -467,18 +445,7 @@ export default function KeychainGenerator() {
       if (u) fetchCart(u.id);
     });
 
-    function handleClickOutside(e) {
-      if (genMenuRef.current && !genMenuRef.current.contains(e.target))
-        setIsGeneratorsOpen(false);
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target))
-        setIsUserMenuOpen(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-
-    return () => {
-      subscription.unsubscribe();
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   async function handleAddToCart() {
@@ -497,8 +464,8 @@ export default function KeychainGenerator() {
 
       const { error } = await supabase.from("orders").insert({
         user_id: user.id,
-        file_name: `Tabliczka/Brelok 4-Color [${shapeType.toUpperCase()}]: ${imageFileName}`,
-        material: "PLA Multi-Color (4 barwy AMS)",
+        file_name: `Custom 4-Color [${shapeType.toUpperCase()}]: ${imageFileName}`,
+        material: "PLA Multi-Color AMS",
         technology: "FDM Multi-Color Quantized",
         layer_height: "0.20 mm",
         infill: 100,
@@ -521,377 +488,165 @@ export default function KeychainGenerator() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0B0F17] text-[#F8FAFC] font-sans">
+    <div className="min-h-screen flex flex-col bg-[#F3F4F6] text-[#0F172A] font-sans">
       <Head>
-        <title>Generator Breloków i Tabliczek 4-Color — Drukstacja</title>
+        <title>Studio Konfiguratora 3D — Drukstacja</title>
       </Head>
 
       {/* NAVBAR */}
-      <header className="border-b border-[#24324A] bg-[#0B0F17]/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-[#00E5FF] to-[#2563EB] flex items-center justify-center p-0.5 shadow-[0_0_15px_rgba(0,229,255,0.3)]">
-              <div className="w-full h-full bg-[#0B0F17] rounded-[7px] flex items-center justify-center">
-                <span className="font-bold text-lg text-[#00E5FF]">D</span>
-              </div>
-            </div>
-            <div>
-              <span className="text-xl font-bold tracking-tight text-white">
-                DRUK<span className="text-[#00E5FF]">STACJA</span>
-              </span>
-              <span className="text-[10px] text-[#94A3B8] block -mt-1 tracking-widest font-mono">
-                LABS 3D
-              </span>
-            </div>
+      <header className="max-w-7xl w-full mx-auto px-6 py-5 flex items-center justify-between z-20">
+        <Link href="/" className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-[#EF4444] flex items-center justify-center shadow-lg shadow-red-500/30">
+            <span className="font-extrabold text-xl text-white">D</span>
+          </div>
+          <span className="text-xl font-bold tracking-tight text-slate-900">
+            DRUK<span className="text-[#EF4444]">STACJA</span>
+          </span>
+        </Link>
+
+        <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-600">
+          <Link href="/" className="hover:text-black transition">
+            Wyceniarka STL
           </Link>
+          <Link href="/breloki" className="text-[#EF4444] transition">
+            Konfigurator 3D
+          </Link>
+          <span className="hover:text-black cursor-pointer transition">
+            Materiały
+          </span>
+        </nav>
 
-          <nav className="hidden md:flex items-center gap-6 text-sm text-[#94A3B8]">
-            <Link href="/" className="hover:text-[#00E5FF] transition">
-              Wyceniarka STL
-            </Link>
-            <div className="relative" ref={genMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsGeneratorsOpen(!isGeneratorsOpen)}
-                className="text-white hover:text-[#00E5FF] transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <span>Generatory</span>
-                <svg
-                  className={`w-3.5 h-3.5 transition-transform ${
-                    isGeneratorsOpen ? "rotate-180 text-[#00E5FF]" : ""
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {isGeneratorsOpen && (
-                <div className="absolute left-0 mt-2 w-52 bg-[#0E1524] border border-[#24324A] rounded-xl shadow-2xl py-2 z-50 backdrop-blur-md">
-                  <Link
-                    href="/breloki"
-                    onClick={() => setIsGeneratorsOpen(false)}
-                    className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-mono text-[#00E5FF] bg-[#161F30]/60 hover:bg-[#161F30] transition"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#00E5FF]" />
-                    Breloki i Tabliczki
-                  </Link>
-                  <div
-                    onClick={() => {
-                      setIsGeneratorsOpen(false);
-                      alert("Generator Litofanów pojawi się wkrótce!");
-                    }}
-                    className="flex items-center justify-between px-4 py-2.5 text-xs font-mono text-[#94A3B8] hover:bg-[#161F30] hover:text-white cursor-pointer transition"
-                  >
-                    <span>Litofany (Zdjęcie 3D)</span>
-                    <span className="text-[9px] bg-[#24324A] px-1.5 py-0.5 rounded text-[#94A3B8]">
-                      Wkrótce
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-            <span className="hover:text-[#00E5FF] cursor-pointer transition">
-              Części użytkowe
-            </span>
-          </nav>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setIsCartOpen(true)}
-              className="px-3 py-1.5 text-xs font-mono bg-[#161F30] border border-[#24324A] hover:border-[#00E5FF] text-white rounded-lg transition flex items-center gap-2 cursor-pointer"
-            >
-              <svg className="w-4 h-4 text-[#00E5FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-              </svg>
-              <span>Koszyk</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] text-[10px] font-bold">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setIsCartOpen(true)}
+            className="p-2.5 rounded-full bg-white border border-slate-200 hover:border-slate-400 text-slate-700 shadow-sm transition relative"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+            </svg>
+            {cartItems.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-[#EF4444] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow">
                 {cartItems.length}
               </span>
-            </button>
-
-            {user ? (
-              <div className="relative" ref={userMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="px-3 py-1.5 text-xs font-mono bg-[#161F30] border border-[#24324A] hover:border-[#00E5FF] text-white rounded-lg transition flex items-center gap-2 cursor-pointer"
-                >
-                  <span className="w-2 h-2 rounded-full bg-[#00E5FF]" />
-                  <span>Panel klienta</span>
-                </button>
-
-                {isUserMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-56 bg-[#0E1524] border border-[#24324A] rounded-xl shadow-2xl py-2 z-50 backdrop-blur-md">
-                    <div className="px-4 py-2 border-b border-[#24324A] mb-1">
-                      <span className="text-[10px] uppercase font-mono text-[#94A3B8] block">
-                        Zalogowano jako
-                      </span>
-                      <span className="text-xs font-mono text-[#00E5FF] truncate block font-bold">
-                        {user.email}
-                      </span>
-                    </div>
-                    <Link
-                      href="/orders"
-                      onClick={() => setIsUserMenuOpen(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-xs font-mono text-slate-200 hover:bg-[#161F30] hover:text-[#00E5FF] transition"
-                    >
-                      Zlecenia
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsUserMenuOpen(false);
-                        supabase.auth.signOut();
-                      }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-mono text-red-400 hover:bg-red-500/10 transition text-left cursor-pointer"
-                    >
-                      Wyloguj
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsAuthOpen(true)}
-                className="px-3.5 py-1.5 text-xs font-mono font-bold bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30 hover:bg-[#00E5FF]/20 rounded-lg transition cursor-pointer"
-              >
-                Zaloguj
-              </button>
             )}
-          </div>
+          </button>
+          {user ? (
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-slate-200 text-slate-800">
+              {user.email.split("@")[0]}
+            </span>
+          ) : (
+            <button
+              onClick={() => setIsAuthOpen(true)}
+              className="text-xs font-bold px-4 py-2 rounded-full bg-slate-900 text-white hover:bg-slate-800 transition"
+            >
+              Zaloguj
+            </button>
+          )}
         </div>
       </header>
 
-      {/* GŁÓWNY VIEWPORT 3D & KONTROLKI */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <section className="lg:col-span-7 flex flex-col gap-4">
-          <div className="relative w-full h-[640px] rounded-2xl border border-[#24324A] bg-[#0E1524] overflow-hidden shadow-2xl">
-            <div className="absolute top-4 left-4 z-10 font-mono text-xs text-[#94A3B8] bg-[#0B0F17]/80 px-3 py-1.5 rounded-lg border border-[#24324A] backdrop-blur-md flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#00E5FF] animate-pulse" />
-              Podgląd 3D • {shapeType.toUpperCase()}{" "}
-              {shapeType === "rect"
-                ? `${baseWidth}x${baseHeight}mm`
-                : `⌀${baseDiameter}mm`}{" "}
-              • Skala {graphicScale}% • X: {offsetX}mm, Y: {offsetY}mm
-            </div>
-
-            <KeychainViewer3D
-              shapeType={shapeType}
-              baseColor={baseColor}
-              baseWidth={baseWidth}
-              baseHeight={baseHeight}
-              baseDiameter={baseDiameter}
-              baseThickness={baseThickness}
-              hasHole={hasHole}
-              graphicScale={graphicScale}
-              offsetX={offsetX}
-              offsetY={offsetY}
-              reliefSvg={uploadedSvg}
-              layersConfig={layersConfig}
-            />
-          </div>
-        </section>
-
-        <section className="lg:col-span-5 flex flex-col gap-4">
-          <div className="bg-[#161F30] border border-[#24324A] rounded-2xl p-5 shadow-xl space-y-4 max-h-[640px] overflow-y-auto custom-scrollbar">
-            <div className="border-b border-[#24324A] pb-2">
-              <div className="flex items-center justify-between">
-                <h1 className="text-base font-bold text-white tracking-wide">
-                  GENERATOR 4-COLOR (AMS)
-                </h1>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/30">
-                  Pole: do 245 mm
-                </span>
-              </div>
-              <p className="text-[11px] font-mono text-[#94A3B8] mt-0.5">
-                Pełna regulacja wymiarów, skali i pozycji grafiki
-              </p>
-            </div>
-
-            {/* 1. Upload */}
-            <div>
-              <span className="text-[11px] font-mono text-[#00E5FF] uppercase font-bold block mb-1.5">
-                1. Wybierz grafikę
-              </span>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".png,.jpg,.jpeg,.svg"
-                className="hidden"
-                onChange={handleFileSelected}
-              />
-              <div
-                onClick={() => !isProcessingImg && fileInputRef.current?.click()}
-                className={`border border-dashed rounded-xl p-2.5 flex items-center justify-between transition cursor-pointer ${
-                  isProcessingImg
-                    ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white animate-pulse"
-                    : "border-[#24324A] hover:border-[#00E5FF] bg-[#0B0F17]"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-[#00E5FF]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span className="font-mono text-xs text-white truncate max-w-[190px]">
-                    {isProcessingImg ? "AI analizuje obraz..." : imageFileName}
-                  </span>
-                </div>
-                <span className="px-2.5 py-1 rounded bg-[#161F30] text-[#00E5FF] border border-[#24324A] text-xs font-mono">
-                  {isProcessingImg ? "..." : "Wybierz"}
-                </span>
-              </div>
-            </div>
-
-            {/* 2. Kształt i gabaryty bazy */}
-            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-2.5">
-              <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
-                2. Kształt i wymiary bazy
-              </span>
-
-              <div className="grid grid-cols-3 gap-1.5 text-xs font-mono">
-                <button
-                  type="button"
-                  onClick={() => setShapeType("rect")}
-                  className={`py-1.5 rounded-lg border font-bold transition cursor-pointer ${
-                    shapeType === "rect"
-                      ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
-                      : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
-                  }`}
-                >
-                  Prostokąt
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShapeType("circle")}
-                  className={`py-1.5 rounded-lg border font-bold transition cursor-pointer ${
-                    shapeType === "circle"
-                      ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
-                      : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
-                  }`}
-                >
-                  Okrąg
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShapeType("hexagon")}
-                  className={`py-1.5 rounded-lg border font-bold transition cursor-pointer ${
-                    shapeType === "hexagon"
-                      ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white"
-                      : "border-[#24324A] bg-[#0B0F17] text-[#94A3B8]"
-                  }`}
-                >
-                  Hexagon
-                </button>
-              </div>
-
-              {/* Przełącznik ucha */}
-              <div className="flex items-center justify-between py-1.5 border-y border-[#24324A]/60 text-xs font-mono">
-                <div>
-                  <span className="text-white block">Ucho do zawieszenia</span>
-                  <span className="text-[10px] text-[#94A3B8]">
-                    {hasHole ? "Brelok (z uchem)" : "Tabliczka / Podkładka (bez ucha)"}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setHasHole(!hasHole)}
-                  className={`w-10 h-5 flex items-center rounded-full p-1 cursor-pointer transition ${
-                    hasHole ? "bg-[#00E5FF] justify-end" : "bg-[#1E293B] justify-start"
-                  }`}
-                >
-                  <div className="bg-[#0B0F17] w-3.5 h-3.5 rounded-full shadow-md" />
-                </button>
-              </div>
-
-              {/* Wymiary */}
-              {shapeType === "rect" ? (
-                <div className="grid grid-cols-2 gap-3 text-[11px] font-mono">
-                  <div>
-                    <div className="flex justify-between text-[#94A3B8] mb-0.5">
-                      <span>Szerokość (X)</span>
-                      <span className="text-white font-bold">{baseWidth} mm</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="35"
-                      max={hasHole ? 230 : 245}
-                      step="5"
-                      value={baseWidth}
-                      onChange={(e) => setBaseWidth(parseInt(e.target.value))}
-                      className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[#94A3B8] mb-0.5">
-                      <span>Wysokość (Y)</span>
-                      <span className="text-white font-bold">{baseHeight} mm</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="35"
-                      max="245"
-                      step="5"
-                      value={baseHeight}
-                      onChange={(e) => setBaseHeight(parseInt(e.target.value))}
-                      className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="text-[11px] font-mono">
-                  <div className="flex justify-between text-[#94A3B8] mb-0.5">
-                    <span>Średnica / Rozmiar</span>
-                    <span className="text-white font-bold">{baseDiameter} mm</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="35"
-                    max={hasHole ? 230 : 245}
-                    step="5"
-                    value={baseDiameter}
-                    onChange={(e) => setBaseDiameter(parseInt(e.target.value))}
-                    className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
-                  />
-                </div>
-              )}
-
-              {/* Grubość bazy */}
-              <div className="text-[11px] font-mono pt-1 border-t border-[#24324A]/60">
-                <div className="flex justify-between text-[#94A3B8] mb-0.5">
-                  <span>Grubość płytki bazy (Z)</span>
-                  <span className="text-[#00E5FF] font-bold">{baseThickness} mm</span>
-                </div>
-                <input
-                  type="range"
-                  min="1.6"
-                  max="6.0"
-                  step="0.2"
-                  value={baseThickness}
-                  onChange={(e) => setBaseThickness(parseFloat(e.target.value))}
-                  className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
-                />
-              </div>
-
-              {/* Kolor bazy */}
+      {/* GŁÓWNA KARTA KONFIGURATORA (Styl Honda Configurator) */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 pb-10 flex items-center justify-center">
+        <div className="bg-white rounded-[32px] border border-slate-200/80 shadow-[0_25px_70px_rgba(0,0,0,0.06)] w-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-[640px]">
+          
+          {/* LEWA STRONA: 3D STUDIO STAGE */}
+          <div className="lg:col-span-7 bg-gradient-to-b from-[#F8FAFC] to-[#EDF2F7] relative flex flex-col justify-between p-6 md:p-8">
+            <div className="flex items-center justify-between z-10">
               <div>
-                <span className="text-[10px] font-mono text-[#94A3B8] uppercase block mb-1">
-                  Kolor bazy podkładki
+                <span className="text-[11px] font-bold uppercase tracking-widest text-[#EF4444] block">
+                  Studio 4-Color AMS
                 </span>
-                <div className="flex flex-wrap gap-1">
-                  {PALETTE.map((pal) => (
+                <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                  {shapeType === "circle" ? "Podkładka / Brelok Okrągły" : shapeType === "rect" ? "Tabliczka Prostokątna" : "Płaskorzeźba Hexagon"}
+                </h1>
+              </div>
+              <span className="text-xs font-medium px-3 py-1 rounded-full bg-white border border-slate-200 shadow-sm text-slate-600">
+                Obracaj i przybliżaj 3D
+              </span>
+            </div>
+
+            {/* Trójwymiarowy Viewport Three.js */}
+            <div className="relative w-full h-[380px] md:h-[430px] my-auto">
+              <KeychainViewer3D
+                shapeType={shapeType}
+                baseColor={baseColor}
+                baseWidth={baseWidth}
+                baseHeight={baseHeight}
+                baseDiameter={baseDiameter}
+                baseThickness={baseThickness}
+                hasHole={hasHole}
+                graphicScale={graphicScale}
+                offsetX={offsetX}
+                offsetY={offsetY}
+                reliefSvg={uploadedSvg}
+                layersConfig={layersConfig}
+              />
+            </div>
+
+            {/* Dolny pasek podsumowania na Stage */}
+            <div className="flex items-end justify-between z-10 pt-4 border-t border-slate-200/70">
+              <div>
+                <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
+                  Cena za sztukę
+                </span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-3xl font-black text-slate-900 tracking-tight">
+                    {totalPrice}
+                  </span>
+                  <span className="text-sm font-bold text-slate-500">PLN</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="flex items-center bg-white border border-slate-200 rounded-full px-2 py-1 shadow-sm">
+                  <button
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition"
+                  >
+                    -
+                  </button>
+                  <span className="w-8 text-center font-bold text-sm text-slate-800">
+                    {quantity}
+                  </span>
+                  <button
+                    onClick={() => setQuantity(quantity + 1)}
+                    className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition"
+                  >
+                    +
+                  </button>
+                </div>
+
+                <button
+                  disabled={addingToCart || isProcessingImg}
+                  onClick={handleAddToCart}
+                  className="px-6 py-3.5 rounded-full bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25 transition cursor-pointer disabled:opacity-50"
+                >
+                  {addingToCart ? "Zapisuję..." : "Dodaj do koszyka +"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* PRAWA STRONA: MODUŁ KONFIGURACJI (Styl Honda Tabs/Cards) */}
+          <div className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-white border-l border-slate-100">
+            
+            <div className="space-y-6">
+              {/* Wybór koloru bazy (Szybki selektor u góry jak w Hondzie) */}
+              <div>
+                <span className="text-xs font-bold uppercase text-slate-400 block mb-2 tracking-wider">
+                  Kolor bazy:
+                </span>
+                <div className="flex items-center gap-2.5">
+                  {PALETTE.slice(0, 7).map((pal) => (
                     <button
-                      key={`base-${pal.id}`}
+                      key={pal.id}
                       type="button"
                       onClick={() => setBaseColor(pal.id)}
-                      className={`w-4 h-4 rounded border transition cursor-pointer ${
+                      className={`w-6 h-6 rounded-full transition-all cursor-pointer ${
                         baseColor === pal.id
-                          ? "border-[#00E5FF] scale-110 shadow-[0_0_8px_#00E5FF]"
-                          : "border-[#24324A]"
+                          ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110"
+                          : "hover:scale-105 border border-slate-300"
                       }`}
                       style={{ backgroundColor: pal.id }}
                       title={pal.name}
@@ -899,239 +654,293 @@ export default function KeychainGenerator() {
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* 3. Skalowanie oraz pozycja (Offset X / Y) motywu */}
-            <div className="bg-[#0B0F17]/60 p-3 rounded-xl border border-[#24324A] space-y-3">
-              <div className="flex justify-between text-xs font-mono">
-                <span className="text-white font-bold">Skalowanie motywu na bazie</span>
-                <span className="text-[#00E5FF] font-bold">{graphicScale}%</span>
+              {/* Taby Customizacji: Geometria / Grafika / Warstwy */}
+              <div>
+                <span className="text-xs font-bold uppercase text-slate-400 block mb-3 tracking-wider">
+                  Opcje konfiguracji:
+                </span>
+                <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100 rounded-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("shape")}
+                    className={`py-2 text-xs font-bold rounded-xl transition ${
+                      activeTab === "shape"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    Kształt & Wymiary
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("graphic")}
+                    className={`py-2 text-xs font-bold rounded-xl transition ${
+                      activeTab === "graphic"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    Grafika AI
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("layers")}
+                    className={`py-2 text-xs font-bold rounded-xl transition ${
+                      activeTab === "layers"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    Kolory Warstw
+                  </button>
+                </div>
               </div>
-              <input
-                type="range"
-                min="30"
-                max="110"
-                step="2"
-                value={graphicScale}
-                onChange={(e) => setGraphicScale(parseInt(e.target.value))}
-                className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
-              />
 
-              {graphicScale < 55 && (
-                <div className="flex items-center gap-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-[10px] font-mono">
-                  <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <span>Część najcieńszych detali przy skali &lt;55% może wymagać dyszy 0.2 mm.</span>
+              {/* ZAWARTOŚĆ TABU 1: KSZTAŁT I WYMIARY */}
+              {activeTab === "shape" && (
+                <div className="space-y-4">
+                  {/* Wybór kształtu w pionowych kapsułkach (Styl felg z Hondy) */}
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {[
+                      { id: "circle", label: "Okrąg", sub: "⌀ 60mm" },
+                      { id: "hexagon", label: "Hexagon", sub: "Modern" },
+                      { id: "rect", label: "Prostokąt", sub: "Karta" },
+                    ].map((s) => (
+                      <div
+                        key={s.id}
+                        onClick={() => setShapeType(s.id)}
+                        className={`p-3.5 rounded-2xl border flex flex-col items-center justify-center text-center cursor-pointer transition ${
+                          shapeType === s.id
+                            ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm font-bold"
+                            : "border-slate-200 hover:border-slate-300 text-slate-700"
+                        }`}
+                      >
+                        <span className="text-xs font-bold block">{s.label}</span>
+                        <span className="text-[10px] text-slate-400">{s.sub}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Przełącznik ucha */}
+                  <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80">
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block">Ucho do zawieszenia</span>
+                      <span className="text-[10px] text-slate-500">Brelok na klucze vs Tabliczka ścienna</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setHasHole(!hasHole)}
+                      className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition ${
+                        hasHole ? "bg-[#EF4444] justify-end" : "bg-slate-300 justify-start"
+                      }`}
+                    >
+                      <div className="bg-white w-4 h-4 rounded-full shadow-md" />
+                    </button>
+                  </div>
+
+                  {/* Suwaki wymiarów */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+                    {shapeType === "rect" ? (
+                      <div className="space-y-2">
+                        <div>
+                          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+                            <span>Szerokość (X)</span>
+                            <span className="text-[#EF4444]">{baseWidth} mm</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="35"
+                            max={hasHole ? 230 : 245}
+                            step="5"
+                            value={baseWidth}
+                            onChange={(e) => setBaseWidth(parseInt(e.target.value))}
+                            className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                          />
+                        </div>
+                        <div>
+                          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+                            <span>Wysokość (Y)</span>
+                            <span className="text-[#EF4444]">{baseHeight} mm</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="35"
+                            max="245"
+                            step="5"
+                            value={baseHeight}
+                            onChange={(e) => setBaseHeight(parseInt(e.target.value))}
+                            className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+                          <span>Średnica / Rozmiar</span>
+                          <span className="text-[#EF4444]">{baseDiameter} mm</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="35"
+                          max={hasHole ? 230 : 245}
+                          step="5"
+                          value={baseDiameter}
+                          onChange={(e) => setBaseDiameter(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* Precyzyjne przesuwanie X i Y */}
-              <div className="pt-2 border-t border-[#24324A]/60 space-y-2">
-                <div className="flex items-center justify-between text-[11px] font-mono">
-                  <span className="text-slate-200 font-bold uppercase">Pozycja motywu (Przesuwanie)</span>
-                  {(offsetX !== 0 || offsetY !== 0) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOffsetX(0);
-                        setOffsetY(0);
-                      }}
-                      className="text-[10px] text-[#00E5FF] hover:underline cursor-pointer"
-                    >
-                      Wyśrodkuj
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-[11px] font-mono">
-                  <div>
-                    <div className="flex justify-between text-[#94A3B8] mb-0.5">
-                      <span>Poziom (X)</span>
-                      <span className="text-white font-bold">{offsetX > 0 ? `+${offsetX}` : offsetX} mm</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="-35"
-                      max="35"
-                      step="1"
-                      value={offsetX}
-                      onChange={(e) => setOffsetX(parseInt(e.target.value))}
-                      className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[#94A3B8] mb-0.5">
-                      <span>Pion (Y)</span>
-                      <span className="text-white font-bold">{offsetY > 0 ? `+${offsetY}` : offsetY} mm</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="-35"
-                      max="35"
-                      step="1"
-                      value={offsetY}
-                      onChange={(e) => setOffsetY(parseInt(e.target.value))}
-                      className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 4. Warstwy filamentu */}
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">
-                  4. Warstwy filamentu & Wypukłość Z (mm)
-                </span>
-                {originalColors.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={resetAllColorsToOriginal}
-                    className="text-[10px] font-mono text-[#00E5FF] hover:underline flex items-center gap-1 cursor-pointer"
-                    title="Przywróć oryginalne barwy wykryte z grafiki"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    <span>↺ Oryginalne barwy</span>
-                  </button>
-                )}
-              </div>
-
-              {layersConfig.map((layer, idx) => (
-                <div
-                  key={layer.id}
-                  className="bg-[#0B0F17]/70 p-2.5 rounded-xl border border-[#24324A] space-y-1.5"
-                >
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] bg-[#161F30] text-white border border-[#24324A]">
-                        {layer.id}
-                      </span>
-                      <div
-                        className="w-4 h-4 rounded border border-white/20 shadow-sm"
-                        style={{ backgroundColor: layer.color }}
-                      />
-                      <span className="text-white text-[11px] truncate max-w-[130px]">
-                        {layer.name} ({layer.color})
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {originalColors[idx] && originalColors[idx] !== layer.color && (
-                        <button
-                          type="button"
-                          onClick={() => resetSingleLayerColor(idx)}
-                          className="text-[10px] font-mono text-[#94A3B8] hover:text-[#00E5FF] border border-[#24324A] px-1.5 py-0.5 rounded transition"
-                          title={`Cofnij do koloru: ${originalColors[idx]}`}
-                        >
-                          Cofnij
-                        </button>
-                      )}
-                      <span className="text-[#00E5FF] font-bold">+{layer.thickness} mm</span>
-                    </div>
-                  </div>
-
+              {/* ZAWARTOŚĆ TABU 2: GRAFIKA & POZYCJONOWANIE */}
+              {activeTab === "graphic" && (
+                <div className="space-y-4">
                   <input
-                    type="range"
-                    min="0.4"
-                    max="3.0"
-                    step="0.2"
-                    value={layer.thickness}
-                    onChange={(e) => updateLayer(idx, "thickness", parseFloat(e.target.value))}
-                    className="w-full h-1 bg-[#161F30] rounded cursor-pointer accent-[#00E5FF]"
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.svg"
+                    className="hidden"
+                    onChange={handleFileSelected}
                   />
+                  <div
+                    onClick={() => !isProcessingImg && fileInputRef.current?.click()}
+                    className="p-4 rounded-2xl border-2 border-dashed border-slate-300 hover:border-[#EF4444] bg-slate-50 flex items-center justify-between cursor-pointer transition"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-red-100 text-[#EF4444] flex items-center justify-center font-bold">
+                        +
+                      </div>
+                      <span className="text-xs font-bold text-slate-800 truncate max-w-[200px]">
+                        {isProcessingImg ? "AI przetwarza grafikę..." : imageFileName}
+                      </span>
+                    </div>
+                    <span className="text-xs font-bold text-[#EF4444]">Wybierz</span>
+                  </div>
 
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {PALETTE.map((pal) => (
-                      <button
-                        key={pal.id}
-                        type="button"
-                        onClick={() => updateLayer(idx, "color", pal.id)}
-                        className={`w-4 h-4 rounded border transition cursor-pointer ${
-                          layer.color === pal.id
-                            ? "border-[#00E5FF] scale-110 shadow-[0_0_8px_#00E5FF]"
-                            : "border-[#24324A]"
-                        }`}
-                        style={{ backgroundColor: pal.id }}
-                        title={pal.name}
+                  {/* Skala i Offset */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+                    <div>
+                      <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+                        <span>Skalowanie motywu</span>
+                        <span className="text-[#EF4444]">{graphicScale}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="40"
+                        max="105"
+                        step="2"
+                        value={graphicScale}
+                        onChange={(e) => setGraphicScale(parseInt(e.target.value))}
+                        className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
                       />
-                    ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200">
+                      <div>
+                        <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-0.5">
+                          <span>Poziom (X)</span>
+                          <span className="text-slate-900">{offsetX} mm</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="-30"
+                          max="30"
+                          step="1"
+                          value={offsetX}
+                          onChange={(e) => setOffsetX(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-0.5">
+                          <span>Pion (Y)</span>
+                          <span className="text-slate-900">{offsetY} mm</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="-30"
+                          max="30"
+                          step="1"
+                          value={offsetY}
+                          onChange={(e) => setOffsetY(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              ))}
+              )}
+
+              {/* ZAWARTOŚĆ TABU 3: KOLORY 4 WARSTW AMS */}
+              {activeTab === "layers" && (
+                <div className="space-y-2.5 max-h-[290px] overflow-y-auto pr-1">
+                  {layersConfig.map((layer, idx) => (
+                    <div
+                      key={layer.id}
+                      className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className="w-6 h-6 rounded-full border border-slate-300 shadow-sm"
+                          style={{ backgroundColor: layer.color }}
+                        />
+                        <span className="text-xs font-bold text-slate-800">
+                          {layer.name}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        {PALETTE.slice(0, 5).map((pal) => (
+                          <button
+                            key={pal.id}
+                            type="button"
+                            onClick={() => updateLayer(idx, "color", pal.id)}
+                            className={`w-4 h-4 rounded-full transition ${
+                              layer.color === pal.id ? "scale-125 ring-2 ring-[#EF4444]" : ""
+                            }`}
+                            style={{ backgroundColor: pal.id }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Koszyk */}
-            <div className="pt-2 border-t border-[#24324A] space-y-2">
-              <div className="flex items-baseline justify-between font-mono">
-                <div>
-                  <span className="text-[10px] text-[#94A3B8] block uppercase">
-                    Cena FDM Multi-Color (AMS)
-                  </span>
-                  <span className="text-2xl font-bold text-[#00E5FF]">{totalPrice}</span>
-                  <span className="text-xs text-[#94A3B8] ml-1">PLN</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="w-7 h-7 bg-[#0B0F17] border border-[#24324A] text-white font-mono rounded"
-                  >
-                    -
-                  </button>
-                  <span className="font-mono text-white text-xs font-bold w-6 text-center">
-                    {quantity}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setQuantity(quantity + 1)}
-                    className="w-7 h-7 bg-[#0B0F17] border border-[#24324A] text-white font-mono rounded"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                disabled={addingToCart || isProcessingImg}
-                onClick={handleAddToCart}
-                className="w-full py-3 px-4 bg-gradient-to-r from-[#00E5FF] to-[#2563EB] text-[#0B0F17] font-bold text-xs uppercase tracking-wider rounded-xl shadow-[0_0_20px_rgba(0,229,255,0.25)] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                </svg>
-                {addingToCart ? "Zapisuję..." : "Dodaj do koszyka"}
-              </button>
+            {/* Informacja na dole */}
+            <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-medium text-slate-400">
+              <span>Standard FDM Bambu Lab AMS</span>
+              <span>Wysyłka w 24h</span>
             </div>
           </div>
-        </section>
+        </div>
       </main>
 
       {/* MODAL 1: PREPROCESSING */}
       {isPreprocessingOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-[#0E1524] border border-[#24324A] rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col">
-            <div className="px-6 py-4 border-b border-[#24324A] flex items-center justify-between">
-              <h2 className="text-base font-bold text-white tracking-wide">Image Preprocessing</h2>
+          <div className="bg-white rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="text-base font-black text-slate-900">Dostosuj kontrast grafiki</h2>
               <button
                 onClick={() => setIsPreprocessingOpen(false)}
-                className="text-[#94A3B8] hover:text-white transition cursor-pointer text-sm"
+                className="text-slate-400 hover:text-slate-700 font-bold"
               >
                 ✕
               </button>
             </div>
 
             <div className="p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
-              <div className="md:col-span-7 flex items-center justify-center bg-[#070A10] border border-[#24324A] rounded-xl p-4 min-h-[320px] bg-[radial-gradient(#1E293B_1px,transparent_1px)] [background-size:16px_16px] overflow-hidden relative">
+              <div className="md:col-span-7 flex items-center justify-center bg-slate-100 rounded-2xl p-4 min-h-[280px]">
                 {modalImageSrc && (
                   <img
                     src={modalImageSrc}
-                    alt="Preprocessed Preview"
-                    className="max-h-[300px] object-contain rounded transition-all duration-75"
+                    alt="Preview"
+                    className="max-h-[260px] object-contain rounded"
                     style={{
                       filter: `brightness(${exposure}) contrast(${contrast}) saturate(${saturation})`,
                     }}
@@ -1139,155 +948,65 @@ export default function KeychainGenerator() {
                 )}
               </div>
 
-              <div className="md:col-span-5 flex flex-col justify-between space-y-4 font-mono text-xs">
-                <div className="space-y-4">
+              <div className="md:col-span-5 flex flex-col justify-between space-y-4">
+                <div className="space-y-3">
                   <div>
-                    <label className="text-[#94A3B8] uppercase block mb-1.5 font-bold">Crop Ratio</label>
-                    <div className="flex items-center gap-1.5">
-                      {["Free", "1:1", "4:3", "3:2"].map((ratio) => (
-                        <button
-                          key={ratio}
-                          type="button"
-                          onClick={() => setCropRatio(ratio)}
-                          className={`px-2.5 py-1 rounded border text-[11px] transition ${
-                            cropRatio === ratio
-                              ? "border-[#00E5FF] bg-[#00E5FF]/10 text-white font-bold"
-                              : "border-[#24324A] text-[#94A3B8] hover:border-slate-500"
-                          }`}
-                        >
-                          {ratio}
-                        </button>
-                      ))}
-                    </div>
+                    <span className="text-xs font-bold text-slate-600 block mb-1">Jasność</span>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.0"
+                      step="0.1"
+                      value={exposure}
+                      onChange={(e) => setExposure(parseFloat(e.target.value))}
+                      className="w-full h-1 bg-slate-200 rounded accent-[#EF4444]"
+                    />
                   </div>
-
-                  <div className="flex items-center justify-between py-1 border-y border-[#24324A]">
-                    <span className="text-white">Keep Background</span>
-                    <button
-                      type="button"
-                      onClick={() => setKeepBg(!keepBg)}
-                      className={`w-10 h-5 flex items-center rounded-full p-1 cursor-pointer transition ${
-                        keepBg ? "bg-emerald-500 justify-end" : "bg-[#1E293B] justify-start"
-                      }`}
-                    >
-                      <div className="bg-white w-3.5 h-3.5 rounded-full shadow-md" />
-                    </button>
-                  </div>
-
-                  <div className="space-y-3 pt-1">
-                    <span className="text-[#00E5FF] uppercase font-bold block text-[11px]">Image Adjustment</span>
-                    <div>
-                      <div className="flex justify-between text-[#94A3B8] mb-1">
-                        <span>Exposure (Jasność)</span>
-                        <span className="text-white">{exposure.toFixed(1)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.5"
-                        max="2.0"
-                        step="0.1"
-                        value={exposure}
-                        onChange={(e) => setExposure(parseFloat(e.target.value))}
-                        className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-[#94A3B8] mb-1">
-                        <span>Contrast (Kontrast)</span>
-                        <span className="text-white">{contrast.toFixed(1)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.5"
-                        max="2.5"
-                        step="0.1"
-                        value={contrast}
-                        onChange={(e) => setContrast(parseFloat(e.target.value))}
-                        className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-[#94A3B8] mb-1">
-                        <span>Saturation (Nasycenie)</span>
-                        <span className="text-white">{saturation.toFixed(1)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.0"
-                        max="2.5"
-                        step="0.1"
-                        value={saturation}
-                        onChange={(e) => setSaturation(parseFloat(e.target.value))}
-                        className="w-full h-1 bg-[#24324A] rounded cursor-pointer accent-[#00E5FF]"
-                      />
-                    </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-600 block mb-1">Kontrast</span>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.5"
+                      step="0.1"
+                      value={contrast}
+                      onChange={(e) => setContrast(parseFloat(e.target.value))}
+                      className="w-full h-1 bg-slate-200 rounded accent-[#EF4444]"
+                    />
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-4 border-t border-[#24324A]">
-                  <button
-                    type="button"
-                    onClick={() => setIsPreprocessingOpen(false)}
-                    className="px-4 py-2 rounded-lg border border-[#24324A] text-[#94A3B8] hover:text-white hover:border-slate-500 transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmPreprocessing}
-                    className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-[0_0_15px_rgba(16,185,129,0.3)] cursor-pointer"
-                  >
-                    Confirm
-                  </button>
-                </div>
+                <button
+                  onClick={handleConfirmPreprocessing}
+                  className="w-full py-3 rounded-full bg-[#EF4444] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25"
+                >
+                  Konwertuj na wektor 3D
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: CONVERSION PREVIEW */}
+      {/* MODAL 2: PODGLĄD KONWERSJI */}
       {isConversionPreviewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
-          <div className="bg-[#0E1524] border border-[#24324A] rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col">
-            <div className="px-6 py-4 border-b border-[#24324A] flex items-center justify-between">
-              <h2 className="text-base font-bold text-white tracking-wide">Image Conversion Preview</h2>
-              <button
-                onClick={() => setIsConversionPreviewOpen(false)}
-                className="text-[#94A3B8] hover:text-white transition cursor-pointer text-sm"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-8 flex items-center justify-center min-h-[380px] bg-[#070A10] bg-[radial-gradient(#1E293B_1.5px,transparent_1.5px)] [background-size:20px_20px] overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl p-6 text-center space-y-4">
+            <h2 className="text-lg font-black text-slate-900">Podgląd wektoryzacji 4-Color</h2>
+            <div className="w-64 h-64 mx-auto bg-slate-100 rounded-2xl flex items-center justify-center p-4">
               {generatedSvgPreview && (
                 <div
-                  className="w-80 h-80 flex items-center justify-center drop-shadow-2xl"
+                  className="w-full h-full flex items-center justify-center"
                   dangerouslySetInnerHTML={{ __html: generatedSvgPreview }}
                 />
               )}
             </div>
-
-            <div className="px-6 py-4 border-t border-[#24324A] bg-[#0B0F17]/60 flex items-center justify-end gap-3 font-mono text-xs">
-              <button
-                type="button"
-                onClick={handleTryAgain}
-                className="px-4 py-2 rounded-lg border border-[#24324A] bg-[#161F30] text-slate-200 hover:text-white hover:border-[#00E5FF] transition flex items-center gap-2 cursor-pointer"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                <span>Try Again</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmConversion}
-                className="px-6 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-[0_0_15px_rgba(16,185,129,0.3)] cursor-pointer flex items-center gap-1.5"
-              >
-                <span>Confirm</span>
-              </button>
-            </div>
+            <button
+              onClick={handleConfirmConversion}
+              className="w-full py-3.5 rounded-full bg-[#EF4444] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25"
+            >
+              Zastosuj w modelu 3D
+            </button>
           </div>
         </div>
       )}
