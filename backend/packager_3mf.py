@@ -126,7 +126,8 @@ def generate_production_3mf(
                 color_to_pindex[c_3mf] = len(unique_colors)
                 unique_colors.append(c_3mf)
 
-        colorgroup_xml = "\n".join([f'   <m:color color="{c}"/>' for c in unique_colors])
+        _color_entries = [f'   <m:color color="{c}"/>' for c in unique_colors]
+        colorgroup_xml = "\n".join(_color_entries)
 
         objects_xml_list = []
         component_tags = []
@@ -140,8 +141,10 @@ def generate_production_3mf(
             safe_part_name = sanitize_filename(p["name"])
 
             m = p["mesh"]
-            v_xml = "\n".join([f'     <vertex x="{v[0]:.4f}" y="{v[1]:.4f}" z="{v[2]:.4f}"/>' for v in m.vertices])
-            t_xml = "\n".join([f'     <triangle v1="{f[0]}" v2="{f[1]}" v3="{f[2]}" pid="1" p1="{pindex}"/>' for f in m.faces])
+            _vert_lines = [f'     <vertex x="{v[0]:.4f}" y="{v[1]:.4f}" z="{v[2]:.4f}"/>' for v in m.vertices]
+            v_xml = "\n".join(_vert_lines)
+            _tri_lines = [f'     <triangle v1="{f[0]}" v2="{f[1]}" v3="{f[2]}" pid="1" p1="{pindex}"/>' for f in m.faces]
+            t_xml = "\n".join(_tri_lines)
 
             part_obj_xml = f"""  <object id="{part_id}" type="model" name="{safe_part_name}" pid="1" pindex="{pindex}">
    <mesh>
@@ -161,6 +164,7 @@ def generate_production_3mf(
 
         root_id = 2 + len(valid_parts)
         components_xml = "\n".join(component_tags)
+        parts_settings_joined = "\n".join(part_settings_xml_list)
         assembly_obj_xml = f"""  <object id="{root_id}" type="model" name="{clean_title}">
    <components>
 {components_xml}
@@ -174,7 +178,7 @@ def generate_production_3mf(
 <config>
   <object id="{root_id}">
     <metadata key="name" value="{clean_title}"/>
-{"\n".join(part_settings_xml_list)}
+{parts_settings_joined}
   </object>
 </config>"""
 
@@ -220,8 +224,10 @@ def generate_production_3mf(
         unique_colors = [color_3mf]
         colorgroup_xml = f'   <m:color color="{color_3mf}"/>'
 
-        v_xml = "\n".join([f'     <vertex x="{v[0]:.4f}" y="{v[1]:.4f}" z="{v[2]:.4f}"/>' for v in mesh.vertices])
-        t_xml = "\n".join([f'     <triangle v1="{f[0]}" v2="{f[1]}" v3="{f[2]}" pid="1" p1="0"/>' for f in mesh.faces])
+        _vert_lines = [f'     <vertex x="{v[0]:.4f}" y="{v[1]:.4f}" z="{v[2]:.4f}"/>' for v in mesh.vertices]
+        v_xml = "\n".join(_vert_lines)
+        _tri_lines = [f'     <triangle v1="{f[0]}" v2="{f[1]}" v3="{f[2]}" pid="1" p1="0"/>' for f in mesh.faces]
+        t_xml = "\n".join(_tri_lines)
 
         all_objects_xml = f"""  <object id="2" type="model" name="{clean_title}" pid="1" pindex="0">
    <mesh>
@@ -282,8 +288,10 @@ def generate_production_3mf(
     bed_temp = 60 if "PLA" in material.upper() or "PET" in material.upper() else 90
     nozzle_temp = 215 if "PLA" in material.upper() else (240 if "PET" in material.upper() else 250)
 
-    slicing_colours = ";".join([c[:7] for c in unique_colors])
-    slicing_materials = ";".join([material for _ in unique_colors])
+    _sc = [c[:7] for c in unique_colors]
+    slicing_colours = ";".join(_sc)
+    _sm = [material for _ in unique_colors]
+    slicing_materials = ";".join(_sm)
 
     slicing_ini = f"""; Drukstacja Slicing Configuration
 ; Kompatybilne z Bambu Studio, OrcaSlicer, PrusaSlicer, SuperSlicer
