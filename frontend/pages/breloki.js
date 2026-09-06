@@ -27,14 +27,31 @@ const DEFAULT_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/sv
   </g>
 </svg>`;
 
-// Dostępne fonty dla tekstu
+// Dostępne fonty dla tekstu (serwowane lokalnie z /fonts/ – brak zależności zewnętrznych i 100% odporność na 404)
 const AVAILABLE_FONTS = [
-  { id: "roboto", name: "Roboto", url: "https://fonts.gstatic.com/s/roboto/v47/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWubEbGmT.woff" },
-  { id: "montserrat", name: "Montserrat", url: "https://fonts.gstatic.com/s/montserrat/v29/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCtr6Hw5aXo.woff" },
-  { id: "bebas", name: "Bebas Neue", url: "https://fonts.gstatic.com/s/bebasneue/v14/JTUSjIg69CK48gW7PXoo9Wlhyw.woff" },
-  { id: "poppins", name: "Poppins", url: "https://fonts.gstatic.com/s/poppins/v22/pxiByp8kv8JHgFVrLEj6Z1xlFQ.woff" },
-  { id: "inter", name: "Inter", url: "https://fonts.gstatic.com/s/inter/v18/UcCo3FwrK3iLTcviYwY.woff" },
+  { id: "roboto", name: "Roboto", url: "/fonts/roboto.woff" },
+  { id: "montserrat", name: "Montserrat", url: "/fonts/montserrat.woff" },
+  { id: "bebas", name: "Bebas Neue", url: "/fonts/bebas.woff" },
+  { id: "poppins", name: "Poppins", url: "/fonts/poppins.woff" },
+  { id: "inter", name: "Inter", url: "/fonts/inter.woff" },
 ];
+
+class TextErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(err) {
+    console.warn("Błąd renderowania tekstu 3D:", err);
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
+}
 
 // Spłaszczona lista kolorów do szybkiego wyszukiwania
 const ALL_FLAT_COLORS = Object.values(SUNLU_CATALOG.colors).flat();
@@ -424,28 +441,29 @@ const KeychainViewer3D = dynamic(
         shapeType,
         layerSeparation,
       }) {
-        if (!textContent || textContent.trim() === "") return null;
+        if (!textContent || typeof textContent !== "string" || textContent.trim() === "") return null;
 
-        const fontUrl = AVAILABLE_FONTS.find(f => f.id === textFont)?.url || AVAILABLE_FONTS[0].url;
+        const matchedFont = AVAILABLE_FONTS.find(f => f.id === textFont);
+        const fontUrl = matchedFont ? matchedFont.url : "/fonts/roboto.woff";
 
         // Oblicz pozycję Y w zależności od textPosition
         let yPos = 0;
-        const halfH = shapeType === "rect" ? baseHeight / 2 : baseDiameter / 2;
-        if (textPosition === "top") yPos = halfH * 0.5;
-        else if (textPosition === "bottom") yPos = -halfH * 0.5;
+        const halfH = shapeType === "rect" ? (baseHeight || 80) / 2 : (baseDiameter || 60) / 2;
+        if (textPosition === "top") yPos = halfH * 0.55;
+        else if (textPosition === "bottom") yPos = -halfH * 0.55;
         else yPos = 0;
 
-        const zPos = baseThickness / 2 + 0.1 + layerSeparation * 5;
+        const zPos = (baseThickness || 3) / 2 + 0.15 + (layerSeparation || 0) * 5;
 
         return (
           <Text
             font={fontUrl}
-            fontSize={textSize}
+            fontSize={textSize || 6}
             color={textFilament?.hex || "#FFFFFF"}
             anchorX="center"
             anchorY="middle"
             position={[0, yPos, zPos]}
-            maxWidth={shapeType === "rect" ? baseWidth * 0.85 : baseDiameter * 0.75}
+            maxWidth={shapeType === "rect" ? (baseWidth || 50) * 0.85 : (baseDiameter || 60) * 0.75}
           >
             {textContent}
             <meshStandardMaterial
@@ -576,20 +594,24 @@ const KeychainViewer3D = dynamic(
               layerSeparation={layerSeparation}
             />
 
-            <TextOverlay3D
-              textContent={textContent}
-              textFont={textFont}
-              textSize={textSize}
-              textPosition={textPosition}
-              textFilament={textFilament}
-              textThickness={textThickness}
-              baseThickness={baseThickness}
-              baseWidth={baseWidth}
-              baseHeight={baseHeight}
-              baseDiameter={baseDiameter}
-              shapeType={shapeType}
-              layerSeparation={layerSeparation}
-            />
+            <TextErrorBoundary>
+              <React.Suspense fallback={null}>
+                <TextOverlay3D
+                  textContent={textContent}
+                  textFont={textFont}
+                  textSize={textSize}
+                  textPosition={textPosition}
+                  textFilament={textFilament}
+                  textThickness={textThickness}
+                  baseThickness={baseThickness}
+                  baseWidth={baseWidth}
+                  baseHeight={baseHeight}
+                  baseDiameter={baseDiameter}
+                  shapeType={shapeType}
+                  layerSeparation={layerSeparation}
+                />
+              </React.Suspense>
+            </TextErrorBoundary>
           </group>
         );
       }
@@ -621,7 +643,9 @@ const KeychainViewer3D = dynamic(
             <ambientLight intensity={1.2} />
             <directionalLight position={[40, 60, 50]} intensity={1.8} />
             <directionalLight position={[-40, 30, -30]} intensity={0.7} />
-            <KeychainMesh {...props} />
+            <React.Suspense fallback={null}>
+              <KeychainMesh {...props} />
+            </React.Suspense>
             <ExportRegistrar onExportReady={onExportReady} />
             <OrbitControls makeDefault minDistance={30} maxDistance={280} />
           </Canvas>
