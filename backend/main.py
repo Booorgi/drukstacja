@@ -57,42 +57,14 @@ except Exception as _e:
     REMBG_AVAILABLE = False
 
 
-def remove_checkerboard_pattern(bgr_img):
-    """Wykrywa i neutralizuje namalowaną szachownicę przezroczystości (biało-szare kwadraty)."""
-    gray = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape[:2]
-
-    # Szachownica zazwyczaj składa się z pikseli bardzo jasnych (240-255) i jasnoszarych (190-215)
-    high_contrast_edges = cv2.Canny(gray, 100, 200)
-    
-    # Sprawdzamy czy na obrzeżach występuje gęsta siatka linii
-    border_zone = np.zeros((h, w), dtype=bool)
-    border_zone[:int(h * 0.15), :] = True
-    border_zone[int(h * 0.85):, :] = True
-    border_zone[:, :int(w * 0.15)] = True
-    border_zone[:, int(w * 0.85):] = True
-
-    edge_density = np.mean(high_contrast_edges[border_zone] > 0)
-    
-    # Jeśli na brzegach jest nienaturalnie gęsta siatka krawędzi (charakterystyczna dla szachownicy)
-    if edge_density > 0.08:
-        # Maska szarych i białych pól tła
-        checker_mask = (gray > 185) & (gray < 255)
-        # Oczyszczamy tło
-        clean_bgr = bgr_img.copy()
-        clean_bgr[checker_mask] = [255, 255, 255]
-        return clean_bgr, True
-
-    return bgr_img, False
-
-
 def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool = False):
+    # 1. Próba wycięcia przez rembg (jeśli nie wybrano keep_bg)
     processed_bytes = image_bytes
     if not keep_bg and REMBG_AVAILABLE:
         try:
             processed_bytes = rembg_remove(image_bytes)
-        except Exception as err:
-            print(f"[WARN] Błąd rembg: {err}")
+        except Exception:
+            processed_bytes = image_bytes
 
     nparr = np.frombuffer(processed_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
@@ -101,9 +73,8 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
         img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
 
     if img is None:
-        raise ValueError("Nie udało się zdekodować przesłanego obrazu.")
+        raise ValueError("Błąd odczytu pliku obrazu.")
 
-    # 1. Prawdziwa przezroczystość alfa (jeśli plik faktycznie ma kanał alfa)
     has_alpha = False
     if len(img.shape) == 3 and img.shape[2] == 4:
         alpha_raw = img[:, :, 3] > 25
@@ -114,70 +85,88 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     else:
         bgr = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
-    target_dim = 380
+    target_dim = 360
     h, w = bgr.shape[:2]
     scale = target_dim / max(h, w)
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
     bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    # 2. Usuwanie fałszywej szachownicy w pikselach
-    bgr_clean, had_checker = remove_checkerboard_pattern(bgr_resized)
-
-    # 3. Poprawa kontrastu (CLAHE)
-    lab = cv2.cvtColor(bgr_clean, cv2.COLOR_BGR2LAB)
-    l_chan, a_chan, b_chan = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
-    l_clahe = clahe.apply(l_chan)
-    bgr_clean = cv2.cvtColor(cv2.merge((l_clahe, a_chan, b_chan)), cv2.COLOR_LAB2BGR)
-    bgr_clean = cv2.bilateralFilter(bgr_clean, d=5, sigmaColor=50, sigmaSpace=50)
-
-    # 4. Wyznaczanie maski obiektu
     if has_alpha:
-        alpha_resized = cv2.resize(
+        fg_mask = cv2.resize(
             alpha_mask.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
         ).astype(bool)
     elif keep_bg:
-        alpha_resized = np.ones((new_h, new_w), dtype=bool)
+        fg_mask = np.ones((new_h, new_w), dtype=bool)
     else:
-        flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
-        bgr_flood = bgr_clean.copy()
-        diff_tol = (24, 24, 24)
-        for seed in [(0, 0), (new_w - 1, 0), (0, new_h - 1), (new_w - 1, new_h - 1)]:
-            cv2.floodFill(bgr_flood, flood_mask, seed, (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
-        bg_mask = (flood_mask[1:-1, 1:-1] == 1)
-        candidate_mask = ~bg_mask
+        # BEZWZGLĘDNA ELIMINACJA TŁA I SZACHOWNICY STOCKOWEJ:
+        # Konwertujemy na odcienie szarości i szukamy mocnego kontrastu (głowa vs tło)
+        gray = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2GRAY)
+        
+        # Rozmycie usuwające wzorek kratki szachownicy
+        blurred = cv2.GaussianBlur(gray, (15, 15), 0)
+        
+        # Adaptacyjne progowanie Otsu odwrócone (ciemny motyw psa na jasnym tle)
+        _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        
+        # Domykamy dziury wewnątrz sylwetki (np. w środku uszu czy pyska)
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_close)
+        
+        # Wyciągamy komponenty spójne
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(closed)
+        
+        # Szukamy największego komponentu, który NIE jest tłem (leży bliżej środka)
+        best_label = -1
+        max_area = 0
+        cx_mid, cy_mid = new_w / 2, new_h / 2
 
-        # Jeśli wykryto szachownicę, piksele bieli/jasnej szarości na obrzeżach są tłem
-        if had_checker:
-            gray_res = cv2.cvtColor(bgr_clean, cv2.COLOR_BGR2GRAY)
-            candidate_mask = candidate_mask & (gray_res < 220)
+        for i in range(1, num_labels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            bx = stats[i, cv2.CC_STAT_LEFT]
+            by = stats[i, cv2.CC_STAT_TOP]
+            bw = stats[i, cv2.CC_STAT_WIDTH]
+            bh = stats[i, cv2.CC_STAT_HEIGHT]
 
-        fg_ratio = np.sum(candidate_mask) / (new_w * new_h)
-        if fg_ratio < 0.10:
-            alpha_resized = np.ones((new_h, new_w), dtype=bool)
+            # Odrzucamy ramki dotykające wszystkich 4 krawędzi
+            if bw > 0.95 * new_w and bh > 0.95 * new_h:
+                continue
+            
+            # Punkt ciężkości
+            dist_to_center = np.hypot(centroids[i][0] - cx_mid, centroids[i][1] - cy_mid)
+            if area > max_area and dist_to_center < (max(new_w, new_h) * 0.45):
+                max_area = area
+                best_label = i
+
+        if best_label != -1 and max_area > (0.05 * new_w * new_h):
+            # Poszerzamy delikatnie maskę psa, by nie uciąć futra na krawędziach
+            dog_mask = (labels == best_label).astype(np.uint8) * 255
+            dog_mask = cv2.dilate(dog_mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)), iterations=1)
+            fg_mask = dog_mask > 0
         else:
-            alpha_resized = candidate_mask
+            # Bezpieczny fallback
+            fg_mask = np.ones((new_h, new_w), dtype=bool)
 
-    # 5. Kwantyzacja K-Means
-    pixels = bgr_clean[alpha_resized].reshape(-1, 3)
+    # Kwantyzacja pikseli należących TYLKO do wyciętego psa
+    pixels = bgr_resized[fg_mask].reshape(-1, 3)
     if len(pixels) < n_colors:
-        pixels = bgr_clean.reshape(-1, 3)
-        alpha_resized = np.ones((new_h, new_w), dtype=bool)
+        pixels = bgr_resized.reshape(-1, 3)
+        fg_mask = np.ones((new_h, new_w), dtype=bool)
 
-    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=4)
+    # 4. K-Means
+    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=3)
     kmeans.fit(pixels)
 
     centers = kmeans.cluster_centers_.astype(int)
     hex_colors = [f"#{c[2]:02x}{c[1]:02x}{c[0]:02x}".upper() for c in centers]
 
     quantized_map = np.full((new_h, new_w), -1, dtype=int)
-    quantized_map[alpha_resized] = kmeans.labels_
+    quantized_map[fg_mask] = kmeans.labels_
 
-    # 6. Wyznaczenie środka i dopasowanie skali (tylko na podstawie właściwego psa)
-    y_indices, x_indices = np.where(alpha_resized)
-    if len(x_indices) > 0 and len(y_indices) > 0:
-        min_x, max_x = np.min(x_indices), np.max(x_indices)
-        min_y, max_y = np.min(y_indices), np.max(y_indices)
+    # 5. Skalowanie do obrysu samego psa (a nie całego kwadratu szachownicy!)
+    y_idx, x_idx = np.where(fg_mask)
+    if len(x_idx) > 0 and len(y_idx) > 0:
+        min_x, max_x = np.min(x_idx), np.max(x_idx)
+        min_y, max_y = np.min(y_idx), np.max(y_idx)
     else:
         min_x, max_x, min_y, max_y = 0, new_w, 0, new_h
 
@@ -185,41 +174,35 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     bbox_h = max(max_y - min_y, 1)
     max_side = max(bbox_w, bbox_h)
 
-    pad = 4.0
-    usable_box = 100.0 - (2 * pad)
+    usable_box = 90.0 # 90% szerokości bazy
     scale_fit = usable_box / max_side
-
     center_x = (min_x + max_x) / 2.0
     center_y = (min_y + max_y) / 2.0
 
     collected_paths = []
     color_ids = ["color_1", "color_2", "color_3", "color_4"]
 
-    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+    kernel_clean = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
 
     for cluster_idx in range(n_colors):
         mask = (quantized_map == cluster_idx).astype(np.uint8) * 255
         if not np.any(mask):
             continue
 
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_close)
-        if cluster_idx > 0:
-            mask = cv2.dilate(mask, kernel_dilate, iterations=1)
-
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_clean)
         mask = cv2.medianBlur(mask, 3)
+
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS)
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            # Ignoruj pojedyncze kafelki szachownicy i drobne szumy
-            if area < 25:
+            # Ignorujemy małe szumy
+            if area < 12:
                 continue
 
-            # Odrzuć tło dotykające zewnętrznych ścianek kadru
+            # Jeśli jakikolwiek kształt próbuje być kwadratowym obramowaniem tła - odrzucamy
             bx, by, bw, bh = cv2.boundingRect(cnt)
-            touches_border = (bx <= 2) or (by <= 2) or ((bx + bw) >= new_w - 2) or ((by + bh) >= new_h - 2)
-            if touches_border and (area > (0.28 * new_w * new_h)):
+            if bw > 0.88 * new_w and bh > 0.88 * new_h:
                 continue
 
             perimeter = cv2.arcLength(cnt, True)
