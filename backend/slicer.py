@@ -3,11 +3,16 @@ import re
 import os
 import shutil
 import tempfile
-import cadquery as cq
+try:
+    import cadquery as cq
+except Exception:
+    cq = None
 
 
 def convert_step_to_stl(step_path: str, output_stl_path: str) -> str:
     """Wczytuje model STEP przez CadQuery i eksportuje jako siatkę STL."""
+    if cq is None:
+        raise RuntimeError("CadQuery nie jest zainstalowane w tym środowisku.")
     result = cq.importers.importStep(step_path)
     cq.exporters.export(result, output_stl_path, tolerance=0.1, angularTolerance=0.2)
     return output_stl_path

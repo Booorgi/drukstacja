@@ -48,20 +48,58 @@ class QuoteRequest(BaseModel):
     infill_percent: int = 20
 
 
-# Bezpieczny import rembg - jeśli brakuje runtime ONNX dla Python 3.14, serwer nie padnie
+REMBG_AVAILABLE = False
+REMBG_SESSION = None
+
 try:
-    from rembg import remove as rembg_remove
-    REMBG_AVAILABLE = True
+    from rembg import remove as rembg_remove, new_session
+    try:
+        REMBG_SESSION = new_session("u2netp")
+        REMBG_AVAILABLE = True
+    except Exception as _sess_err:
+        print(f"[WARN] Inicjalizacja sesji rembg: {_sess_err}")
+        REMBG_SESSION = None
+        REMBG_AVAILABLE = False
 except Exception as _e:
     print(f"[WARN] Rembg niedostępne ({_e}), używam inteligentnego FloodFill/GrabCut")
     REMBG_AVAILABLE = False
 
 
+def remove_checkerboard_pattern(bgr_img):
+    """
+    Wykrywa i neutralizuje namalowaną szachownicę przezroczystości (biało-szare kwadraty),
+    często występującą w grafikach pobranych z internetu jako 'fałszywy przezroczysty PNG'.
+    """
+    gray = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape[:2]
+
+    high_contrast_edges = cv2.Canny(gray, 80, 160)
+    
+    border_zone = np.zeros((h, w), dtype=bool)
+    bz_y = max(5, int(h * 0.15))
+    bz_x = max(5, int(w * 0.15))
+    border_zone[:bz_y, :] = True
+    border_zone[-bz_y:, :] = True
+    border_zone[:, :bz_x] = True
+    border_zone[:, -bz_x:] = True
+
+    edge_density = np.mean(high_contrast_edges[border_zone] > 0)
+    
+    if edge_density > 0.05:
+        checker_mask = (gray > 180) & border_zone
+        clean_bgr = bgr_img.copy()
+        clean_bgr[checker_mask] = [255, 255, 255]
+        return clean_bgr, True
+
+    return bgr_img, False
+
+
 def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool = False):
     """
-    Uniwersalny algorytm wektoryzacji obrazu na wielowarstwowe SVG.
-    Obsługuje dowolną grafikę (nie tylko psy beagle).
-    n_colors: 2-6 — liczba warstw kolorów w wynikowym SVG.
+    Zaawansowany algorytm wektoryzacji w stylu MakerWorld:
+    1. Inteligentne usuwanie tła (rembg u2netp -> detekcja szachownicy -> FloodFill -> GrabCut).
+    2. Zachowanie kluczowych detali: źrenice, błysk oka (catchlights), obrysy, nos.
+    3. Hierarchia warstw stacking (Podkład sylwetki -> Ciało -> Ciemne detale -> Błysk).
     """
     n_colors = max(2, min(6, n_colors))
 
@@ -70,126 +108,184 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     if img is None:
         raise ValueError("Błąd odczytu grafiki.")
 
-    # 1. Sprawdzenie przezroczystości alfa
-    has_alpha = False
+    target_dim = 400
     if len(img.shape) == 3 and img.shape[2] == 4:
-        alpha_raw = img[:, :, 3] > 20
-        if np.sum(alpha_raw) > 0.05 * alpha_raw.size:
-            has_alpha = True
-            alpha_mask = alpha_raw
         bgr = img[:, :, :3]
     else:
         bgr = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
-    target_dim = 400
     h, w = bgr.shape[:2]
     scale = target_dim / max(h, w)
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
     bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    # 2. USUWANIE TŁA — kaskada: alfa → FloodFill → GrabCut fallback
-    if has_alpha:
-        fg_mask = cv2.resize(
-            alpha_mask.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
-        ).astype(bool)
-    elif keep_bg:
+    # 1. USUWANIE TŁA
+    fg_mask = None
+
+    if keep_bg:
         fg_mask = np.ones((new_h, new_w), dtype=bool)
     else:
-        # Metoda 1: FloodFill z 4 narożników
-        flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
-        bgr_flood = bgr_resized.copy()
-        diff = (22, 22, 22)
-        for seed in [(0, 0), (new_w - 1, 0), (0, new_h - 1), (new_w - 1, new_h - 1)]:
-            cv2.floodFill(bgr_flood, flood_mask, seed, (0, 255, 0), diff, diff, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
-        bg_candidate = (flood_mask[1:-1, 1:-1] == 1)
-        fg_candidate = ~bg_candidate
+        # A. Prawdziwa przezroczystość alfa w przesłanym pliku
+        if len(img.shape) == 3 and img.shape[2] == 4:
+            alpha_raw = img[:, :, 3] > 20
+            alpha_ratio = np.sum(alpha_raw) / alpha_raw.size
+            if 0.05 < alpha_ratio < 0.98:
+                fg_mask = cv2.resize(
+                    alpha_raw.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
+                ).astype(bool)
 
-        # Wyciągamy największy komponent blisko centrum
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(fg_candidate.astype(np.uint8))
-        best_label = -1
-        max_area = 0
-        cx_mid, cy_mid = new_w / 2, new_h / 2
-
-        for i in range(1, num_labels):
-            area = stats[i, cv2.CC_STAT_AREA]
-            bw = stats[i, cv2.CC_STAT_WIDTH]
-            bh = stats[i, cv2.CC_STAT_HEIGHT]
-            if bw >= (new_w - 2) and bh >= (new_h - 2):
-                continue
-            dist = np.hypot(centroids[i][0] - cx_mid, centroids[i][1] - cy_mid)
-            if area > max_area and dist < (max(new_w, new_h) * 0.45):
-                max_area = area
-                best_label = i
-
-        if best_label != -1:
-            fg_mask = (labels == best_label)
-        else:
-            # Metoda 2: GrabCut fallback — gdy FloodFill nie dał sensownego wyniku
+        # B. Wycięcie przez AI (rembg z modelem u2netp)
+        if fg_mask is None and REMBG_AVAILABLE and REMBG_SESSION is not None:
             try:
-                grab_mask = np.zeros((new_h, new_w), np.uint8)
-                margin = max(5, int(min(new_w, new_h) * 0.05))
-                rect = (margin, margin, new_w - 2 * margin, new_h - 2 * margin)
-                bgd_model = np.zeros((1, 65), np.float64)
-                fgd_model = np.zeros((1, 65), np.float64)
-                cv2.grabCut(bgr_resized, grab_mask, rect, bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_RECT)
-                fg_mask = ((grab_mask == cv2.GC_FGD) | (grab_mask == cv2.GC_PR_FGD))
-            except Exception:
-                fg_mask = fg_candidate
+                cutout_bytes = rembg_remove(image_bytes, session=REMBG_SESSION)
+                cutout_arr = np.frombuffer(cutout_bytes, np.uint8)
+                cutout_img = cv2.imdecode(cutout_arr, cv2.IMREAD_UNCHANGED)
+                if cutout_img is not None and len(cutout_img.shape) == 3 and cutout_img.shape[2] == 4:
+                    c_alpha = cutout_img[:, :, 3] > 25
+                    alpha_ratio = np.sum(c_alpha) / c_alpha.size
+                    if 0.05 < alpha_ratio < 0.95:
+                        fg_mask = cv2.resize(
+                            c_alpha.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
+                        ).astype(bool)
+            except Exception as _r_err:
+                print(f"[WARN] Błąd wycinania rembg: {_r_err}")
 
-    # 3. UNIWERSALNA KWANTYZACJA KOLORÓW — KMeans na N kolorów
-    fg_pixels = bgr_resized[fg_mask].reshape(-1, 3)
-    if len(fg_pixels) < 20:
-        fg_pixels = bgr_resized.reshape(-1, 3)
+        # C. Klasyczny FloodFill + usuwanie szachownicy + connected components
+        if fg_mask is None:
+            bgr_clean, had_checker = remove_checkerboard_pattern(bgr_resized)
+            flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
+            bgr_flood = bgr_clean.copy()
+            diff_tol = (28, 28, 28)
+            for seed in [(0, 0), (new_w - 1, 0), (0, new_h - 1), (new_w - 1, new_h - 1)]:
+                cv2.floodFill(bgr_flood, flood_mask, seed, (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
+            bg_candidate = (flood_mask[1:-1, 1:-1] == 1)
+            fg_candidate = ~bg_candidate
+
+            if had_checker:
+                gray_res = cv2.cvtColor(bgr_clean, cv2.COLOR_BGR2GRAY)
+                fg_candidate = fg_candidate & (gray_res < 215)
+
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(fg_candidate.astype(np.uint8))
+            best_label = -1
+            max_area = 0
+            cx_mid, cy_mid = new_w / 2, new_h / 2
+
+            for i in range(1, num_labels):
+                area = stats[i, cv2.CC_STAT_AREA]
+                bw = stats[i, cv2.CC_STAT_WIDTH]
+                bh = stats[i, cv2.CC_STAT_HEIGHT]
+                if bw >= (new_w - 2) and bh >= (new_h - 2):
+                    continue
+                dist = np.hypot(centroids[i][0] - cx_mid, centroids[i][1] - cy_mid)
+                if area > max_area and dist < (max(new_w, new_h) * 0.48):
+                    max_area = area
+                    best_label = i
+
+            if best_label != -1:
+                fg_mask = (labels == best_label)
+            else:
+                try:
+                    grab_mask = np.zeros((new_h, new_w), np.uint8)
+                    margin = max(5, int(min(new_w, new_h) * 0.05))
+                    rect = (margin, margin, new_w - 2 * margin, new_h - 2 * margin)
+                    bgd_model = np.zeros((1, 65), np.float64)
+                    fgd_model = np.zeros((1, 65), np.float64)
+                    cv2.grabCut(bgr_resized, grab_mask, rect, bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_RECT)
+                    fg_mask = ((grab_mask == cv2.GC_FGD) | (grab_mask == cv2.GC_PR_FGD))
+                except Exception:
+                    fg_mask = fg_candidate
+
+    if fg_mask is None or np.sum(fg_mask) < 20:
         fg_mask = np.ones((new_h, new_w), dtype=bool)
 
-    # Wyrównanie histogramu CLAHE dla lepszej separacji kolorów
-    lab = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2LAB)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    lab[:, :, 0] = clahe.apply(lab[:, :, 0])
-    bgr_enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-    fg_pixels_enhanced = bgr_enhanced[fg_mask].reshape(-1, 3)
+    # Pełna baza bez szczelin
+    fg_mask_clean = cv2.morphologyEx(
+        fg_mask.astype(np.uint8) * 255,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    ) > 0
 
-    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=5)
-    kmeans.fit(fg_pixels_enhanced)
+    # 2. EKSTRAKCJA DETALI, OCZU I BŁYSKÓW (MAKERWORLD STACKING)
+    gray = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+    gray_clahe = clahe.apply(gray)
+
+    # Ciemne linie i źrenice
+    dark_mask = (gray_clahe < 65) & fg_mask
+    dark_mask = cv2.morphologyEx(
+        dark_mask.astype(np.uint8) * 255,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+    ) > 0
+
+    # Białe błyski w oczach i jasne plamki
+    highlights_mask = (gray_clahe > 215) & fg_mask
+    highlights_mask = cv2.morphologyEx(
+        highlights_mask.astype(np.uint8) * 255,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+    ) > 0
+
+    # Ciało (piksele między czernią a bielą)
+    mid_body_mask = fg_mask & (~dark_mask) & (~highlights_mask)
+    body_pixels = bgr_resized[mid_body_mask].reshape(-1, 3)
+
+    if len(body_pixels) < 20:
+        body_pixels = bgr_resized[fg_mask].reshape(-1, 3)
+        mid_body_mask = fg_mask
+
+    if n_colors == 2:
+        n_body_colors = 1
+        has_highlights = False
+    elif n_colors == 3:
+        n_body_colors = 1
+        has_highlights = True
+    else:
+        n_body_colors = n_colors - 2
+        has_highlights = True
+
+    kmeans = KMeans(n_clusters=n_body_colors, random_state=42, n_init=3)
+    kmeans.fit(body_pixels)
     centers = kmeans.cluster_centers_.astype(int)
 
-    # Mapowanie z powrotem na oryginalne kolory (bez CLAHE)
-    original_centers = []
-    for ci in range(n_colors):
-        cluster_mask = (kmeans.labels_ == ci)
-        cluster_pixels = fg_pixels[cluster_mask]
-        if len(cluster_pixels) > 0:
-            original_centers.append(np.mean(cluster_pixels, axis=0).astype(int))
-        else:
-            original_centers.append(centers[ci])
-    centers = np.array(original_centers)
+    body_brightness = [np.mean(c) for c in centers]
+    sorted_body_indices = np.argsort(body_brightness)[::-1]
+    centers = centers[sorted_body_indices]
 
-    # Sortujemy warstwy od najjaśniejszej do najciemniejszej (brightness)
-    brightness = [np.mean(c) for c in centers]
-    sorted_indices = np.argsort(brightness)[::-1]
-    centers = centers[sorted_indices]
+    body_hex_colors = [
+        f"#{centers[i][2]:02x}{centers[i][1]:02x}{centers[i][0]:02x}".upper()
+        for i in range(n_body_colors)
+    ]
 
-    # Konwersja do hex
     final_colors = []
-    for c in centers:
-        hex_val = f"#{int(c[2]):02x}{int(c[1]):02x}{int(c[0]):02x}".upper()
-        final_colors.append(hex_val)
-
-    # Mapa pikseli do klastrów (przeindeksowane po sortowaniu)
-    labels_reindexed = np.full(kmeans.labels_.shape, -1, dtype=int)
-    for new_idx, old_idx in enumerate(sorted_indices):
-        labels_reindexed[kmeans.labels_ == old_idx] = new_idx
-
-    pixel_labels = np.full((new_h, new_w), -1, dtype=int)
-    pixel_labels[fg_mask] = labels_reindexed
-
-    # 4. Tworzenie masek warstw
     layer_masks = []
-    for ci in range(n_colors):
-        mask = (pixel_labels == ci).astype(np.uint8) * 255
-        layer_masks.append(mask)
 
-    # 5. Centrowanie obiektu w SVG viewBox
+    # Warstwa 1: Podkład ciała (cała sylwetka, zero tła)
+    final_colors.append(body_hex_colors[0])
+    layer_masks.append(fg_mask_clean.astype(np.uint8) * 255)
+
+    # Warstwy pośrednie ciała (cienie, łaty)
+    labels_map = np.full((new_h, new_w), -1, dtype=int)
+    labels_map[mid_body_mask] = kmeans.labels_
+
+    for sub_idx in range(1, n_body_colors):
+        orig_cluster = sorted_body_indices[sub_idx]
+        mask_sub = (labels_map == orig_cluster).astype(np.uint8) * 255
+        mask_sub = cv2.dilate(mask_sub, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)))
+        final_colors.append(body_hex_colors[sub_idx])
+        layer_masks.append(mask_sub)
+
+    # Warstwa detali: źrenice z wyciętym miejscem na błysk + nos + linie
+    pupils_and_lines = dark_mask & (~highlights_mask)
+    final_colors.append("#181818")
+    layer_masks.append(pupils_and_lines.astype(np.uint8) * 255)
+
+    # Warstwa błysku oka
+    if has_highlights:
+        final_colors.append("#F4F4F4")
+        layer_masks.append(highlights_mask.astype(np.uint8) * 255)
+
+    # 3. CENTROWANIE I GENEROWANIE WEKTORÓW SVG
     y_idx, x_idx = np.where(fg_mask)
     if len(x_idx) > 0 and len(y_idx) > 0:
         min_x, max_x = np.min(x_idx), np.max(x_idx)
@@ -206,15 +302,15 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     center_x = (min_x + max_x) / 2.0
     center_y = (min_y + max_y) / 2.0
 
-    color_ids = [f"color_{i+1}" for i in range(n_colors)]
+    num_layers = len(layer_masks)
+    color_ids = [f"color_{i+1}" for i in range(num_layers)]
     svg_output = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
 
-    for l_idx in range(n_colors):
+    for l_idx in range(num_layers):
         mask = layer_masks[l_idx]
         if not np.any(mask):
             continue
 
-        # Wygładzenie konturów
         mask = cv2.medianBlur(mask, 3)
         contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_KCOS)
 
@@ -222,7 +318,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
         if contours:
             for cnt_idx, cnt in enumerate(contours):
                 area = cv2.contourArea(cnt)
-                min_a = 4 if l_idx >= n_colors - 1 else (10 if l_idx >= n_colors - 2 else 20)
+                min_a = 4 if l_idx >= num_layers - 1 else (10 if l_idx >= num_layers - 2 else 20)
                 if area < min_a:
                     continue
 
@@ -254,6 +350,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
 
     svg_output.append("</svg>")
     return "".join(svg_output), final_colors
+
 
 
 @app.get("/")

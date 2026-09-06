@@ -910,6 +910,41 @@ export default function KeychainGenerator() {
     }
   }
 
+  function findClosestFilament(targetHex) {
+    if (!targetHex) return SUNLU_CATALOG.colors.PLA_PLUS[1];
+    const exact = ALL_FLAT_COLORS.find((f) => f.hex?.toLowerCase() === targetHex.toLowerCase());
+    if (exact) return exact;
+
+    const tr = parseInt(targetHex.slice(1, 3), 16) || 0;
+    const tg = parseInt(targetHex.slice(3, 5), 16) || 0;
+    const tb = parseInt(targetHex.slice(5, 7), 16) || 0;
+
+    let best = ALL_FLAT_COLORS[0];
+    let minDiff = Infinity;
+
+    for (const fil of ALL_FLAT_COLORS) {
+      if (!fil.hex || fil.type === "dual" || fil.type === "tri" || fil.type === "rainbow") continue;
+      const r = parseInt(fil.hex.slice(1, 3), 16) || 0;
+      const g = parseInt(fil.hex.slice(3, 5), 16) || 0;
+      const b = parseInt(fil.hex.slice(5, 7), 16) || 0;
+      const diff = (r - tr) ** 2 * 0.3 + (g - tg) ** 2 * 0.59 + (b - tb) ** 2 * 0.11;
+      if (diff < minDiff) {
+        minDiff = diff;
+        best = fil;
+      }
+    }
+
+    if (minDiff < 500) {
+      return best;
+    }
+    return {
+      id: `custom_${targetHex.replace("#", "")}`,
+      name: best?.name ? `${best.name} (odcień)` : "Kolor motywu",
+      hex: targetHex,
+      type: "single",
+    };
+  }
+
   function handleConfirmConversion() {
     if (generatedSvgPreview) {
       setUploadedSvg(generatedSvgPreview);
@@ -919,21 +954,21 @@ export default function KeychainGenerator() {
 
     if (detectedColors.length > 0) {
       const defaultThicknesses = [0.6, 0.8, 1.0, 1.2, 1.4, 1.6];
-      // Dynamiczna aktualizacja warstw na podstawie wykrytej liczby kolorów
+      const total = detectedColors.length;
+
       const newLayers = detectedColors.map((hex, idx) => {
-        const matched =
-          ALL_FLAT_COLORS.find((f) => f.hex.toLowerCase() === hex?.toLowerCase()) || {
-            id: `custom_${idx}`,
-            name: `Wykryty kolor ${idx + 1}`,
-            hex: hex || "#222222",
-            type: "single",
-          };
+        const filament = findClosestFilament(hex);
+        let layerRole = `Warstwa ${idx + 1}`;
+        if (idx === 0) layerRole = "Warstwa 1 (Baza / Podkład)";
+        else if (idx === total - 1) layerRole = `Warstwa ${idx + 1} (Błysk / Akcenty)`;
+        else if (idx === total - 2) layerRole = `Warstwa ${idx + 1} (Detale / Kontury)`;
+        else layerRole = `Warstwa ${idx + 1} (Ciało / Cienie)`;
 
         return {
           id: idx + 1,
-          name: `Warstwa ${idx + 1}`,
-          filament: matched,
-          thickness: defaultThicknesses[idx] || 0.8,
+          name: layerRole,
+          filament: filament,
+          thickness: defaultThicknesses[idx] || (0.6 + idx * 0.2),
         };
       });
       setLayersConfig(newLayers);
