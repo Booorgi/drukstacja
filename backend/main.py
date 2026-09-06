@@ -48,22 +48,36 @@ class QuoteRequest(BaseModel):
     infill_percent: int = 20
 
 
-from rembg import remove
+# Bezpieczny import rembg - jeśli brakuje runtime ONNX dla Python 3.14, serwer nie padnie
+try:
+    from rembg import remove as rembg_remove
+    REMBG_AVAILABLE = True
+except Exception as _e:
+    print(f"[WARN] Rembg niedostępne ({_e}), używam inteligentnego FloodFill/GrabCut")
+    REMBG_AVAILABLE = False
+
 
 def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool = False):
-    # 1. AI Cutout: Usuwanie tła przy użyciu U2-Net (jeśli keep_bg=False)
-    if not keep_bg:
+    # 1. AI Cutout (jeśli dostępne i keep_bg == False)
+    processed_bytes = image_bytes
+    if not keep_bg and REMBG_AVAILABLE:
         try:
-            image_bytes = remove(image_bytes)
-        except Exception as e:
-            print(f"[WARN] Rembg fallback: {e}")
+            processed_bytes = rembg_remove(image_bytes)
+        except Exception as err:
+            print(f"[WARN] Błąd wykonania rembg: {err}")
+            processed_bytes = image_bytes
 
-    nparr = np.frombuffer(image_bytes, np.uint8)
+    nparr = np.frombuffer(processed_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
     if img is None:
-        raise ValueError("Nie udało się zdekodować obrazu.")
+        # Fallback do surowego obrazu, jeśli obróbka dała błąd
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
 
-    # 2. Obsługa kanału alfa
+    if img is None:
+        raise ValueError("Nie udało się zdekodować przesłanego obrazu.")
+
+    # 2. Detekcja kanału Alfa (np. z PNG lub po wycięciu tła)
     has_alpha = False
     if len(img.shape) == 3 and img.shape[2] == 4:
         has_alpha = True
@@ -78,15 +92,13 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
     bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    # 3. Wzmocnienie krawędzi i kontrastu (CLAHE w przestrzeni LAB)
+    # 3. Kontrast CLAHE (uwydatnia detale i kontury)
     lab = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2LAB)
-    l_channel, a_channel, b_channel = cv2.split(lab)
+    l_chan, a_chan, b_chan = cv2.split(lab)
     clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-    cl = clahe.apply(l_channel)
-    bgr_enhanced = cv2.cvtColor(cv2.merge((cl, a_channel, b_channel)), cv2.COLOR_LAB2BGR)
-
-    # Likwidacja szumu i artefaktów kompresji JPG
-    bgr_clean = cv2.bilateralFilter(bgr_enhanced, d=7, sigmaColor=75, sigmaSpace=75)
+    l_clahe = clahe.apply(l_chan)
+    bgr_clean = cv2.cvtColor(cv2.merge((l_clahe, a_chan, b_chan)), cv2.COLOR_LAB2BGR)
+    bgr_clean = cv2.bilateralFilter(bgr_clean, d=7, sigmaColor=75, sigmaSpace=75)
 
     if has_alpha:
         alpha_resized = cv2.resize(
@@ -96,13 +108,12 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
         if keep_bg:
             alpha_resized = np.ones((new_h, new_w), dtype=bool)
         else:
+            # Inteligentny FloodFill z 4 rogów dla obrazów bez przezroczystości
             flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
             bgr_flood = bgr_clean.copy()
-            diff_tol = (20, 20, 20)
-            cv2.floodFill(bgr_flood, flood_mask, (0, 0), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
-            cv2.floodFill(bgr_flood, flood_mask, (new_w - 1, 0), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
-            cv2.floodFill(bgr_flood, flood_mask, (0, new_h - 1), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
-            cv2.floodFill(bgr_flood, flood_mask, (new_w - 1, new_h - 1), (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
+            diff_tol = (25, 25, 25)
+            for seed in [(0, 0), (new_w - 1, 0), (0, new_h - 1), (new_w - 1, new_h - 1)]:
+                cv2.floodFill(bgr_flood, flood_mask, seed, (0, 255, 0), diff_tol, diff_tol, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
             bg_mask = (flood_mask[1:-1, 1:-1] == 1)
             alpha_resized = ~bg_mask
 
@@ -121,7 +132,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     quantized_map = np.full((new_h, new_w), -1, dtype=int)
     quantized_map[alpha_resized] = kmeans.labels_
 
-    # 5. Centrowanie geometryczne motywu
+    # 5. Centrowanie Bounding Box
     y_indices, x_indices = np.where(alpha_resized)
     if len(x_indices) > 0 and len(y_indices) > 0:
         min_x, max_x = np.min(x_indices), np.max(x_indices)
@@ -156,7 +167,6 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
             mask = cv2.dilate(mask, kernel_dilate, iterations=1)
 
         mask = cv2.medianBlur(mask, 3)
-
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_TC89_KCOS)
 
         for cnt in contours:
@@ -228,12 +238,15 @@ from fastapi import Form
 @app.post("/vectorize-ai")
 async def vectorize_image_ai(
     file: UploadFile = File(...),
-    keep_bg: bool = Form(False)
+    keep_bg: str = Form("false")
 ):
-    """Wektoryzacja konturów z inteligentnym wycinaniem tła AI i doborem barw."""
+    """Wektoryzacja konturów z obsługą AI cutout i doborem barw."""
     try:
+        should_keep_bg = keep_bg.lower() in ("true", "1", "yes")
         contents = await file.read()
-        svg_result, detected_colors = image_to_quantized_svg(contents, n_colors=4, keep_bg=keep_bg)
+        svg_result, detected_colors = image_to_quantized_svg(
+            contents, n_colors=4, keep_bg=should_keep_bg
+        )
         return {
             "svg": svg_result,
             "detected_colors": detected_colors
@@ -241,7 +254,6 @@ async def vectorize_image_ai(
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Błąd wektoryzacji: {str(e)}")
-
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     """
