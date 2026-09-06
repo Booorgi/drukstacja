@@ -224,16 +224,16 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     for new_idx, old_cluster in enumerate(sorted_order):
         remapped[labels == old_cluster] = new_idx
 
-    # 4. MASKI WARSTW Z GWARANTOWANĄ GRUBOŚCIĄ ŚCIANEK POD DYSZĘ 0.4MM:
-    # Kernel dylatacji (poszerza cienkie paski o +1px promień = 3-4px szerokość = min. 0.6mm w druku)
+    # 4. MASKI WARSTW Z GWARANTOWANĄ GRUBOŚCIĄ ŚCIANEK POD DYSZĘ 0.4MM (KAFELKOWANIE MOZAIKOWE):
+    # Kernel dylatacji (poszerza cienkie paski o +1px promień, co zapewnia szczelne łączenie stykających się kolorów w druku FDM)
     kernel_wall = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    layer_masks = [sil_u8]
+    layer_masks = []
 
-    for c_idx in range(1, n_colors):
+    for c_idx in range(n_colors):
         m = (remapped == c_idx).astype(np.uint8) * 255
         # Usunięcie pojedynczych pikseli szumu
         m = cv2.morphologyEx(m, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2)))
-        # Pogrubienie ścianek zapobiegające łamliwości w druku FDM
+        # Pogrubienie ścianek i szczelne spasowanie sąsiadujących kolorów
         m = cv2.dilate(m, kernel_wall, iterations=1)
         # Ograniczenie do zewnętrznej sylwetki
         m = cv2.bitwise_and(m, sil_u8)
@@ -261,7 +261,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
         ny = 50.0 + (pt[1] - center_y) * scale_fit
         return nx, ny
 
-    # 6. GENEROWANIE SVG Z FILTREM KRUSZĄCYCH SIĘ MIKROELEMENTÓW (MIN_A = 20)
+    # 6. GENEROWANIE SVG Z WYCINANIEM OTWORÓW DLA WSZYSTKICH WARSTW (EVENODD MOZAIKA)
     svg_parts = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
 
     for l_idx in range(n_colors):
@@ -269,75 +269,53 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
         if not np.any(mask):
             continue
 
-        if l_idx == 0:
-            # Baza: lity zewnętrzny kontur
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
-            paths = []
-            for cnt in contours:
-                if cv2.contourArea(cnt) < 20:
-                    continue
-                approx = cv2.approxPolyDP(cnt, 0.0010 * cv2.arcLength(cnt, True), True)
-                pts = approx.reshape(-1, 2)
-                if len(pts) < 3:
-                    continue
-                sx, sy = map_pt(pts[0])
-                d = f"M {sx:.2f} {sy:.2f} "
-                for p in pts[1:]:
-                    x, y = map_pt(p)
-                    d += f"L {x:.2f} {y:.2f} "
-                d += "Z "
-                paths.append(d)
-            p_str = "".join([f'<path d="{p}"/>' for p in paths])
-            svg_parts.append(f'<g id="color_{l_idx+1}" fill="{hex_colors[l_idx]}">{p_str}</g>')
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_KCOS)
+        if not contours or hierarchy is None:
+            continue
 
-        else:
-            # Warstwy detali z wycinaniem otworów (bliki oka, źrenice, paski)
-            contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_KCOS)
-            if not contours or hierarchy is None:
+        hier = hierarchy[0]
+        compound_paths = []
+
+        for i in range(len(contours)):
+            if hier[i][3] != -1:
+                continue  # Pomiń otwory na poziomie głównym (są przetwarzane w rodzicu)
+
+            cnt = contours[i]
+            # Eliminacja mikroskopijnych okruchów (< 15px), które nie mają przyczepności i łamią się
+            if cv2.contourArea(cnt) < 15:
                 continue
 
-            hier = hierarchy[0]
-            compound_paths = []
+            approx = cv2.approxPolyDP(cnt, 0.0010 * cv2.arcLength(cnt, True), True)
+            pts = approx.reshape(-1, 2)
+            if len(pts) < 3:
+                continue
 
-            for i in range(len(contours)):
-                if hier[i][3] != -1:
-                    continue  # Pomiń otwory na poziomie głównym (są przetwarzane w rodzicu)
+            sx, sy = map_pt(pts[0])
+            d_str = f"M {sx:.2f} {sy:.2f} "
+            for p in pts[1:]:
+                x, y = map_pt(p)
+                d_str += f"L {x:.2f} {y:.2f} "
+            d_str += "Z "
 
-                cnt = contours[i]
-                # Eliminacja mikroskopijnych okruchów (< 20px), które nie mają przyczepności i łamią się
-                if cv2.contourArea(cnt) < 20:
-                    continue
+            # Wycinanie otworów wewnątrz tego wielokąta (np. źrenice, paski, bliki)
+            child = hier[i][2]
+            while child != -1:
+                hole_cnt = contours[child]
+                if cv2.contourArea(hole_cnt) >= 6:
+                    hole_approx = cv2.approxPolyDP(hole_cnt, 0.0010 * cv2.arcLength(hole_cnt, True), True)
+                    hole_pts = hole_approx.reshape(-1, 2)
+                    if len(hole_pts) >= 3:
+                        hsx, hsy = map_pt(hole_pts[0])
+                        d_str += f"M {hsx:.2f} {hsy:.2f} "
+                        for hp in hole_pts[1:]:
+                            hx, hy = map_pt(hp)
+                            d_str += f"L {hx:.2f} {hy:.2f} "
+                        d_str += "Z "
+                child = hier[child][0]
 
-                approx = cv2.approxPolyDP(cnt, 0.0010 * cv2.arcLength(cnt, True), True)
-                pts = approx.reshape(-1, 2)
-                if len(pts) < 3:
-                    continue
+            compound_paths.append(f'<path fill-rule="evenodd" d="{d_str}"/>')
 
-                sx, sy = map_pt(pts[0])
-                d_str = f"M {sx:.2f} {sy:.2f} "
-                for p in pts[1:]:
-                    x, y = map_pt(p)
-                    d_str += f"L {x:.2f} {y:.2f} "
-                d_str += "Z "
-
-                # Wycinanie otworów wewnątrz tego wielokąta
-                child = hier[i][2]
-                while child != -1:
-                    hole_cnt = contours[child]
-                    if cv2.contourArea(hole_cnt) >= 6:
-                        hole_approx = cv2.approxPolyDP(hole_cnt, 0.0010 * cv2.arcLength(hole_cnt, True), True)
-                        hole_pts = hole_approx.reshape(-1, 2)
-                        if len(hole_pts) >= 3:
-                            hsx, hsy = map_pt(hole_pts[0])
-                            d_str += f"M {hsx:.2f} {hsy:.2f} "
-                            for hp in hole_pts[1:]:
-                                hx, hy = map_pt(hp)
-                                d_str += f"L {hx:.2f} {hy:.2f} "
-                            d_str += "Z "
-                    child = hier[child][0]
-
-                compound_paths.append(f'<path fill-rule="evenodd" d="{d_str}"/>')
-
+        if compound_paths:
             svg_parts.append(f'<g id="color_{l_idx+1}" fill="{hex_colors[l_idx]}">{"".join(compound_paths)}</g>')
 
     svg_parts.append("</svg>")

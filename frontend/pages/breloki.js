@@ -317,7 +317,7 @@ const KeychainViewer3D = dynamic(
 
             svgData.paths.forEach((path) => {
               const parentId = path.userData?.node?.parentElement?.id;
-              const shapes = path.toShapes(true);
+              const shapes = SVGLoader.createShapes(path);
 
               // Obsługuje dynamiczną liczbę warstw (color_1...color_6)
               const match = parentId?.match(/^color_(\d+)$/);
