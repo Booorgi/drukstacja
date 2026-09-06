@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, forwardRef, useImperativeHandle } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -27,6 +27,15 @@ const DEFAULT_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/sv
   </g>
 </svg>`;
 
+// Dostępne fonty dla tekstu
+const AVAILABLE_FONTS = [
+  { id: "roboto", name: "Roboto", url: "https://fonts.gstatic.com/s/roboto/v47/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWubEbGmT.woff" },
+  { id: "montserrat", name: "Montserrat", url: "https://fonts.gstatic.com/s/montserrat/v29/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCtr6Hw5aXo.woff" },
+  { id: "bebas", name: "Bebas Neue", url: "https://fonts.gstatic.com/s/bebasneue/v14/JTUSjIg69CK48gW7PXoo9Wlhyw.woff" },
+  { id: "poppins", name: "Poppins", url: "https://fonts.gstatic.com/s/poppins/v22/pxiByp8kv8JHgFVrLEj6Z1xlFQ.woff" },
+  { id: "inter", name: "Inter", url: "https://fonts.gstatic.com/s/inter/v18/UcCo3FwrK3iLTcviYwY.woff" },
+];
+
 // Spłaszczona lista kolorów do szybkiego wyszukiwania
 const ALL_FLAT_COLORS = Object.values(SUNLU_CATALOG.colors).flat();
 
@@ -38,13 +47,10 @@ const KeychainViewer3D = dynamic(
       import("three-stdlib"),
       import("three"),
     ]).then(([fiber, drei, stdlib, THREE]) => {
-      const { Canvas, useFrame } = fiber;
-      const { OrbitControls, RoundedBox } = drei;
-      const { SVGLoader } = stdlib;
+      const { Canvas, useFrame, useThree } = fiber;
+      const { OrbitControls, RoundedBox, Text } = drei;
+      const { SVGLoader, STLExporter } = stdlib;
 
-      // -------------------------------------------------------------
-      // SHADER DUAL / TRI / SINGLE COLOR W THREE.JS
-      // -------------------------------------------------------------
       // -------------------------------------------------------------
       // FOTOREALISTYCZNY MATERIAŁ DUAL / TRI / SINGLE COLOR DLA THREE.JS
       // -------------------------------------------------------------
@@ -205,6 +211,7 @@ const KeychainViewer3D = dynamic(
         strokeWidth,
         strokeThickness,
         strokeFilament,
+        layerSeparation,
       }) {
         const strokeGeometry = useMemo(() => {
           if (!strokeEnabled || strokeWidth <= 0) return null;
@@ -271,10 +278,12 @@ const KeychainViewer3D = dynamic(
 
         if (!strokeEnabled || !strokeGeometry) return null;
 
+        const separationOffset = layerSeparation * 1;
+
         return (
           <mesh
             geometry={strokeGeometry}
-            position={[0, 0, baseThickness / 2 + 0.01]}
+            position={[0, 0, baseThickness / 2 + 0.01 + separationOffset]}
             renderOrder={10}
           >
             <SunluDynamicMaterial filamentInfo={strokeFilament} />
@@ -296,33 +305,36 @@ const KeychainViewer3D = dynamic(
         baseDiameter,
         strokeEnabled,
         strokeWidth,
+        layerSeparation,
       }) {
         const parsedGroups = useMemo(() => {
-          if (!svgString) return { c1: [], c2: [], c3: [], c4: [] };
+          if (!svgString) return {};
           try {
             const loader = new SVGLoader();
             const svgData = loader.parse(svgString);
 
-            const c1 = [];
-            const c2 = [];
-            const c3 = [];
-            const c4 = [];
+            const groups = {};
 
             svgData.paths.forEach((path) => {
               const parentId = path.userData?.node?.parentElement?.id;
               const shapes = path.toShapes(true);
 
-              if (parentId === "color_1") c1.push(...shapes);
-              else if (parentId === "color_2") c2.push(...shapes);
-              else if (parentId === "color_3") c3.push(...shapes);
-              else if (parentId === "color_4") c4.push(...shapes);
-              else c1.push(...shapes);
+              // Obsługuje dynamiczną liczbę warstw (color_1...color_6)
+              const match = parentId?.match(/^color_(\d+)$/);
+              if (match) {
+                const key = `c${match[1]}`;
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(...shapes);
+              } else {
+                if (!groups.c1) groups.c1 = [];
+                groups.c1.push(...shapes);
+              }
             });
 
-            return { c1, c2, c3, c4 };
+            return groups;
           } catch (err) {
             console.error("Błąd parsowania SVG:", err);
-            return { c1: [], c2: [], c3: [], c4: [] };
+            return {};
           }
         }, [svgString]);
 
@@ -351,12 +363,12 @@ const KeychainViewer3D = dynamic(
           return [];
         }, [shapeType, baseWidth, baseHeight, baseDiameter, strokeEnabled, strokeWidth]);
 
-        const groups = [
-          { shapes: parsedGroups.c1, cfg: layersConfig[0], level: 0 },
-          { shapes: parsedGroups.c2, cfg: layersConfig[1], level: 1 },
-          { shapes: parsedGroups.c3, cfg: layersConfig[2], level: 2 },
-          { shapes: parsedGroups.c4, cfg: layersConfig[3], level: 3 },
-        ];
+        // Budujemy grupy dynamicznie na podstawie layersConfig
+        const groupEntries = layersConfig.map((cfg, idx) => ({
+          shapes: parsedGroups[`c${idx + 1}`] || [],
+          cfg,
+          level: idx,
+        }));
 
         const minBound = Math.min(baseBounds?.width || 60, baseBounds?.height || 60);
         const uniformScale = (minBound * ((graphicScale || 80) / 100)) / 100;
@@ -367,8 +379,8 @@ const KeychainViewer3D = dynamic(
               scale={[uniformScale, -uniformScale, 1]}
               position={[-50 * uniformScale, 50 * uniformScale, 0]}
             >
-              {groups.map((grp, gIdx) => {
-                const stepZ = grp.level * 0.08;
+              {groupEntries.map((grp, gIdx) => {
+                const stepZ = grp.level * 0.08 + grp.level * layerSeparation;
 
                 return grp.shapes.map((shape, sIdx) => (
                   <mesh
@@ -397,6 +409,56 @@ const KeychainViewer3D = dynamic(
         );
       }
 
+      // Komponent tekstu 3D
+      function TextOverlay3D({
+        textContent,
+        textFont,
+        textSize,
+        textPosition,
+        textFilament,
+        textThickness,
+        baseThickness,
+        baseWidth,
+        baseHeight,
+        baseDiameter,
+        shapeType,
+        layerSeparation,
+      }) {
+        if (!textContent || textContent.trim() === "") return null;
+
+        const fontUrl = AVAILABLE_FONTS.find(f => f.id === textFont)?.url || AVAILABLE_FONTS[0].url;
+
+        // Oblicz pozycję Y w zależności od textPosition
+        let yPos = 0;
+        const halfH = shapeType === "rect" ? baseHeight / 2 : baseDiameter / 2;
+        if (textPosition === "top") yPos = halfH * 0.5;
+        else if (textPosition === "bottom") yPos = -halfH * 0.5;
+        else yPos = 0;
+
+        const zPos = baseThickness / 2 + 0.1 + layerSeparation * 5;
+
+        return (
+          <Text
+            font={fontUrl}
+            fontSize={textSize}
+            color={textFilament?.hex || "#FFFFFF"}
+            anchorX="center"
+            anchorY="middle"
+            position={[0, yPos, zPos]}
+            maxWidth={shapeType === "rect" ? baseWidth * 0.85 : baseDiameter * 0.75}
+          >
+            {textContent}
+            <meshStandardMaterial
+              color={textFilament?.hex || "#FFFFFF"}
+              roughness={textFilament?.roughness ?? 0.38}
+              metalness={textFilament?.metalness ?? 0.08}
+            />
+          </Text>
+        );
+      }
+
+      // (ExportRegistrar jest zdefiniowany poniżej w sekcji return)
+
       function KeychainMesh({
         shapeType,
         baseFilament,
@@ -414,6 +476,13 @@ const KeychainViewer3D = dynamic(
         offsetY,
         reliefSvg,
         layersConfig,
+        layerSeparation,
+        textContent,
+        textFont,
+        textSize,
+        textPosition,
+        textFilament,
+        textThickness,
       }) {
         const radius = (baseDiameter || 60) / 2;
 
@@ -487,6 +556,7 @@ const KeychainViewer3D = dynamic(
               strokeWidth={strokeWidth}
               strokeThickness={strokeThickness}
               strokeFilament={strokeFilament}
+              layerSeparation={layerSeparation}
             />
 
             <SvgMakerWorldLayers
@@ -503,12 +573,46 @@ const KeychainViewer3D = dynamic(
               baseDiameter={baseDiameter}
               strokeEnabled={strokeEnabled}
               strokeWidth={strokeWidth}
+              layerSeparation={layerSeparation}
+            />
+
+            <TextOverlay3D
+              textContent={textContent}
+              textFont={textFont}
+              textSize={textSize}
+              textPosition={textPosition}
+              textFilament={textFilament}
+              textThickness={textThickness}
+              baseThickness={baseThickness}
+              baseWidth={baseWidth}
+              baseHeight={baseHeight}
+              baseDiameter={baseDiameter}
+              shapeType={shapeType}
+              layerSeparation={layerSeparation}
             />
           </group>
         );
       }
 
-      return function Viewer(props) {
+      // Komponent wewnętrzny do rejestracji eksportu
+      function ExportRegistrar({ onExportReady }) {
+        const { scene } = useThree();
+
+        useEffect(() => {
+          if (onExportReady) {
+            onExportReady({
+              exportSTL: () => {
+                const exporter = new STLExporter();
+                return exporter.parse(scene, { binary: true });
+              },
+            });
+          }
+        }, [scene, onExportReady]);
+
+        return null;
+      }
+
+      return function Viewer({ onExportReady, ...props }) {
         return (
           <Canvas
             gl={{ localClippingEnabled: true }}
@@ -518,6 +622,7 @@ const KeychainViewer3D = dynamic(
             <directionalLight position={[40, 60, 50]} intensity={1.8} />
             <directionalLight position={[-40, 30, -30]} intensity={0.7} />
             <KeychainMesh {...props} />
+            <ExportRegistrar onExportReady={onExportReady} />
             <OrbitControls makeDefault minDistance={30} maxDistance={280} />
           </Canvas>
         );
@@ -653,6 +758,22 @@ export default function KeychainGenerator() {
     { id: 4, name: "Warstwa 4 (Detale)", filament: SUNLU_CATALOG.colors.PLA_PLUS[0], thickness: 1.2 },
   ]);
 
+  // --- NOWE: Tekst na breloku ---
+  const [textContent, setTextContent] = useState("");
+  const [textFont, setTextFont] = useState("roboto");
+  const [textSize, setTextSize] = useState(6);
+  const [textPosition, setTextPosition] = useState("bottom"); // top, center, bottom
+  const [textFilament, setTextFilament] = useState(SUNLU_CATALOG.colors.PLA_PLUS[0]); // Biel
+  const [textThickness, setTextThickness] = useState(0.8);
+
+  // --- NOWE: Layer View ---
+  const [layerViewEnabled, setLayerViewEnabled] = useState(false);
+  const [layerSeparation, setLayerSeparation] = useState(0);
+
+  // --- NOWE: Eksport STL ---
+  const viewerRef = useRef(null);
+  const [isExporting, setIsExporting] = useState(false);
+
   // Modale
   const [isPreprocessingOpen, setIsPreprocessingOpen] = useState(false);
   const [modalImageSrc, setModalImageSrc] = useState(null);
@@ -660,6 +781,7 @@ export default function KeychainGenerator() {
   const [contrast, setContrast] = useState(1.0);
   const [saturation, setSaturation] = useState(1.0);
   const [keepBg, setKeepBg] = useState(false);
+  const [nColorsModal, setNColorsModal] = useState(4); // Nowy: liczba kolorów
 
   const [isConversionPreviewOpen, setIsConversionPreviewOpen] = useState(false);
   const [generatedSvgPreview, setGeneratedSvgPreview] = useState(null);
@@ -678,6 +800,32 @@ export default function KeychainGenerator() {
       : (Math.PI * Math.pow(baseDiameter / 2, 2)) / 100;
   const unitPrice = Math.max(19, 14 + areaCm2 * 0.45).toFixed(2);
   const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
+
+  // Animacja Layer View
+  useEffect(() => {
+    if (!layerViewEnabled) {
+      // Animuj powrót do 0
+      const animate = () => {
+        setLayerSeparation((prev) => {
+          if (prev <= 0.05) return 0;
+          return prev * 0.85;
+        });
+      };
+      const id = setInterval(animate, 16);
+      return () => clearInterval(id);
+    } else {
+      // Animuj rozejście warstw
+      const targetSep = 8;
+      const animate = () => {
+        setLayerSeparation((prev) => {
+          if (prev >= targetSep - 0.1) return targetSep;
+          return prev + (targetSep - prev) * 0.12;
+        });
+      };
+      const id = setInterval(animate, 16);
+      return () => clearInterval(id);
+    }
+  }, [layerViewEnabled]);
 
   function handleFileSelected(e) {
     const file = e.target.files?.[0];
@@ -729,6 +877,7 @@ export default function KeychainGenerator() {
           const formData = new FormData();
           formData.append("file", blob, "preprocessed.png");
           formData.append("keep_bg", keepBg.toString());
+          formData.append("n_colors", nColorsModal.toString());
 
           try {
             const res = await fetch(`${API_URL}/vectorize-ai`, {
@@ -769,29 +918,53 @@ export default function KeychainGenerator() {
     }
 
     if (detectedColors.length > 0) {
-      const defaultThicknesses = [0.6, 0.8, 1.0, 1.2];
-      setLayersConfig((prev) =>
-        prev.map((layer, idx) => {
-          const hex = detectedColors[idx];
-          // Dopasowanie najbliższego koloru Sunlu
-          const matched =
-            ALL_FLAT_COLORS.find((f) => f.hex.toLowerCase() === hex?.toLowerCase()) || {
-              id: `custom_${idx}`,
-              name: `Wykryty kolor ${idx + 1}`,
-              hex: hex || "#222222",
-              type: "single",
-            };
-
-          return {
-            ...layer,
-            filament: matched,
-            thickness: defaultThicknesses[idx] || 0.8,
+      const defaultThicknesses = [0.6, 0.8, 1.0, 1.2, 1.4, 1.6];
+      // Dynamiczna aktualizacja warstw na podstawie wykrytej liczby kolorów
+      const newLayers = detectedColors.map((hex, idx) => {
+        const matched =
+          ALL_FLAT_COLORS.find((f) => f.hex.toLowerCase() === hex?.toLowerCase()) || {
+            id: `custom_${idx}`,
+            name: `Wykryty kolor ${idx + 1}`,
+            hex: hex || "#222222",
+            type: "single",
           };
-        })
-      );
+
+        return {
+          id: idx + 1,
+          name: `Warstwa ${idx + 1}`,
+          filament: matched,
+          thickness: defaultThicknesses[idx] || 0.8,
+        };
+      });
+      setLayersConfig(newLayers);
     }
 
     setIsConversionPreviewOpen(false);
+  }
+
+  // Eksport STL
+  function handleExportSTL() {
+    setIsExporting(true);
+    try {
+      if (viewerRef.current) {
+        const stlData = viewerRef.current.exportSTL();
+        if (stlData) {
+          const blob = new Blob([stlData], { type: "application/octet-stream" });
+          const link = document.createElement("a");
+          link.style.display = "none";
+          document.body.appendChild(link);
+          link.href = URL.createObjectURL(blob);
+          link.download = `brelok_${shapeType}_${Date.now()}.stl`;
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(link.href);
+        }
+      }
+    } catch (err) {
+      alert("Błąd eksportu STL: " + err.message);
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   async function fetchCart(userId) {
@@ -930,7 +1103,7 @@ export default function KeychainGenerator() {
             <div className="flex items-center justify-between z-10">
               <div>
                 <span className="text-[11px] font-bold uppercase tracking-widest text-[#EF4444] block">
-                  Studio 4-Color AMS
+                  Studio Multi-Color AMS
                 </span>
                 <h1 className="text-2xl font-black text-slate-900 tracking-tight">
                   {shapeType === "circle"
@@ -940,13 +1113,41 @@ export default function KeychainGenerator() {
                     : "Płaskorzeźba Hexagon"}
                 </h1>
               </div>
-              <span className="text-xs font-medium px-3 py-1 rounded-full bg-white border border-slate-200 shadow-sm text-slate-600">
-                Obracaj i przybliżaj 3D
-              </span>
+
+              {/* Layer View toggle + Export */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLayerViewEnabled(!layerViewEnabled)}
+                  className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border shadow-sm transition cursor-pointer ${
+                    layerViewEnabled
+                      ? "bg-[#EF4444] text-white border-red-400"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                  }`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  {layerViewEnabled ? "Złóż" : "Warstwy"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportSTL}
+                  disabled={isExporting}
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-slate-900 text-white border border-slate-700 hover:bg-slate-800 shadow-sm transition cursor-pointer disabled:opacity-50"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  {isExporting ? "..." : "STL"}
+                </button>
+              </div>
             </div>
 
             <div className="relative w-full h-[380px] md:h-[430px] my-auto">
               <KeychainViewer3D
+                ref={viewerRef}
                 shapeType={shapeType}
                 baseFilament={baseFilament}
                 baseWidth={baseWidth}
@@ -963,7 +1164,22 @@ export default function KeychainGenerator() {
                 offsetY={offsetY}
                 reliefSvg={uploadedSvg}
                 layersConfig={layersConfig}
+                layerSeparation={layerSeparation}
+                textContent={textContent}
+                textFont={textFont}
+                textSize={textSize}
+                textPosition={textPosition}
+                textFilament={textFilament}
+                textThickness={textThickness}
               />
+
+              {/* Layer View indicator */}
+              {layerViewEnabled && (
+                <div className="absolute bottom-3 left-3 flex items-center gap-2 bg-black/60 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                  <span className="w-2 h-2 bg-[#EF4444] rounded-full animate-pulse" />
+                  Widok warstw druku
+                </div>
+              )}
             </div>
 
             <div className="flex items-end justify-between z-10 pt-4 border-t border-slate-200/70">
@@ -1024,42 +1240,28 @@ export default function KeychainGenerator() {
                 />
               </div>
 
-              {/* Taby konfiguracji */}
+              {/* Taby konfiguracji — teraz 4 zakładki */}
               <div>
-                <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100 rounded-2xl">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("shape")}
-                    className={`py-2 text-xs font-bold rounded-xl transition ${
-                      activeTab === "shape"
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    Kształt & Rant
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("graphic")}
-                    className={`py-2 text-xs font-bold rounded-xl transition ${
-                      activeTab === "graphic"
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    Grafika AI
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("layers")}
-                    className={`py-2 text-xs font-bold rounded-xl transition ${
-                      activeTab === "layers"
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    Kolory AMS
-                  </button>
+                <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 rounded-2xl">
+                  {[
+                    { id: "shape", label: "Kształt" },
+                    { id: "graphic", label: "Grafika AI" },
+                    { id: "text", label: "Tekst" },
+                    { id: "layers", label: "Kolory AMS" },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`py-2 text-[11px] font-bold rounded-xl transition ${
+                        activeTab === tab.id
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -1249,7 +1451,104 @@ export default function KeychainGenerator() {
                 </div>
               )}
 
-              {/* TAB 3: WARSTWY FILAMENTU AMS */}
+              {/* TAB 3: TEKST NA BRELOKU (NOWE) */}
+              {activeTab === "text" && (
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                  {/* Pole tekstowe */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block mb-1">Treść napisu</span>
+                      <input
+                        type="text"
+                        value={textContent}
+                        onChange={(e) => setTextContent(e.target.value)}
+                        placeholder="Wpisz tekst (np. imię)..."
+                        maxLength={30}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF4444]/30 focus:border-[#EF4444] placeholder:text-slate-400"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-0.5 block text-right">
+                        {textContent.length}/30
+                      </span>
+                    </div>
+
+                    {/* Wybór fontu */}
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block mb-1.5">Font</span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {AVAILABLE_FONTS.map((font) => (
+                          <button
+                            key={font.id}
+                            type="button"
+                            onClick={() => setTextFont(font.id)}
+                            className={`px-2 py-1.5 rounded-xl text-[11px] font-bold transition border ${
+                              textFont === font.id
+                                ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
+                                : "border-slate-200 text-slate-600 hover:border-slate-300"
+                            }`}
+                          >
+                            {font.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Rozmiar */}
+                    <div>
+                      <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                        <span>Rozmiar tekstu</span>
+                        <span className="text-[#EF4444]">{textSize} mm</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="3"
+                        max="18"
+                        step="0.5"
+                        value={textSize}
+                        onChange={(e) => setTextSize(parseFloat(e.target.value))}
+                        className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                      />
+                    </div>
+
+                    {/* Pozycja */}
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block mb-1.5">Pozycja</span>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: "top", label: "Góra" },
+                          { id: "center", label: "Środek" },
+                          { id: "bottom", label: "Dół" },
+                        ].map((pos) => (
+                          <button
+                            key={pos.id}
+                            type="button"
+                            onClick={() => setTextPosition(pos.id)}
+                            className={`py-1.5 rounded-xl text-[11px] font-bold border transition ${
+                              textPosition === pos.id
+                                ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
+                                : "border-slate-200 text-slate-600 hover:border-slate-300"
+                            }`}
+                          >
+                            {pos.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Kolor tekstu */}
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1 tracking-wider">
+                      Kolor tekstu (filament):
+                    </span>
+                    <SunluColorPaletteSelector
+                      selectedFilament={textFilament}
+                      onSelectColor={(fil) => setTextFilament(fil)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: WARSTWY FILAMENTU AMS */}
               {activeTab === "layers" && (
                 <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                   {layersConfig.map((layer, idx) => (
@@ -1289,12 +1588,12 @@ export default function KeychainGenerator() {
         </div>
       </main>
 
-      {/* MODAL PREPROCESSING */}
+      {/* MODAL PREPROCESSING — ulepszony o slider kolorów */}
       {isPreprocessingOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-base font-black text-slate-900">Dostosuj kontrast grafiki</h2>
+              <h2 className="text-base font-black text-slate-900">Dostosuj grafikę przed wektoryzacją</h2>
               <button
                 onClick={() => setIsPreprocessingOpen(false)}
                 className="text-slate-400 hover:text-slate-700 font-bold"
@@ -1343,6 +1642,28 @@ export default function KeychainGenerator() {
                       className="w-full h-1 bg-slate-200 rounded accent-[#EF4444]"
                     />
                   </div>
+
+                  {/* NOWE: Slider liczby kolorów */}
+                  <div>
+                    <div className="flex justify-between text-xs font-bold text-slate-600 mb-1">
+                      <span>Liczba kolorów (warstw druku)</span>
+                      <span className="text-[#EF4444] font-black">{nColorsModal}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="2"
+                      max="6"
+                      step="1"
+                      value={nColorsModal}
+                      onChange={(e) => setNColorsModal(parseInt(e.target.value))}
+                      className="w-full h-1 bg-slate-200 rounded accent-[#EF4444]"
+                    />
+                    <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
+                      <span>Prosty (2)</span>
+                      <span>Szczegółowy (6)</span>
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-2 pt-1">
                     <input
                       type="checkbox"
@@ -1373,7 +1694,21 @@ export default function KeychainGenerator() {
       {isConversionPreviewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl p-6 text-center space-y-4">
-            <h2 className="text-lg font-black text-slate-900">Podgląd wektoryzacji 4-Color</h2>
+            <h2 className="text-lg font-black text-slate-900">Podgląd wektoryzacji {detectedColors.length}-Color</h2>
+            
+            {/* Podgląd wykrytych kolorów */}
+            <div className="flex items-center justify-center gap-1.5">
+              {detectedColors.map((hex, i) => (
+                <div key={i} className="flex flex-col items-center gap-1">
+                  <div
+                    className="w-7 h-7 rounded-full border-2 border-white shadow-md"
+                    style={{ backgroundColor: hex }}
+                  />
+                  <span className="text-[9px] font-mono text-slate-400">{hex}</span>
+                </div>
+              ))}
+            </div>
+
             <div className="w-64 h-64 mx-auto bg-slate-100 rounded-2xl flex items-center justify-center p-4">
               {generatedSvgPreview && (
                 <div

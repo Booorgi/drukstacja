@@ -58,6 +58,13 @@ except Exception as _e:
 
 
 def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool = False):
+    """
+    Uniwersalny algorytm wektoryzacji obrazu na wielowarstwowe SVG.
+    Obsługuje dowolną grafikę (nie tylko psy beagle).
+    n_colors: 2-6 — liczba warstw kolorów w wynikowym SVG.
+    """
+    n_colors = max(2, min(6, n_colors))
+
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
     if img is None:
@@ -80,7 +87,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
     bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    # 2. DEFINITYWNE ODCINANIE TŁA (NIGDY WIĘCEJ KWADRATOWEJ PŁYTY)
+    # 2. USUWANIE TŁA — kaskada: alfa → FloodFill → GrabCut fallback
     if has_alpha:
         fg_mask = cv2.resize(
             alpha_mask.astype(np.uint8), (new_w, new_h), interpolation=cv2.INTER_NEAREST
@@ -88,18 +95,16 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     elif keep_bg:
         fg_mask = np.ones((new_h, new_w), dtype=bool)
     else:
-        # Płynny FloodFill z 4 narożników
+        # Metoda 1: FloodFill z 4 narożników
         flood_mask = np.zeros((new_h + 2, new_w + 2), np.uint8)
         bgr_flood = bgr_resized.copy()
         diff = (22, 22, 22)
         for seed in [(0, 0), (new_w - 1, 0), (0, new_h - 1), (new_w - 1, new_h - 1)]:
             cv2.floodFill(bgr_flood, flood_mask, seed, (0, 255, 0), diff, diff, cv2.FLOODFILL_MASK_ONLY | (4 << 8))
         bg_candidate = (flood_mask[1:-1, 1:-1] == 1)
-
-        # Wypełniamy ewentualne dziury wewnątrz tła przy krawędziach
         fg_candidate = ~bg_candidate
-        
-        # Wyciągamy komponent psa w centrum
+
+        # Wyciągamy największy komponent blisko centrum
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(fg_candidate.astype(np.uint8))
         best_label = -1
         max_area = 0
@@ -109,7 +114,6 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
             area = stats[i, cv2.CC_STAT_AREA]
             bw = stats[i, cv2.CC_STAT_WIDTH]
             bh = stats[i, cv2.CC_STAT_HEIGHT]
-            # Odrzucamy ramkę tła
             if bw >= (new_w - 2) and bh >= (new_h - 2):
                 continue
             dist = np.hypot(centroids[i][0] - cx_mid, centroids[i][1] - cy_mid)
@@ -120,65 +124,72 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
         if best_label != -1:
             fg_mask = (labels == best_label)
         else:
-            fg_mask = fg_candidate
+            # Metoda 2: GrabCut fallback — gdy FloodFill nie dał sensownego wyniku
+            try:
+                grab_mask = np.zeros((new_h, new_w), np.uint8)
+                margin = max(5, int(min(new_w, new_h) * 0.05))
+                rect = (margin, margin, new_w - 2 * margin, new_h - 2 * margin)
+                bgd_model = np.zeros((1, 65), np.float64)
+                fgd_model = np.zeros((1, 65), np.float64)
+                cv2.grabCut(bgr_resized, grab_mask, rect, bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_RECT)
+                fg_mask = ((grab_mask == cv2.GC_FGD) | (grab_mask == cv2.GC_PR_FGD))
+            except Exception:
+                fg_mask = fg_candidate
 
-    # 3. WYODRĘBNIANIE DETALI OCZU (HIGHLIGHTS + LINIE)
-    gray = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-    gray_clahe = clahe.apply(gray)
+    # 3. UNIWERSALNA KWANTYZACJA KOLORÓW — KMeans na N kolorów
+    fg_pixels = bgr_resized[fg_mask].reshape(-1, 3)
+    if len(fg_pixels) < 20:
+        fg_pixels = bgr_resized.reshape(-1, 3)
+        fg_mask = np.ones((new_h, new_w), dtype=bool)
 
-    # A. Ciemne detale: źrenice, nos, fałdy
-    dark_mask = (gray_clahe < 65) & fg_mask
-    
-    # B. Białe błyski w oczach (Highlighty) i biała łatka na pysku
-    highlights_mask = (gray_clahe > 215) & fg_mask
+    # Wyrównanie histogramu CLAHE dla lepszej separacji kolorów
+    lab = cv2.cvtColor(bgr_resized, cv2.COLOR_BGR2LAB)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    lab[:, :, 0] = clahe.apply(lab[:, :, 0])
+    bgr_enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+    fg_pixels_enhanced = bgr_enhanced[fg_mask].reshape(-1, 3)
 
-    # C. Ciało (piksele pomiędzy czernią a bielą)
-    mid_body_mask = fg_mask & (~dark_mask) & (~highlights_mask)
-    body_pixels = bgr_resized[mid_body_mask].reshape(-1, 3)
-
-    if len(body_pixels) < 20:
-        body_pixels = bgr_resized[fg_mask].reshape(-1, 3)
-        mid_body_mask = fg_mask
-
-    # 4. KWANTYZACJA DLA 2 ODCIENI SIERŚCI (Jasny brąz i Ciemny brąz)
-    kmeans = KMeans(n_clusters=2, random_state=42, n_init=3)
-    kmeans.fit(body_pixels)
+    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=5)
+    kmeans.fit(fg_pixels_enhanced)
     centers = kmeans.cluster_centers_.astype(int)
 
-    # Sortujemy kolory: jaśniejszy brąz, ciemniejszy brąz
-    if np.mean(centers[0]) < np.mean(centers[1]):
-        centers = centers[::-1]
+    # Mapowanie z powrotem na oryginalne kolory (bez CLAHE)
+    original_centers = []
+    for ci in range(n_colors):
+        cluster_mask = (kmeans.labels_ == ci)
+        cluster_pixels = fg_pixels[cluster_mask]
+        if len(cluster_pixels) > 0:
+            original_centers.append(np.mean(cluster_pixels, axis=0).astype(int))
+        else:
+            original_centers.append(centers[ci])
+    centers = np.array(original_centers)
 
-    hex_light_brown = f"#{centers[0][2]:02x}{centers[0][1]:02x}{centers[0][0]:02x}".upper()
-    hex_dark_brown = f"#{centers[1][2]:02x}{centers[1][1]:02x}{centers[1][0]:02x}".upper()
-    hex_black = "#181818"   # Detale, nos, obrys
-    hex_white = "#F4F4F4"   # Pysk i bliki w oczach
+    # Sortujemy warstwy od najjaśniejszej do najciemniejszej (brightness)
+    brightness = [np.mean(c) for c in centers]
+    sorted_indices = np.argsort(brightness)[::-1]
+    centers = centers[sorted_indices]
 
-    # 4 Precyzyjne warstwy do druku:
-    final_colors = [hex_light_brown, hex_dark_brown, hex_black, hex_white]
+    # Konwersja do hex
+    final_colors = []
+    for c in centers:
+        hex_val = f"#{int(c[2]):02x}{int(c[1]):02x}{int(c[0]):02x}".upper()
+        final_colors.append(hex_val)
 
-    # Mapowanie masek warstw:
+    # Mapa pikseli do klastrów (przeindeksowane po sortowaniu)
+    labels_reindexed = np.full(kmeans.labels_.shape, -1, dtype=int)
+    for new_idx, old_idx in enumerate(sorted_indices):
+        labels_reindexed[kmeans.labels_ == old_idx] = new_idx
+
+    pixel_labels = np.full((new_h, new_w), -1, dtype=int)
+    pixel_labels[fg_mask] = labels_reindexed
+
+    # 4. Tworzenie masek warstw
     layer_masks = []
+    for ci in range(n_colors):
+        mask = (pixel_labels == ci).astype(np.uint8) * 255
+        layer_masks.append(mask)
 
-    # Warstwa 1: Podkład ciała (tylko sylwetka psa, ŻADNEGO tła!)
-    layer_masks.append(fg_mask.astype(np.uint8) * 255)
-
-    # Warstwa 2: Ciemny brąz (łaty i cienie na uszach)
-    labels_map = np.full((new_h, new_w), -1, dtype=int)
-    labels_map[mid_body_mask] = kmeans.labels_
-    dark_brown_idx = 1 if np.mean(centers[0]) > np.mean(centers[1]) else 0
-    layer_masks.append((labels_map == dark_brown_idx).astype(np.uint8) * 255)
-
-    # Warstwa 3: Głęboka czerń (nos, krawędzie, źrenice z wyciętym środkiem na błysk)
-    # Usuwamy błysk ze środka oka, żeby nie zalać go czernią!
-    pupils_and_lines = dark_mask & (~highlights_mask)
-    layer_masks.append(pupils_and_lines.astype(np.uint8) * 255)
-
-    # Warstwa 4: Biel / Błysk oka i biała łata
-    layer_masks.append(highlights_mask.astype(np.uint8) * 255)
-
-    # 5. Centrowanie sylwetki psa w breloku
+    # 5. Centrowanie obiektu w SVG viewBox
     y_idx, x_idx = np.where(fg_mask)
     if len(x_idx) > 0 and len(y_idx) > 0:
         min_x, max_x = np.min(x_idx), np.max(x_idx)
@@ -195,15 +206,15 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     center_x = (min_x + max_x) / 2.0
     center_y = (min_y + max_y) / 2.0
 
-    color_ids = ["color_1", "color_2", "color_3", "color_4"]
+    color_ids = [f"color_{i+1}" for i in range(n_colors)]
     svg_output = ['<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">']
 
-    for l_idx in range(4):
+    for l_idx in range(n_colors):
         mask = layer_masks[l_idx]
         if not np.any(mask):
             continue
 
-        # Wygładzenie organiczne
+        # Wygładzenie konturów
         mask = cv2.medianBlur(mask, 3)
         contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_KCOS)
 
@@ -211,8 +222,7 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
         if contours:
             for cnt_idx, cnt in enumerate(contours):
                 area = cv2.contourArea(cnt)
-                # Dla błysku oka (warstwa 4) dopuszczamy bardzo małe punkty!
-                min_a = 4 if l_idx == 3 else (10 if l_idx == 2 else 20)
+                min_a = 4 if l_idx >= n_colors - 1 else (10 if l_idx >= n_colors - 2 else 20)
                 if area < min_a:
                     continue
 
@@ -224,9 +234,9 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
                 if len(pts) < 3:
                     continue
 
-                def map_pt(pt):
-                    nx = 50.0 + (pt[0] - center_x) * scale_fit
-                    ny = 50.0 + (pt[1] - center_y) * scale_fit
+                def map_pt(pt, _cx=center_x, _cy=center_y, _sf=scale_fit):
+                    nx = 50.0 + (pt[0] - _cx) * _sf
+                    ny = 50.0 + (pt[1] - _cy) * _sf
                     return nx, ny
 
                 start_x, start_y = map_pt(pts[0])
@@ -262,14 +272,16 @@ from fastapi import Form
 @app.post("/vectorize-ai")
 async def vectorize_image_ai(
     file: UploadFile = File(...),
-    keep_bg: str = Form("false")
+    keep_bg: str = Form("false"),
+    n_colors: str = Form("4")
 ):
-    """Wektoryzacja konturów z obsługą AI cutout i doborem barw."""
+    """Wektoryzacja konturów z obsługą AI cutout i doborem barw. Obsługuje 2-6 warstw kolorów."""
     try:
         should_keep_bg = keep_bg.lower() in ("true", "1", "yes")
+        num_colors = max(2, min(6, int(n_colors)))
         contents = await file.read()
         svg_result, detected_colors = image_to_quantized_svg(
-            contents, n_colors=4, keep_bg=should_keep_bg
+            contents, n_colors=num_colors, keep_bg=should_keep_bg
         )
         return {
             "svg": svg_result,
