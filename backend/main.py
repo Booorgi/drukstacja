@@ -12,7 +12,7 @@ import traceback
 from pathlib import Path
 
 from typing import Any
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -405,6 +405,7 @@ async def vectorize_image_ai(
 @app.post("/analyze")
 @app.post("/api/analyze-model")
 async def analyze_model_endpoint(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     layer_height: float = Form(0.20),
     nozzle_size: float = Form(0.4),
@@ -448,16 +449,30 @@ async def analyze_model_endpoint(
                 detail=f"Plik za duży ({size_mb:.1f}MB). Limit: {MAX_FILE_SIZE_MB}MB",
             )
 
-        # 1. Wysyłka oryginalnego pliku do Cloudflare R2 (zabezpieczenie dla inżyniera / klienta)
+        # Zapisz kopię oryginalnego pliku w lokalnym cache modeli
+        cached_orig = os.path.join(MODELS_CACHE_DIR, f"{unique_id}_{safe_filename}")
         try:
-            with open(tmp_path, "rb") as f_upload:
-                upload_file_to_r2(
-                    file_obj=f_upload,
-                    object_name=r2_key,
-                    content_type=file.content_type or "application/octet-stream",
-                )
-        except Exception as r2_err:
-            print(f"[WARN] Błąd zapisu w R2 (kontynuuję analizę): {r2_err}")
+            shutil.copyfile(tmp_path, cached_orig)
+        except Exception:
+            cached_orig = None
+
+        # 1. Asynchroniczna wysyłka oryginalnego pliku do Cloudflare R2 w tle (nie blokuje analizy)
+        def _bg_upload(path_to_upload, key, ctype):
+            if not path_to_upload or not os.path.exists(path_to_upload):
+                return
+            try:
+                with open(path_to_upload, "rb") as f_up:
+                    upload_file_to_r2(f_up, key, ctype)
+            except Exception as up_err:
+                print(f"[WARN] Błąd zapisu w R2 w tle: {up_err}")
+
+        if cached_orig:
+            background_tasks.add_task(
+                _bg_upload,
+                cached_orig,
+                r2_key,
+                file.content_type or "application/octet-stream",
+            )
 
         # 2. Hybrydowa analiza pliku
         result = process_uploaded_file(tmp_path, file.filename, tmp_dir)

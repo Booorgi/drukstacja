@@ -270,7 +270,12 @@ export default function Home() {
         setModelPreviewUrl(null);
       }
     } catch (err) {
-      alert("Błąd analizy pliku: " + err.message);
+      console.error("Błąd zapytania analizy:", err);
+      const isNetworkErr = err.message === "Failed to fetch" || err.name === "TypeError";
+      const errorMsg = isNetworkErr
+        ? "Nie udało się połączyć z serwerem analizy (przekroczony limit czasu lub zbyt duży plik). Możesz ponowić próbę lub przesłać plik do bezpłatnej wyceny manualnej (RFQ)."
+        : `Błąd analizy pliku: ${err.message}`;
+      alert(errorMsg);
     } finally {
       setIsAnalyzing(false);
     }

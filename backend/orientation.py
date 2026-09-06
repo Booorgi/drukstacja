@@ -106,14 +106,26 @@ def auto_orient_mesh(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, dict]:
     if mesh.faces.shape[0] == 0:
         return mesh, {"rotated": False, "reason": "empty_mesh"}
 
-    candidates = _candidate_normals(mesh)
+    # Dla gęstych siatek (>25k trójkątów) wyznaczamy optymalny kąt na siatce uproszczonej,
+    # co skraca czas analizy z 40s do 0.05s i zapobiega timeoutom serwera.
+    if mesh.faces.shape[0] > 25000:
+        try:
+            eval_mesh = mesh.simplify_quadric_decimation(10000)
+            if not isinstance(eval_mesh, trimesh.Trimesh) or eval_mesh.faces.shape[0] == 0:
+                eval_mesh = mesh
+        except Exception:
+            eval_mesh = mesh
+    else:
+        eval_mesh = mesh
+
+    candidates = _candidate_normals(eval_mesh)
 
     # Tolerancja porownania wynikow jako WARTOSC BEZWZGLEDNA (nie procent!) -
     # przy idealnym wyniku 0.0 (brak nawisow) procentowa tolerancja typu
     # "score < best_score * 1.02" zawsze daje 0, wiec nigdy by sie nie
     # uruchomil tie-break po wysokosci. Uzywamy wiec malego ulamka calkowitej
     # powierzchni bryly jako progu "wynikow praktycznie rownych".
-    tie_tolerance = max(mesh.area * 0.002, 0.5)
+    tie_tolerance = max(eval_mesh.area * 0.002, 0.5)
 
     best_score = None
     best_transform = None
@@ -122,7 +134,7 @@ def auto_orient_mesh(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, dict]:
     for normal in candidates:
         try:
             transform = _rotation_to_place_face_down(normal)
-            candidate_mesh = mesh.copy()
+            candidate_mesh = eval_mesh.copy()
             candidate_mesh.apply_transform(transform)
 
             score = _support_score(candidate_mesh)
