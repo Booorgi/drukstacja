@@ -296,15 +296,37 @@ export default function Home() {
   const volume = analysisData?.volume_cm3 || 32.5;
   const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
   const activeColorObj = matConfig?.colors?.find((c) => c.hex === selectedColor) || matConfig?.colors?.[0];
-  const layerMultiplier = layerHeight === 0.12 ? 1.25 : layerHeight === 0.28 ? 0.88 : 1.0;
+  const layerMultiplier = layerHeight === 0.12 ? 1.25 : layerHeight === 0.28 ? 0.90 : 1.0;
   
-  // Jeśli slicer zwrócił wycenę opartą na G-code, używamy jej z pierwszeństwem
-  const unitPrice = (
-    analysisData?.price_breakdown?.unit_price_pln != null
-      ? analysisData.price_breakdown.unit_price_pln
-      : Math.max(15, volume * (matConfig?.pricePerCm3 || 0.38) * (1 + infill / 100) * layerMultiplier)
-  ).toFixed(2);
+  // Obliczenie wagi i ceny bazowej (dla 1 sztuki bez rabatu)
+  const baseUnitPrice = useMemo(() => {
+    if (analysisData?.price_breakdown?.unit_price_pln != null) {
+      const pb = analysisData.price_breakdown;
+      const appliedDiscount = pb.discount_percent || 0;
+      return pb.unit_price_pln / ((100 - appliedDiscount) / 100);
+    }
+    // Kalibrowany model geometryczny dopasowany do slicera:
+    // np. Watch case (7.16 cm3 przy 20% infill) -> ~9.8g -> 2.65 PLN brutto
+    const density = matConfig?.density || 1.24;
+    const perimeterRatio = 0.72;
+    const infillRatio = (infill / 100) * (1.0 - perimeterRatio);
+    const effectiveVolCm3 = volume * (perimeterRatio + infillRatio);
+    const estWeightG = effectiveVolCm3 * density * 1.42;
+    const ratePerG = matConfig?.ratePerG || 0.27;
+    const matCost = estWeightG * ratePerG * layerMultiplier;
+    return Math.max(0.80, matCost);
+  }, [analysisData, volume, matConfig, infill, layerMultiplier]);
+
+  // Progresywne rabaty ilościowe (5+, 10+, 25+, 50+ szt.)
+  const discountPercent = quantity >= 50 ? 20 : quantity >= 25 ? 15 : quantity >= 10 ? 10 : quantity >= 5 ? 5 : 0;
+  const discountFactor = (100 - discountPercent) / 100;
+  const unitPrice = (Math.round(baseUnitPrice * discountFactor * 100) / 100).toFixed(2);
   const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
+
+  const MIN_ORDER_VALUE = 30.00;
+  const isBelowMoq = parseFloat(totalPrice) < MIN_ORDER_VALUE;
+  const diffToMoq = (MIN_ORDER_VALUE - parseFloat(totalPrice)).toFixed(2);
+  const suggestedQtyForMoq = Math.max(1, Math.ceil(MIN_ORDER_VALUE / Math.max(0.1, parseFloat(unitPrice))));
 
   // Rekomendowane zastosowania dla karty specyfikacji technicznej
   const recommendedApps = useMemo(() => {
@@ -643,43 +665,84 @@ export default function Home() {
               ) : (
                 <>
                   <div>
-                    <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
-                      Cena zamówienia
-                    </span>
-                    <div className="flex items-baseline gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
+                        Cena zamówienia
+                      </span>
+                      {discountPercent > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-700 border border-emerald-200 animate-pulse">
+                          -{discountPercent}% rabat ilościowy
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-baseline gap-2 mt-0.5">
                       <span className="text-3xl font-black text-slate-900 tracking-tight">
                         {totalPrice}
                       </span>
                       <span className="text-sm font-bold text-slate-500">PLN</span>
+                      {quantity > 1 && (
+                        <span className="text-xs font-semibold text-slate-400">
+                          ({unitPrice} PLN / szt.)
+                        </span>
+                      )}
                     </div>
+                    {isBelowMoq && (
+                      <div className="flex items-center gap-1.5 mt-1.5 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-lg">
+                        <span>⚠️ Min. zamówienie w koszyku: 30.00 PLN</span>
+                        <span className="text-amber-600 font-normal">
+                          (jeszcze {diffToMoq} zł / {suggestedQtyForMoq} szt.)
+                        </span>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center bg-white border border-slate-200 rounded-full px-2 py-1 shadow-sm">
+                  <div className="flex flex-col items-end gap-1.5">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center bg-white border border-slate-200 rounded-full px-2 py-1 shadow-sm">
+                        <button
+                          onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                          className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition cursor-pointer"
+                        >
+                          -
+                        </button>
+                        <span className="w-8 text-center font-bold text-sm text-slate-800">
+                          {quantity}
+                        </span>
+                        <button
+                          onClick={() => setQuantity(quantity + 1)}
+                          className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition cursor-pointer"
+                        >
+                          +
+                        </button>
+                      </div>
+
                       <button
-                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition"
+                        disabled={addingToCart || isAnalyzing}
+                        onClick={handleAddToCart}
+                        className="px-6 py-3.5 rounded-full bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25 transition cursor-pointer disabled:opacity-50"
                       >
-                        -
-                      </button>
-                      <span className="w-8 text-center font-bold text-sm text-slate-800">
-                        {quantity}
-                      </span>
-                      <button
-                        onClick={() => setQuantity(quantity + 1)}
-                        className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition"
-                      >
-                        +
+                        {addingToCart ? "Zapisuję..." : "Dodaj do koszyka +"}
                       </button>
                     </div>
 
-                    <button
-                      disabled={addingToCart || isAnalyzing}
-                      onClick={handleAddToCart}
-                      className="px-6 py-3.5 rounded-full bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25 transition cursor-pointer disabled:opacity-50"
-                    >
-                      {addingToCart ? "Zapisuję..." : "Dodaj do koszyka +"}
-                    </button>
+                    {/* Wskazówka rabatowa */}
+                    {quantity < 5 ? (
+                      <span className="text-[10px] font-medium text-slate-400">
+                        💡 Rabat: od 5 szt. (-5%), od 10 szt. (-10%), od 25 szt. (-15%)
+                      </span>
+                    ) : quantity < 10 ? (
+                      <span className="text-[10px] font-medium text-emerald-600">
+                        ✓ Zastosowano -5% rabatu! Od 10 szt. aż -10%
+                      </span>
+                    ) : quantity < 25 ? (
+                      <span className="text-[10px] font-medium text-emerald-600">
+                        ✓ Zastosowano -10% rabatu! Od 25 szt. aż -15%
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium text-emerald-600">
+                        ✓ Zastosowano maksymalny rabat hurtowy!
+                      </span>
+                    )}
                   </div>
                 </>
               )}

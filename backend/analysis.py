@@ -64,7 +64,7 @@ class UnsupportedFileType(Exception):
 # --------------------------------------------------------------------------
 
 def analyze_trimesh_geometry(loaded_obj) -> dict:
-    """Wyciąga parametry geometryczne z obiektu Trimesh lub Scene."""
+    """Wyciąga parametry geometryczne z obiektu Trimesh lub Scene z automatyczną naprawą bryły."""
     if isinstance(loaded_obj, trimesh.Scene):
         if len(loaded_obj.geometry) == 0:
             raise ValueError("Plik 3D nie zawiera żadnych trójkątów ani geometrii.")
@@ -76,19 +76,54 @@ def analyze_trimesh_geometry(loaded_obj) -> dict:
         # Konwersja na siatkę jeśli to możliwe
         mesh = trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces)
 
-    watertight = bool(mesh.is_watertight)
-
-    # Objętość w cm3
+    # 1. Głęboka naprawa topologii siatki (zwroty normalnych, nawinięcie, duplikaty)
+    # Zapobiega fałszywym odczytom objętości przy nieszczelnych lub odwróconych trójkątach
     try:
-        if watertight and mesh.volume > 0:
-            volume_mm3 = abs(float(mesh.volume))
-        else:
-            # Model nieszczelny - oszacowanie przez convex hull lub orientację ścian
-            volume_mm3 = abs(float(mesh.convex_hull.volume)) * 0.75
-    except Exception:
-        volume_mm3 = abs(float(mesh.convex_hull.volume)) * 0.75 if hasattr(mesh, "convex_hull") else 1000.0
+        mesh.remove_duplicate_faces()
+        mesh.remove_degenerate_faces()
+        mesh.remove_unreferenced_vertices()
+        trimesh.repair.fix_normals(mesh)
+        trimesh.repair.fix_winding(mesh)
+        trimesh.repair.fix_inversion(mesh)
+    except Exception as repair_err:
+        print(f"[WARN] Błąd naprawy siatki trimesh: {repair_err}")
 
+    # 2. Próba załatania drobnych mikroszczelin
+    watertight = bool(mesh.is_watertight)
+    if not watertight:
+        try:
+            trimesh.repair.fill_holes(mesh)
+            watertight = bool(mesh.is_watertight)
+        except Exception:
+            pass
+
+    # 3. Precyzyjne wyliczenie rzeczywistej objętości bryły
+    # Obliczamy objętość metodą całki powierzchniowej Gaussa (signed volume)
+    # Zamiast nadmiarowego convex_hull (który zamyka otwory i drastycznie zawyża kubaturę!),
+    # bierzemy faktyczną objętość wewnętrzną bryły z uwzględnieniem otworów przelotowych.
+    volume_mm3 = 0.0
     bbox = mesh.bounding_box.extents  # [x, y, z] w mm
+    bbox_volume = float(np.prod(bbox)) if len(bbox) == 3 else 1e9
+
+    try:
+        raw_vol = mesh.volume
+        if raw_vol is not None and not np.isnan(raw_vol) and abs(raw_vol) > 0:
+            # Sprawdzamy czy objętość nie przekracza bounding boxa
+            if abs(raw_vol) <= bbox_volume * 1.05:
+                volume_mm3 = abs(float(raw_vol))
+    except Exception as vol_err:
+        print(f"[WARN] Błąd odczytu mesh.volume: {vol_err}")
+
+    # Jeśli signed volume zawiodło, spróbuj voxelized volume lub orientację wypukłą z redukcją
+    if volume_mm3 <= 0.0:
+        try:
+            voxel_pitch = max(mesh.extents) / 64.0
+            vox = mesh.voxelized(pitch=voxel_pitch).fill()
+            volume_mm3 = float(vox.volume)
+        except Exception:
+            hull_vol = abs(float(mesh.convex_hull.volume)) if hasattr(mesh, "convex_hull") else 1000.0
+            volume_mm3 = hull_vol * 0.35  # realistyczny udział ścianek w pustych obudowach
+
     surface_area_mm2 = float(mesh.area) if hasattr(mesh, "area") else 0.0
 
     return {
@@ -99,6 +134,7 @@ def analyze_trimesh_geometry(loaded_obj) -> dict:
         "triangle_count": int(len(mesh.faces)),
         "mesh_object": mesh,
     }
+
 
 
 def analyze_mesh_file(path: str, ext: str) -> dict:

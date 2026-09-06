@@ -179,6 +179,19 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
 
         {/* Podsumowanie i Kasa */}
         <div className="pt-4 border-t border-slate-100 space-y-4">
+          {/* Komunikat o progu MOQ */}
+          {localItems.length > 0 && parseFloat(total) < 30.00 && (
+            <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-3 text-amber-900 text-xs flex items-start gap-2.5">
+              <span className="text-amber-500 text-base leading-none mt-0.5">⚠️</span>
+              <div className="space-y-0.5">
+                <div className="font-bold">Minimalna wartość zamówienia: 30.00 PLN</div>
+                <div className="text-[11px] text-amber-700 leading-snug">
+                  Brakuje jeszcze <span className="font-bold text-amber-900">{(30.00 - parseFloat(total)).toFixed(2)} zł</span>, aby przejść do płatności. Zwiększ liczbę sztuk w modelu lub dodaj dodatkowy detal.
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-between items-baseline">
             <span className="text-sm font-semibold text-slate-500">Razem do zapłaty:</span>
             <span className="text-2xl font-black text-slate-900">{total} PLN</span>
@@ -186,11 +199,19 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
 
           <button
             type="button"
-            disabled={localItems.length === 0}
+            disabled={localItems.length === 0 || parseFloat(total) < 30.00}
             onClick={() => alert("Przekierowanie do płatności...")}
-            className="w-full py-4 rounded-full bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25 transition disabled:opacity-40 cursor-pointer"
+            className={`w-full py-4 rounded-full font-bold text-xs uppercase tracking-wider transition ${
+              localItems.length === 0 || parseFloat(total) < 30.00
+                ? "bg-slate-200 text-slate-500 cursor-not-allowed shadow-none"
+                : "bg-[#EF4444] hover:bg-[#DC2626] text-white shadow-lg shadow-red-500/25 cursor-pointer"
+            }`}
           >
-            Przejdź do kasy →
+            {localItems.length === 0
+              ? "Koszyk jest pusty"
+              : parseFloat(total) < 30.00
+              ? `Min. zamówienie: 30.00 PLN (brakuje ${(30.00 - parseFloat(total)).toFixed(2)} zł)`
+              : "Przejdź do kasy →"}
           </button>
         </div>
       </div>

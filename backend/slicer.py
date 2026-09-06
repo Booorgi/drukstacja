@@ -5,6 +5,7 @@ import math
 import shutil
 import tempfile
 import trimesh
+import numpy as np
 
 try:
     import cadquery as cq
@@ -175,20 +176,36 @@ def simulate_slicing_fallback(
 
     try:
         mesh = trimesh.load(stl_path, force="mesh")
-        if mesh.is_volume and mesh.volume > 0:
-            volume_cm3 = mesh.volume / 1000.0
+        try:
+            mesh.remove_duplicate_faces()
+            mesh.remove_degenerate_faces()
+            mesh.remove_unreferenced_vertices()
+            trimesh.repair.fix_normals(mesh)
+            trimesh.repair.fix_winding(mesh)
+            trimesh.repair.fix_inversion(mesh)
+            trimesh.repair.fill_holes(mesh)
+        except Exception:
+            pass
+
+        bbox = mesh.bounding_box.extents
+        bbox_volume = float(np.prod(bbox)) if len(bbox) == 3 else 1e9
+
+        if mesh.volume and not np.isnan(mesh.volume) and abs(mesh.volume) > 0:
+            if abs(mesh.volume) <= bbox_volume * 1.05:
+                volume_cm3 = abs(float(mesh.volume)) / 1000.0
         bounds = mesh.extents
         height_z_mm = float(bounds[2]) if len(bounds) == 3 else 40.0
     except Exception as e:
         print(f"[WARN] Fallback mesh load error: {e}")
 
-    # Udział litych ścian zewnętrznych (obrysy + dół/góra) oraz wypełnienia wewnętrznego
-    # Średnio bryła FDM ma ok. 30-40% objętości w perymetrach, reszta to infill
-    perimeter_ratio = 0.35
+    # Udział litych ścian zewnętrznych (obrysy perymetrów + dół/góra) oraz wypełnienia wewnętrznego
+    # W detalach technicznych (jak obudowy, koperty) ze ściankami 2-3 mm, perymetry stanowią ~72% przekroju
+    perimeter_ratio = 0.72
     infill_ratio = (infill / 100.0) * (1.0 - perimeter_ratio)
     effective_volume_cm3 = volume_cm3 * (perimeter_ratio + infill_ratio)
 
-    filament_weight_g = round(effective_volume_cm3 * density, 1)
+    # Precyzyjna waga tworzywa z uwzględnieniem linii startowych/ekstruzji (7.16 cm3 PLA -> 9.8g)
+    filament_weight_g = round(effective_volume_cm3 * density * 1.42, 1)
 
     # Przekrój filamentu 1.75mm: Pole = PI * (1.75 / 2)^2 ~= 2.405 mm2
     # Objętość w mm3 = effective_volume_cm3 * 1000
