@@ -180,8 +180,47 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area < 10:
+            # 1. Ignoruj mikroskopijne paprochy
+            if area < 14:
                 continue
+
+            # 2. Likwidacja "znaczka pocztowego" (odrzucenie tła dotykającego krawędzi kadru)
+            bx, by, bw, bh = cv2.boundingRect(cnt)
+            touches_border = (bx <= 2) or (by <= 2) or ((bx + bw) >= new_w - 2) or ((by + bh) >= new_h - 2)
+            # Jeśli kontur dotyka ramki zdjęcia i stanowi ponad 35% całego kadru, jest to tło
+            if touches_border and (area > (0.35 * new_w * new_h)):
+                continue
+
+            # Jeśli kontur zajmuje niemal cały kadr
+            if area > (0.85 * (new_w * new_h)):
+                continue
+
+            perimeter = cv2.arcLength(cnt, True)
+            epsilon = 0.0016 * perimeter
+            approx_cnt = cv2.approxPolyDP(cnt, epsilon, True)
+
+            pts = approx_cnt.reshape(-1, 2)
+            if len(pts) < 3:
+                continue
+
+            def map_pt(pt):
+                nx = 50.0 + (pt[0] - center_x) * scale_fit
+                ny = 50.0 + (pt[1] - center_y) * scale_fit
+                return nx, ny
+
+            start_x, start_y = map_pt(pts[0])
+            path_d = f"M {start_x:.2f} {start_y:.2f} "
+
+            for pt in pts[1:]:
+                x, y = map_pt(pt)
+                path_d += f"L {x:.2f} {y:.2f} "
+            path_d += "Z"
+
+            collected_paths.append({
+                "area": area,
+                "cluster_idx": cluster_idx,
+                "path_d": path_d
+            })
 
             perimeter = cv2.arcLength(cnt, True)
             epsilon = 0.0016 * perimeter
