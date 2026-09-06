@@ -5,38 +5,36 @@ import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabaseClient";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
+import { SUNLU_CATALOG } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+// Budujemy zunifikowaną paletę wszystkich autentycznych kolorów Sunlu z katalogu
+const ALL_SUNLU_COLORS = [
+  ...SUNLU_CATALOG.colors.PLA_PLUS.map((c) => ({ id: c.hex, name: `PLA+ ${c.name}` })),
+  ...SUNLU_CATALOG.colors.SILK_PLA.map((c) => ({ id: c.hex, name: `Silk ${c.name}` })),
+  ...SUNLU_CATALOG.colors.PETG.map((c) => ({ id: c.hex, name: `PETG ${c.name}` })),
+  ...(SUNLU_CATALOG.colors.DUAL_COLOR || []).map((c) => ({ id: c.hex, name: c.name })),
+  ...(SUNLU_CATALOG.colors.TRI_COLOR || []).map((c) => ({ id: c.hex, name: c.name })),
+  ...(SUNLU_CATALOG.colors.RAINBOW || []).map((c) => ({ id: c.hex, name: c.name })),
+];
+
 const DEFAULT_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-  <g id="color_1" fill="#111111">
+  <g id="color_1" fill="#3C3C3C">
     <path d="M50 8 L85 24 L85 64 L50 92 L15 64 L15 24 Z M50 14 L20 28 L20 60 L50 85 L80 60 L80 28 Z" />
     <path d="M48 35 L52 35 L52 65 L48 65 Z" />
     <path d="M35 48 L65 48 L65 52 L35 52 Z" />
   </g>
-  <g id="color_2" fill="#222222">
+  <g id="color_2" fill="#0CB7CC">
     <path d="M22 29 L50 16 L78 29 L78 59 L50 83 L22 59 Z" />
   </g>
-  <g id="color_3" fill="#333333">
+  <g id="color_3" fill="#0063A0">
     <path d="M50 25 L70 36 L70 54 L50 67 L30 54 L30 36 Z" />
   </g>
-  <g id="color_4" fill="#444444">
+  <g id="color_4" fill="#E6E6E2">
     <path d="M50 32 L63 40 L63 50 L50 59 L37 50 L37 40 Z" />
   </g>
 </svg>`;
-
-const PALETTE = [
-  { id: "#0B0F17", name: "Czerń Głęboka" },
-  { id: "#FFFFFF", name: "Biel Czysta" },
-  { id: "#00E5FF", name: "Cyjan Neon" },
-  { id: "#2563EB", name: "Kobaltowy Błękit" },
-  { id: "#8B4513", name: "Ciepły Brąz" },
-  { id: "#D27D2D", name: "Karmel / Pomarańcz" },
-  { id: "#DC2626", name: "Czerwień Ostra" },
-  { id: "#10B981", name: "Szmaragdowa Zieleń" },
-  { id: "#F59E0B", name: "Bursztyn / Złoto" },
-  { id: "#94A3B8", name: "Platynowy Szary" },
-];
 
 const KeychainViewer3D = dynamic(
   () =>
@@ -47,7 +45,7 @@ const KeychainViewer3D = dynamic(
       import("three"),
     ]).then(([fiber, drei, stdlib, THREE]) => {
       const { Canvas } = fiber;
-      const { OrbitControls, Center, RoundedBox } = drei;
+      const { OrbitControls, RoundedBox } = drei;
       const { SVGLoader } = stdlib;
 
       function PlateStrokeMesh({
@@ -97,7 +95,6 @@ const KeychainViewer3D = dynamic(
             const rOut = baseDiameter / 2;
             const rIn = Math.max(1, rOut - strokeWidth);
 
-            // Obrys zewnętrzny (z obrotem o 30 stopni dla wyrównania z cylindrem)
             for (let i = 0; i < 6; i++) {
               const angle = (i * Math.PI) / 3 + Math.PI / 6;
               const x = rOut * Math.cos(angle);
@@ -107,7 +104,6 @@ const KeychainViewer3D = dynamic(
             }
             shape.closePath();
 
-            // Otwór wewnętrzny
             const hole = new THREE.Path();
             for (let i = 0; i < 6; i++) {
               const angle = (i * Math.PI) / 3 + Math.PI / 6;
@@ -195,7 +191,7 @@ const KeychainViewer3D = dynamic(
           }
         }, [svgString]);
 
-        // Płaszczyzny obcinające (Clipping Planes) - obcinają grafikę równo z krawędzią/rantem
+        // Płaszczyzny obcinające (Clipping Planes)
         const clipPlanes = useMemo(() => {
           const margin = strokeEnabled ? strokeWidth : 0.2;
           if (shapeType === "rect") {
@@ -209,7 +205,7 @@ const KeychainViewer3D = dynamic(
             ];
           }
           if (shapeType === "hexagon") {
-            const r = (baseDiameter / 2 - margin) * 0.866; // r * cos(30°)
+            const r = (baseDiameter / 2 - margin) * 0.866;
             const planes = [];
             for (let i = 0; i < 6; i++) {
               const angle = (i * Math.PI) / 3 + Math.PI / 6;
@@ -306,7 +302,6 @@ const KeychainViewer3D = dynamic(
 
         return (
           <group>
-            {/* 1. BAZA PROSTOKĄTNA */}
             {shapeType === "rect" && (
               <group>
                 <RoundedBox
@@ -326,7 +321,6 @@ const KeychainViewer3D = dynamic(
               </group>
             )}
 
-            {/* 2. BAZA OKRĄGŁA */}
             {shapeType === "circle" && (
               <group>
                 <mesh rotation={[Math.PI / 2, 0, 0]}>
@@ -342,7 +336,6 @@ const KeychainViewer3D = dynamic(
               </group>
             )}
 
-            {/* 3. BAZA HEXAGON */}
             {shapeType === "hexagon" && (
               <group>
                 <mesh rotation={[Math.PI / 2, 0, 0]}>
@@ -358,7 +351,6 @@ const KeychainViewer3D = dynamic(
               </group>
             )}
 
-            {/* 4. OBRAMOWANIE STROKE */}
             <PlateStrokeMesh
               shapeType={shapeType}
               baseWidth={baseWidth}
@@ -371,7 +363,6 @@ const KeychainViewer3D = dynamic(
               strokeColor={strokeColor}
             />
 
-            {/* 5. PŁASKORZEŹBA MOTYWU */}
             <SvgMakerWorldLayers
               svgString={reliefSvg}
               layersConfig={layersConfig}
@@ -417,7 +408,7 @@ export default function KeychainGenerator() {
 
   // Kształt bazy i wymiary
   const [shapeType, setShapeType] = useState("hexagon");
-  const [baseColor, setBaseColor] = useState("#0B0F17");
+  const [baseColor, setBaseColor] = useState("#3C3C3C"); // Sunlu Black PLA+
   const [baseWidth, setBaseWidth] = useState(65);
   const [baseHeight, setBaseHeight] = useState(50);
   const [baseDiameter, setBaseDiameter] = useState(60);
@@ -428,7 +419,7 @@ export default function KeychainGenerator() {
   const [strokeEnabled, setStrokeEnabled] = useState(true);
   const [strokeWidth, setStrokeWidth] = useState(2.0);
   const [strokeThickness, setStrokeThickness] = useState(1.0);
-  const [strokeColor, setStrokeColor] = useState("#0B0F17");
+  const [strokeColor, setStrokeColor] = useState("#3C3C3C");
 
   // Aktywny tab
   const [activeTab, setActiveTab] = useState("shape");
@@ -438,15 +429,13 @@ export default function KeychainGenerator() {
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
 
-  // Warstwy motywu
+  // Warstwy motywu (Domyślne filamenty Sunlu)
   const [layersConfig, setLayersConfig] = useState([
-    { id: 1, name: "Warstwa 1 (Baza)", color: "#0B0F17", thickness: 0.6 },
-    { id: 2, name: "Warstwa 2 (Ciało)", color: "#00E5FF", thickness: 0.8 },
-    { id: 3, name: "Warstwa 3 (Cienie)", color: "#2563EB", thickness: 1.0 },
-    { id: 4, name: "Warstwa 4 (Detale)", color: "#FFFFFF", thickness: 1.2 },
+    { id: 1, name: "Warstwa 1 (Baza)", color: "#3C3C3C", thickness: 0.6 },
+    { id: 2, name: "Warstwa 2 (Ciało)", color: "#0CB7CC", thickness: 0.8 },
+    { id: 3, name: "Warstwa 3 (Cienie)", color: "#0063A0", thickness: 1.0 },
+    { id: 4, name: "Warstwa 4 (Detale)", color: "#E6E6E2", thickness: 1.2 },
   ]);
-
-  const [originalColors, setOriginalColors] = useState([]);
 
   // Modale
   const [isPreprocessingOpen, setIsPreprocessingOpen] = useState(false);
@@ -454,7 +443,6 @@ export default function KeychainGenerator() {
   const [exposure, setExposure] = useState(1.0);
   const [contrast, setContrast] = useState(1.0);
   const [saturation, setSaturation] = useState(1.0);
-  const [cropRatio, setCropRatio] = useState("1:1");
   const [keepBg, setKeepBg] = useState(false);
 
   const [isConversionPreviewOpen, setIsConversionPreviewOpen] = useState(false);
@@ -468,7 +456,6 @@ export default function KeychainGenerator() {
   const [isProcessingImg, setIsProcessingImg] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Dynamiczna kalkulacja ceny
   const areaCm2 =
     shapeType === "rect"
       ? (baseWidth * baseHeight) / 100
@@ -575,7 +562,6 @@ export default function KeychainGenerator() {
 
     if (detectedColors.length > 0) {
       const defaultThicknesses = [0.6, 0.8, 1.0, 1.2];
-      setOriginalColors([...detectedColors]);
       setLayersConfig((prev) =>
         prev.map((layer, idx) => ({
           ...layer,
@@ -634,7 +620,7 @@ export default function KeychainGenerator() {
       const { error } = await supabase.from("orders").insert({
         user_id: user.id,
         file_name: `Custom 4-Color [${shapeType.toUpperCase()}]: ${imageFileName}`,
-        material: "PLA Multi-Color AMS",
+        material: "PLA Multi-Color AMS (Sunlu)",
         technology: "FDM Multi-Color Quantized",
         layer_height: "0.20 mm",
         infill: 100,
@@ -715,7 +701,7 @@ export default function KeychainGenerator() {
         </div>
       </header>
 
-      {/* GŁÓWNA KARTA KONFIGURATORA */}
+      {/* GŁÓWNA KARTA */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 pb-10 flex items-center justify-center">
         <div className="bg-white rounded-[32px] border border-slate-200/80 shadow-[0_25px_70px_rgba(0,0,0,0.06)] w-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-[640px]">
           
@@ -739,7 +725,7 @@ export default function KeychainGenerator() {
               </span>
             </div>
 
-            {/* Trójwymiarowy Viewport Three.js */}
+            {/* Viewport 3D */}
             <div className="relative w-full h-[380px] md:h-[430px] my-auto">
               <KeychainViewer3D
                 shapeType={shapeType}
@@ -805,22 +791,28 @@ export default function KeychainGenerator() {
             </div>
           </div>
 
-          {/* PRAWA STRONA: MODUŁ KONFIGURACJI */}
+          {/* PRAWA STRONA: MODUŁ PARAMETRÓW */}
           <div className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-white border-l border-slate-100">
             <div className="space-y-5">
-              {/* Kolor bazy */}
+              
+              {/* 1. SELEKTOR KOLORU PŁYTY BAZOWEJ (Pełna paleta Sunlu) */}
               <div>
-                <span className="text-xs font-bold uppercase text-slate-400 block mb-2 tracking-wider">
-                  Kolor płyty bazowej:
-                </span>
-                <div className="flex items-center gap-2.5">
-                  {PALETTE.slice(0, 7).map((pal) => (
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">
+                    Kolor płyty bazowej (Sunlu):
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-700 truncate max-w-[170px]">
+                    {ALL_SUNLU_COLORS.find((c) => c.id.toLowerCase() === baseColor.toLowerCase())?.name || baseColor}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                  {ALL_SUNLU_COLORS.map((pal) => (
                     <button
-                      key={pal.id}
+                      key={`base-${pal.id}-${pal.name}`}
                       type="button"
                       onClick={() => setBaseColor(pal.id)}
-                      className={`w-6 h-6 rounded-full transition-all cursor-pointer ${
-                        baseColor === pal.id
+                      className={`w-6 h-6 flex-shrink-0 rounded-full transition-all cursor-pointer ${
+                        baseColor.toLowerCase() === pal.id.toLowerCase()
                           ? "ring-2 ring-offset-2 ring-[#EF4444] scale-110"
                           : "hover:scale-105 border border-slate-300"
                       }`}
@@ -876,7 +868,6 @@ export default function KeychainGenerator() {
               {/* TAB 1: KSZTAŁT, WYMIARY I STROKE */}
               {activeTab === "shape" && (
                 <div className="space-y-3.5 max-h-[340px] overflow-y-auto pr-1">
-                  {/* Wybór kształtu */}
                   <div className="grid grid-cols-3 gap-2">
                     {[
                       { id: "circle", label: "Okrąg", sub: "⌀ 60mm" },
@@ -898,7 +889,6 @@ export default function KeychainGenerator() {
                     ))}
                   </div>
 
-                  {/* Przełącznik ucha */}
                   <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
                     <div>
                       <span className="text-xs font-bold text-slate-800 block">Ucho do zawieszenia</span>
@@ -915,7 +905,7 @@ export default function KeychainGenerator() {
                     </button>
                   </div>
 
-                  {/* KONTROLKA STROKE (OBRAMOWANIE) */}
+                  {/* KONTROLKA STROKE (OBRAMOWANIE) Z PEŁNYM WYBOREM BARW SUNLU */}
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -967,20 +957,29 @@ export default function KeychainGenerator() {
                           />
                         </div>
 
+                        {/* 2. SELEKTOR KOLORU RANTU (Pełna paleta Sunlu) */}
                         <div>
-                          <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                            Kolor obramowania
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            {PALETTE.map((pal) => (
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                              Kolor obramowania (Sunlu):
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-600 truncate max-w-[150px]">
+                              {ALL_SUNLU_COLORS.find((c) => c.id.toLowerCase() === strokeColor.toLowerCase())?.name || strokeColor}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin">
+                            {ALL_SUNLU_COLORS.map((pal) => (
                               <button
-                                key={`stroke-${pal.id}`}
+                                key={`stroke-${pal.id}-${pal.name}`}
                                 type="button"
                                 onClick={() => setStrokeColor(pal.id)}
-                                className={`w-4 h-4 rounded-full transition ${
-                                  strokeColor === pal.id ? "scale-125 ring-2 ring-[#EF4444]" : "border border-slate-300"
+                                className={`w-5 h-5 flex-shrink-0 rounded-full transition-all cursor-pointer ${
+                                  strokeColor.toLowerCase() === pal.id.toLowerCase()
+                                    ? "scale-125 ring-2 ring-[#EF4444]"
+                                    : "border border-slate-300 hover:scale-110"
                                 }`}
                                 style={{ backgroundColor: pal.id }}
+                                title={pal.name}
                               />
                             ))}
                           </div>
@@ -1123,34 +1122,43 @@ export default function KeychainGenerator() {
                 </div>
               )}
 
-              {/* TAB 3: WARSTWY FILAMENTU AMS */}
+              {/* TAB 3: WARSTWY FILAMENTU AMS (3. Wybór filamentu Sunlu dla każdej warstwy) */}
               {activeTab === "layers" && (
-                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
                   {layersConfig.map((layer, idx) => (
                     <div
                       key={layer.id}
-                      className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between"
+                      className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className="w-6 h-6 rounded-full border border-slate-300 shadow-sm"
-                          style={{ backgroundColor: layer.color }}
-                        />
-                        <span className="text-xs font-bold text-slate-800">
-                          {layer.name}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-4 h-4 rounded-full border border-slate-300 shadow-sm"
+                            style={{ backgroundColor: layer.color }}
+                          />
+                          <span className="text-xs font-bold text-slate-800">
+                            {layer.name}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-500 truncate max-w-[140px]">
+                          {ALL_SUNLU_COLORS.find((c) => c.id.toLowerCase() === layer.color.toLowerCase())?.name || layer.color}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-1.5">
-                        {PALETTE.slice(0, 5).map((pal) => (
+                      {/* Horyzontalny pasek próbek Sunlu dla danej warstwy */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                        {ALL_SUNLU_COLORS.map((pal) => (
                           <button
-                            key={pal.id}
+                            key={`layer-${idx}-${pal.id}-${pal.name}`}
                             type="button"
                             onClick={() => updateLayer(idx, "color", pal.id)}
-                            className={`w-4 h-4 rounded-full transition ${
-                              layer.color === pal.id ? "scale-125 ring-2 ring-[#EF4444]" : ""
+                            className={`w-5 h-5 flex-shrink-0 rounded-full transition-all cursor-pointer ${
+                              layer.color.toLowerCase() === pal.id.toLowerCase()
+                                ? "scale-125 ring-2 ring-[#EF4444]"
+                                : "border border-slate-300 hover:scale-110"
                             }`}
                             style={{ backgroundColor: pal.id }}
+                            title={pal.name}
                           />
                         ))}
                       </div>
@@ -1162,7 +1170,7 @@ export default function KeychainGenerator() {
 
             {/* Informacja na dole */}
             <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-medium text-slate-400">
-              <span>Standard FDM Bambu Lab AMS</span>
+              <span>Standard FDM Bambu Lab AMS (Sunlu)</span>
               <span>Wysyłka w 24h</span>
             </div>
           </div>
