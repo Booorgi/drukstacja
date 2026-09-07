@@ -1,18 +1,14 @@
 """
 Drukstacja - Generator pakietów produkcyjnych .3MF
 Tworzy zunifikowany plik projektu .3MF w standardzie Bambu Studio / MakerWorld
-(specyfikacja narzędzi Make My Sign / Keyring) z pełną obsługą AMS i wielokolorowości.
+w oparciu o bezpośrednią strukturę jedno-plikową (Self-contained Assembly).
 
-STRUKTURA ARCHIWUM .3MF (MakerWorld standard):
+STRUKTURA ARCHIWUM .3MF:
 ├── [Content_Types].xml
 ├── _rels/
 │   └── .rels
 ├── 3D/
-│   ├── 3dmodel.model
-│   ├── _rels/
-│   │   └── 3dmodel.model.rels
-│   └── Objects/
-│       └── object-1.model
+│   └── 3dmodel.model
 └── Metadata/
     ├── model_settings.config
     └── project_settings.config
@@ -62,18 +58,18 @@ def format_hex_6(hex_str: str) -> str:
     return "#000000"
 
 
-def _mesh_to_xml(mesh, indent="     "):
+def _mesh_to_xml(mesh, indent="        "):
     """Konwertuje trimesh.Trimesh do ciągów XML vertices i triangles."""
-    vert_lines = []
-    for v in mesh.vertices:
-        vert_lines.append(
-            '%s<vertex x="%.4f" y="%.4f" z="%.4f"/>' % (indent, v[0], v[1], v[2])
-        )
-    tri_lines = []
-    for f in mesh.faces:
-        tri_lines.append(
-            '%s<triangle v1="%d" v2="%d" v3="%d"/>' % (indent, f[0], f[1], f[2])
-        )
+    if mesh is None or not hasattr(mesh, "vertices") or len(mesh.vertices) == 0:
+        return "", ""
+    vert_lines = [
+        '%s<vertex x="%.4f" y="%.4f" z="%.4f"/>' % (indent, float(v[0]), float(v[1]), float(v[2]))
+        for v in mesh.vertices
+    ]
+    tri_lines = [
+        '%s<triangle v1="%d" v2="%d" v3="%d"/>' % (indent, int(f[0]), int(f[1]), int(f[2]))
+        for f in mesh.faces
+    ]
     return "\n".join(vert_lines), "\n".join(tri_lines)
 
 
@@ -85,12 +81,10 @@ def generate_production_3mf(
     parts: list = None,
 ) -> str:
     """
-    Generuje gotowy pakiet projektowy .3MF zgodny z MakerWorld / Bambu Studio.
-    
-    Geometria poszczególnych warstw (baza, rant, grafika, tekst, uszko) jest
-    umieszczana w 3D/Objects/object-1.model jako sub-obiekty scalone w złożenie (id=1).
-    Mapowanie slotów AMS i kolorów zapisywane jest w Metadata/model_settings.config
-    oraz Metadata/project_settings.config.
+    Generuje gotowy pakiet projektowy .3MF zgodny z Bambu Studio (Self-contained Assembly).
+    Wszystkie siatki (Base, Border, Graphic, Text, Ring) oraz złożenie assembly (id=1)
+    są zdefiniowane bezpośrednio w 3D/3dmodel.model.
+    Przypisanie slotów AMS konfigurowane jest w Metadata/model_settings.config.
     """
     order_metadata = order_metadata or {}
     print_settings = print_settings or {}
@@ -103,7 +97,7 @@ def generate_production_3mf(
     material = str(print_settings.get("material") or "PLA")
     clean_mat = material.split()[0].upper() if material else "PLA"
     color_hex = str(print_settings.get("color_hex") or "#000000")
-    clean_title = sanitize_filename(Path(file_name).stem) or "Keyring"
+    clean_title = sanitize_filename(Path(file_name).stem) or "Keychain"
 
     # ──────────────────────────────────────────────────────────────
     # 1. Wczytanie i przygotowanie siatek części
@@ -199,11 +193,11 @@ def generate_production_3mf(
             color_to_extruder[hex6] = len(unique_colors)  # 1-based index (1, 2, 3...)
 
     # ──────────────────────────────────────────────────────────────
-    # 3. Budowa 3D/Objects/object-1.model (geometria + sub-obiekty + assembly)
+    # 3. Budowa 3D/3dmodel.model (Self-contained Assembly)
     # ──────────────────────────────────────────────────────────────
-    # Wzorzec MakerWorld:
-    # Sub-części mają id=2, id=3, id=4...
-    # Nadrzędne złożenie ma id=1 i zagnieżdża <component objectid="2"/> itd.
+    # Każda część breloka to sub-obiekt z id=2, id=3, id=4...
+    # Główny montaż (Assembly) ma id=1 i zawiera <components><component objectid="2"/>...</components>
+    # Sekcja <build> zawiera <item objectid="1"/>
     sub_objects_xml = []
     components_xml = []
     model_settings_parts_xml = []
@@ -232,14 +226,15 @@ def generate_production_3mf(
         sub_objects_xml.append(part_obj_str)
         components_xml.append(f'        <component objectid="{part_id}"/>')
 
-        # Wpis do model_settings.config dla AMS
+        # Wpis do model_settings.config dla Bambu Studio AMS
         model_settings_parts_xml.append(
             f'    <part id="{part_id}" name="{safe_name}">\n'
+            f'      <metadata key="name" value="{safe_name}"/>\n'
             f'      <metadata key="extruder" value="{extruder_num}"/>\n'
             f'    </part>'
         )
 
-    # Złożenie nadrzędne (id=1)
+    # Główny montaż (Assembly) id=1
     assembly_name = xml_escape(f"{clean_title}_Assembly")
     components_joined = "\n".join(components_xml)
     assembly_obj_str = (
@@ -252,9 +247,10 @@ def generate_production_3mf(
     sub_objects_xml.append(assembly_obj_str)
 
     sub_objects_joined = "\n".join(sub_objects_xml)
-    object_1_model_xml = (
+
+    main_3dmodel_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n'
+        '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021">\n'
         '  <resources>\n'
         f'{sub_objects_joined}\n'
         '  </resources>\n'
@@ -265,27 +261,7 @@ def generate_production_3mf(
     )
 
     # ──────────────────────────────────────────────────────────────
-    # 4. Budowa 3D/3dmodel.model i 3D/_rels/3dmodel.model.rels
-    # ──────────────────────────────────────────────────────────────
-    main_3dmodel_xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n'
-        '  <resources/>\n'
-        '  <build>\n'
-        '    <item objectid="1"/>\n'
-        '  </build>\n'
-        '</model>'
-    )
-
-    model_rels_xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
-        '  <Relationship Id="rel-1" Target="/3D/Objects/object-1.model" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/object"/>\n'
-        '</Relationships>'
-    )
-
-    # ──────────────────────────────────────────────────────────────
-    # 5. Metadata/model_settings.config (mapowanie ekstruderów AMS)
+    # 4. Metadata/model_settings.config (mapowanie ekstruderów AMS)
     # ──────────────────────────────────────────────────────────────
     model_settings_parts_joined = "\n".join(model_settings_parts_xml)
     model_settings_xml = (
@@ -298,7 +274,7 @@ def generate_production_3mf(
     )
 
     # ──────────────────────────────────────────────────────────────
-    # 6. Metadata/project_settings.config (paleta filamentów JSON)
+    # 5. Metadata/project_settings.config (paleta filamentów JSON)
     # ──────────────────────────────────────────────────────────────
     filaments_json_list = []
     for c_hex in unique_colors:
@@ -315,14 +291,14 @@ def generate_production_3mf(
     project_settings_json = json.dumps(project_settings_data, indent=2)
 
     # ──────────────────────────────────────────────────────────────
-    # 7. Manifesty OPC ([Content_Types].xml, _rels/.rels)
+    # 6. Manifesty OPC ([Content_Types].xml, _rels/.rels)
     # ──────────────────────────────────────────────────────────────
     content_types_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n'
-        '  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n'
-        '  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>\n'
-        '  <Default Extension="config" ContentType="text/plain"/>\n'
+        '  <Default ContentType="application/vnd.openxmlformats-package.relationships+xml" Extension="rels"/>\n'
+        '  <Default ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" Extension="model"/>\n'
+        '  <Default ContentType="text/xml" Extension="config"/>\n'
         '</Types>'
     )
 
@@ -334,7 +310,7 @@ def generate_production_3mf(
     )
 
     # ──────────────────────────────────────────────────────────────
-    # 8. Określenie docelowej ścieżki pliku wyjściowego
+    # 7. Określenie docelowej ścieżki pliku wyjściowego
     # ──────────────────────────────────────────────────────────────
     if not output_path:
         if model_path:
@@ -349,22 +325,18 @@ def generate_production_3mf(
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
     # ──────────────────────────────────────────────────────────────
-    # 9. Pakowanie archiwum ZIP z sygnaturą BambuLab
+    # 8. Pakowanie archiwum ZIP z sygnaturą BambuLab
     # ──────────────────────────────────────────────────────────────
-    # Zgodnie ze specyfikacją MakerWorld:
+    # Samodzielna struktura jedno-plikowa (Self-contained Assembly):
     # ├── [Content_Types].xml
     # ├── _rels/.rels
     # ├── 3D/3dmodel.model
-    # ├── 3D/_rels/3dmodel.model.rels
-    # ├── 3D/Objects/object-1.model
     # ├── Metadata/model_settings.config
     # └── Metadata/project_settings.config
     archive_files = {
         "[Content_Types].xml": content_types_xml,
         "_rels/.rels": rels_xml,
         "3D/3dmodel.model": main_3dmodel_xml,
-        "3D/_rels/3dmodel.model.rels": model_rels_xml,
-        "3D/Objects/object-1.model": object_1_model_xml,
         "Metadata/model_settings.config": model_settings_xml,
         "Metadata/project_settings.config": project_settings_json,
     }
@@ -382,4 +354,5 @@ def generate_production_3mf(
             zf.writestr(zinfo, encoded_content)
 
     return output_path
+
 
