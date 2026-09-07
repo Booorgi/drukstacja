@@ -173,6 +173,9 @@ def generate_production_3mf(
     # ──────────────────────────────────────────────────────────────
     # 2. Budowa XML modelu 3D (3D/3dmodel.model)
     # ──────────────────────────────────────────────────────────────
+    object_files = {}  # {zip_path: xml_content} for 3D/Objects/object_X.model
+    model_rels_xml = None
+
     if is_multi_part:
         # ---- Unikalna paleta kolorów i mapowanie AMS ----
         unique_colors = []         # lista kolorów #RRGGBBAA
@@ -184,28 +187,32 @@ def generate_production_3mf(
                 color_to_slot[c_3mf] = len(unique_colors) + 1  # 1-based extruder
                 unique_colors.append(c_3mf)
 
-        # ID obiektu złożenia (Assembly) — w standardzie Bambu/MakerWorld to np. 10
-        # Musi być unikalne i większe od ID wszystkich części składowych, aby nie kolidować z colorgroup (id=1)
-        assembly_id = 10 if len(valid_parts) < 8 else (len(valid_parts) + 5)
-
-        # ---- Osobne <object> dla każdej części (id zaczyna od 2) ----
-        objects_xml_list = []
-        component_tags = []
-        model_settings_parts = []   # <part> entries for model_settings.config
+        # ---- Osobne pliki 3D/Objects/object_X.model dla każdej części ----
+        components_list = []
+        build_items = []
+        rels_entries = []
         model_settings_objects = []
+        plate_instances = []
 
         for idx, p in enumerate(valid_parts):
-            part_id = 2 + idx
+            obj_id = idx + 1  # 1-based ID
             c_3mf = format_hex_color(p["color_hex"])
             extruder_id = color_to_slot[c_3mf]
-            color_pindex = extruder_id - 1
             safe_part_name = sanitize_filename(p["name"])
 
             m = p["mesh"]
-            v_xml, t_xml = _mesh_to_xml(m, pindex=color_pindex)
+            v_xml, t_xml = _mesh_to_xml(m, pindex=None)
 
-            part_obj_xml = (
-                '  <object id="%d" type="model" name="%s" pid="1" pindex="%d">\n'
+            # Osobny plik 3D/Objects/object_{obj_id}.model
+            part_model_path = f"/3D/Objects/object_{obj_id}.model"
+            zip_obj_path = f"3D/Objects/object_{obj_id}.model"
+
+            part_file_xml = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<model unit="millimeter" xml:lang="en-US"'
+                ' xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n'
+                ' <resources>\n'
+                '  <object id="1" type="model">\n'
                 '   <mesh>\n'
                 '    <vertices>\n'
                 '%s\n'
@@ -214,52 +221,81 @@ def generate_production_3mf(
                 '%s\n'
                 '    </triangles>\n'
                 '   </mesh>\n'
-                '  </object>'
-            ) % (part_id, safe_part_name, color_pindex, v_xml, t_xml)
+                '  </object>\n'
+                ' </resources>\n'
+                ' <build>\n'
+                '  <item objectid="1"/>\n'
+                ' </build>\n'
+                '</model>'
+            ) % (v_xml, t_xml)
 
-            objects_xml_list.append(part_obj_xml)
-            component_tags.append('    <component objectid="%d"/>' % part_id)
-            model_settings_parts.append(
-                '    <part id="%d" name="%s">\n'
-                '      <metadata key="extruder" value="%d"/>\n'
-                '    </part>' % (part_id, safe_part_name, extruder_id)
+            object_files[zip_obj_path] = part_file_xml
+
+            # Relacja OPC w 3D/_rels/3dmodel.model.rels
+            rels_entries.append(
+                ' <Relationship Target="%s" Id="rel%d" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>'
+                % (part_model_path, obj_id)
             )
+
+            # Obiekt w głównym 3D/3dmodel.model odwołujący się do tego pliku komponentem
+            component_obj_xml = (
+                '  <object id="%d" type="model" name="%s">\n'
+                '   <components>\n'
+                '    <component objectid="1" path="%s"/>\n'
+                '   </components>\n'
+                '  </object>'
+            ) % (obj_id, safe_part_name, part_model_path)
+            components_list.append(component_obj_xml)
+
+            # Wpis do <build>
+            build_items.append(
+                '  <item objectid="%d" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>' % obj_id
+            )
+
+            # Mapowanie w Metadata/model_settings.config (przypisanie do ekstrudera / slotu AMS)
             model_settings_objects.append(
                 '  <object id="%d">\n'
                 '    <metadata key="name" value="%s"/>\n'
                 '    <metadata key="extruder" value="%d"/>\n'
-                '  </object>' % (part_id, safe_part_name, extruder_id)
+                '  </object>' % (obj_id, safe_part_name, extruder_id)
             )
 
-        # ---- Assembly object w <resources> z <components> ----
-        components_joined = "\n".join(component_tags)
-        assembly_obj_xml = (
-            '  <object id="%d" type="model" name="%s">\n'
-            '   <components>\n'
+            # Instancja na płycie roboczej (Metadata/plate_1.config)
+            plate_instances.append(
+                '    <instance object_id="%d" instance_id="0" identify_id="0"/>' % obj_id
+            )
+
+        all_objects_xml = "\n".join(components_list)
+        all_build_items_xml = "\n".join(build_items)
+
+        # 3D/_rels/3dmodel.model.rels
+        model_rels_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
             '%s\n'
-            '   </components>\n'
-            '  </object>'
-        ) % (assembly_id, clean_title, components_joined)
+            '</Relationships>'
+        ) % ("\n".join(rels_entries))
 
-        # W 3MF obiekty składowe deklarowane są najpierw, potem obiekt nadrzędny
-        all_objects_xml = "\n".join(objects_xml_list) + "\n" + assembly_obj_xml
-        build_item_id = assembly_id
-
-        # ---- model_settings.config (Bambu Studio / OrcaSlicer) ----
-        parts_settings_joined = "\n".join(model_settings_parts)
-        model_settings_all = [
-            '  <object id="%d">\n'
-            '    <metadata key="name" value="%s"/>\n'
-            '%s\n'
-            '  </object>' % (assembly_id, clean_title, parts_settings_joined)
-        ] + model_settings_objects
-
+        # Metadata/model_settings.config
         model_settings_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<config>\n'
             '%s\n'
             '</config>'
-        ) % ("\n".join(model_settings_all))
+        ) % ("\n".join(model_settings_objects))
+
+        # Metadata/plate_1.config
+        plate_config_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<config>\n'
+            '  <plate>\n'
+            '    <metadata key="plater_id" value="1"/>\n'
+            '    <metadata key="plater_name" value="Drukstacja"/>\n'
+            '    <metadata key="locked" value="false"/>\n'
+            '%s\n'
+            '  </plate>\n'
+            '</config>'
+        ) % ("\n".join(plate_instances))
 
         # ---- Paleta filamentów dla project_settings.config (natywny JSON Bambu Lab) ----
         filaments_json_list = []
@@ -280,7 +316,7 @@ def generate_production_3mf(
         }
         project_settings_content = json.dumps(project_settings_data, indent=2)
 
-        # ---- Colorgroup XML (standard 3MF spec) ----
+        # Colorgroup XML
         color_entries = ['   <m:color color="%s"/>' % c for c in unique_colors]
         colorgroup_xml = "\n".join(color_entries)
 
@@ -370,6 +406,22 @@ def generate_production_3mf(
     # ──────────────────────────────────────────────────────────────
     # 3. Główny plik modelu 3D/3dmodel.model
     # ──────────────────────────────────────────────────────────────
+    if is_multi_part:
+        build_section_xml = all_build_items_xml
+    else:
+        build_section_xml = '  <item objectid="2" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>'
+        plate_config_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<config>\n'
+            '  <plate>\n'
+            '    <metadata key="plater_id" value="1"/>\n'
+            '    <metadata key="plater_name" value="Drukstacja"/>\n'
+            '    <metadata key="locked" value="false"/>\n'
+            '    <instance object_id="2" instance_id="0" identify_id="0"/>\n'
+            '  </plate>\n'
+            '</config>'
+        )
+
     model_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<model unit="millimeter" xml:lang="en-US"'
@@ -388,7 +440,7 @@ def generate_production_3mf(
         '%s\n'
         ' </resources>\n'
         ' <build>\n'
-        '  <item objectid="%d" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n'
+        '%s\n'
         ' </build>\n'
         '</model>'
     ) % (
@@ -397,7 +449,7 @@ def generate_production_3mf(
         order_id, material, nozzle_size, layer_height, infill,
         colorgroup_xml,
         all_objects_xml,
-        build_item_id,
+        build_section_xml,
     )
 
     # ──────────────────────────────────────────────────────────────
@@ -495,22 +547,7 @@ def generate_production_3mf(
     ) % (nozzle_size, "\n".join(filaments_slice_xml))
 
     # ──────────────────────────────────────────────────────────────
-    # 7. Plate settings (Metadata/plate_1.config) — Bambu Studio plate definition
-    # ──────────────────────────────────────────────────────────────
-    plate_config_xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<config>\n'
-        '  <plate>\n'
-        '    <metadata key="plater_id" value="1"/>\n'
-        '    <metadata key="plater_name" value="Drukstacja"/>\n'
-        '    <metadata key="locked" value="false"/>\n'
-        '    <instance object_id="%d" instance_id="0" identify_id="0"/>\n'
-        '  </plate>\n'
-        '</config>'
-    ) % build_item_id
-
-    # ──────────────────────────────────────────────────────────────
-    # 8. Określenie docelowej ścieżki pliku wyjściowego
+    # 7. Określenie docelowej ścieżki pliku wyjściowego
     # ──────────────────────────────────────────────────────────────
     if not output_path:
         if model_path:
@@ -525,12 +562,16 @@ def generate_production_3mf(
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
     # ──────────────────────────────────────────────────────────────
-    # 9. Spakowanie do archiwum ZIP ze standardem .3MF
+    # 8. Spakowanie do archiwum ZIP ze standardem .3MF Bambu Studio
     # ──────────────────────────────────────────────────────────────
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", content_types_xml)
         zf.writestr("_rels/.rels", rels_xml)
+        if model_rels_xml:
+            zf.writestr("3D/_rels/3dmodel.model.rels", model_rels_xml)
         zf.writestr("3D/3dmodel.model", model_xml)
+        for obj_rel_path, obj_xml_content in object_files.items():
+            zf.writestr(obj_rel_path, obj_xml_content)
         zf.writestr("Metadata/SlicingConfig.ini", slicing_ini)
         zf.writestr("Metadata/project_settings.config", project_settings_content)
         zf.writestr("Metadata/model_settings.config", model_settings_xml)
