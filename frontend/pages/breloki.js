@@ -841,8 +841,11 @@ const KeychainViewer3D = dynamic(
         const { scene } = useThree();
 
         useEffect(() => {
+          if (typeof window !== "undefined") {
+            window.__KEYCHAIN_SCENE = scene;
+          }
           if (onExportReady) {
-            onExportReady({
+            const handlers = {
               exportSTL: () => {
                 try {
                   scene.updateMatrixWorld(true);
@@ -893,11 +896,10 @@ const KeychainViewer3D = dynamic(
                             let binaryStr = "";
                             const bytes = new Uint8Array(arrayBuffer);
                             const len = bytes.byteLength;
-                            const chunkSize = 0x8000;
-                            for (let i = 0; i < len; i += chunkSize) {
+                            for (let i = 0; i < len; i += 8192) {
                               binaryStr += String.fromCharCode.apply(
                                 null,
-                                bytes.subarray(i, Math.min(i + chunkSize, len))
+                                bytes.subarray(i, Math.min(i + 8192, len))
                               );
                             }
                             const b64 = window.btoa(binaryStr);
@@ -925,13 +927,67 @@ const KeychainViewer3D = dynamic(
                   }
                   collectExportParts(scene);
 
+                  // Przebieg awaryjny — jeśli przebieg po grupach nie znalazł części,
+                  // wyciągamy wszystkie bezpośrednie siatki (meshes) ze sceny
+                  if (parts.length === 0) {
+                    console.warn("[DRUKSTACJA] Przebieg 1 zwrócił 0 części, uruchamiam awaryjny skan siatek sceny...");
+                    scene.traverse((child) => {
+                      if (child.isMesh && child.geometry) {
+                        const name = child.userData?.partName || child.name || `Czesc_${parts.length + 1}`;
+                        let col = child.userData?.partColor;
+                        if (!col && child.material) {
+                          if (child.material.color) {
+                            col = "#" + child.material.color.getHexString();
+                          }
+                        }
+                        col = col || "#222222";
+                        try {
+                          const rawOutput = exporter.parse(child, { binary: true });
+                          let arrayBuffer = null;
+                          if (rawOutput instanceof DataView) {
+                            arrayBuffer = rawOutput.buffer.slice(rawOutput.byteOffset, rawOutput.byteOffset + rawOutput.byteLength);
+                          } else if (rawOutput instanceof ArrayBuffer) {
+                            arrayBuffer = rawOutput;
+                          } else if (rawOutput && rawOutput.buffer instanceof ArrayBuffer) {
+                            arrayBuffer = rawOutput.buffer.slice(rawOutput.byteOffset || 0, (rawOutput.byteOffset || 0) + (rawOutput.byteLength || rawOutput.buffer.byteLength));
+                          }
+                          if (arrayBuffer && arrayBuffer.byteLength > 84) {
+                            let binaryStr = "";
+                            const bytes = new Uint8Array(arrayBuffer);
+                            const len = bytes.byteLength;
+                            for (let i = 0; i < len; i += 8192) {
+                              binaryStr += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, len)));
+                            }
+                            const b64 = window.btoa(binaryStr);
+                            const blob = new Blob([arrayBuffer], { type: "application/octet-stream" });
+                            parts.push({
+                              name: name,
+                              color: col,
+                              role: child.userData?.partRole || "",
+                              stl_base64: b64,
+                              blob: blob,
+                            });
+                          }
+                        } catch (meshErr) {
+                          console.warn("Błąd awaryjnego eksportu siatki:", meshErr);
+                        }
+                      }
+                    });
+                  }
+
+                  console.log(`[DRUKSTACJA 3MF] Łącznie wyeksportowano ${parts.length} części:`, parts.map(p => p.name));
                   return parts;
                 } catch (err) {
                   console.error("Błąd podczas eksportu części STLExporter:", err);
                   return [];
                 }
               },
-            });
+            };
+
+            if (typeof window !== "undefined") {
+              window.__KEYCHAIN_EXPORTER = handlers;
+            }
+            onExportReady(handlers);
           }
         }, [scene, onExportReady]);
 
@@ -1231,6 +1287,8 @@ export default function KeychainGenerator() {
         parts = exportHandlerRef.current.exportParts();
       } else if (viewerRef.current && typeof viewerRef.current.exportParts === "function") {
         parts = viewerRef.current.exportParts();
+      } else if (typeof window !== "undefined" && window.__KEYCHAIN_EXPORTER && typeof window.__KEYCHAIN_EXPORTER.exportParts === "function") {
+        parts = window.__KEYCHAIN_EXPORTER.exportParts();
       }
       return parts || [];
     } catch (err) {
@@ -1471,12 +1529,15 @@ export default function KeychainGenerator() {
     setIsExporting3MF(true);
     try {
       const parts = exportKeychainParts();
-      const combinedStlBlob = exportKeychainGeometry();
-      if (!combinedStlBlob && (!parts || parts.length === 0)) {
-        alert("Scena 3D breloka nie jest jeszcze gotowa do eksportu. Spróbuj za chwilę.");
+      console.log("[DRUKSTACJA 3MF] Wykryto części:", parts?.length, parts);
+
+      if (!parts || parts.length === 0) {
+        alert("Scena 3D nie przygotowała jeszcze warstw breloka do eksportu. Odśwież stronę (Ctrl+F5) i spróbuj ponownie.");
         setIsExporting3MF(false);
         return;
       }
+
+      const combinedStlBlob = exportKeychainGeometry();
 
       const formData = new FormData();
       const cleanSafeName = `brelok_${shapeType}_${Date.now()}.stl`;

@@ -1114,6 +1114,13 @@ async def generate_direct_3mf_endpoint(
                     "role": p_role,
                 })
 
+    print(f"[3MF DIRECT] Wywołanie generate-direct-3mf dla {file_name}:")
+    print(f"   -> parts_json_raw obecne: {bool(parts_json_raw)}, długość: {len(parts_json_raw) if parts_json_raw else 0}")
+    print(f"   -> parts_files_list liczba plików: {len(parts_files_list)}")
+    print(f"   -> Załadowano poprawnych części do projektu: {len(parts_list)}")
+    for p in parts_list:
+        print(f"      * Część: {p['name']} | Kolor: {p['color_hex']}")
+
     local_stl_path = None
     if file:
         content = await file.read()
