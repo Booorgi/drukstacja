@@ -857,30 +857,63 @@ const KeychainViewer3D = dynamic(
                 try {
                   scene.updateMatrixWorld(true);
                   const exporter = new STLExporter();
-                  const parts = [];
+                  const rawParts = [];
 
-                  scene.traverse((obj) => {
-                    if (obj.userData && obj.userData.isExportPart) {
+                  // Ręczne przechodzenie drzewa sceny — po znalezieniu grupy
+                  // z isExportPart NIE wchodzimy głębiej, żeby uniknąć
+                  // duplikacji geometrii w zagnieżdżonych grupach eksportowych.
+                  function collectExportParts(node) {
+                    if (node.userData && node.userData.isExportPart) {
                       let hasGeometry = false;
-                      obj.traverse((child) => {
+                      node.traverse((child) => {
                         if (child.isMesh && child.geometry) {
                           hasGeometry = true;
                         }
                       });
                       if (hasGeometry) {
-                        const stlBinary = exporter.parse(obj, { binary: true });
-                        const blob = new Blob([stlBinary], { type: "application/octet-stream" });
-                        parts.push({
-                          name: obj.userData.partName,
-                          color: obj.userData.partColor,
-                          role: obj.userData.partRole,
-                          blob: blob,
+                        const stlBinary = exporter.parse(node, { binary: true });
+                        rawParts.push({
+                          name: node.userData.partName,
+                          color: node.userData.partColor,
+                          role: node.userData.partRole,
+                          stlBinary: stlBinary,
                         });
                       }
+                      return; // STOP — nie wchodzić w poddrzewo
                     }
-                  });
+                    // Nie jest export part — kontynuuj do dzieci
+                    if (node.children) {
+                      for (const child of node.children) {
+                        collectExportParts(child);
+                      }
+                    }
+                  }
+                  collectExportParts(scene);
 
-                  return parts;
+                  // Konsolidacja: połącz części o tym samym kolorze+roli
+                  // w jeden obiekt STL (Bambu Studio: 1 obiekt = 1 ekstruder/kolor)
+                  const consolidated = new Map();
+                  for (const p of rawParts) {
+                    const key = `${p.color}|${p.role}`;
+                    if (!consolidated.has(key)) {
+                      consolidated.set(key, {
+                        name: p.name,
+                        color: p.color,
+                        role: p.role,
+                        binaries: [p.stlBinary],
+                      });
+                    } else {
+                      consolidated.get(key).binaries.push(p.stlBinary);
+                    }
+                  }
+
+                  // Zamiana skonsolidowanych części na bloby STL
+                  return Array.from(consolidated.values()).map((p) => ({
+                    name: p.name,
+                    color: p.color,
+                    role: p.role,
+                    blob: new Blob(p.binaries, { type: "application/octet-stream" }),
+                  }));
                 } catch (err) {
                   console.error("Błąd podczas eksportu części STLExporter:", err);
                   return [];

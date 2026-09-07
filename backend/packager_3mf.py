@@ -231,17 +231,36 @@ def generate_production_3mf(
         all_objects_xml = assembly_obj_xml + "\n" + "\n".join(objects_xml_list)
         build_item_id = assembly_id
 
-        # ---- model_settings.config (Bambu Studio) ----
+        # ---- model_settings.config (Bambu Studio / OrcaSlicer) ----
+        # Każda część ma wpis <object> z extruder i name
+        model_settings_objects = []
         parts_settings_joined = "\n".join(model_settings_parts)
-        model_settings_xml = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<config>\n'
+        # Assembly object — bez extruder, tylko name + wpisy <part>
+        model_settings_objects.append(
             '  <object id="%d">\n'
             '    <metadata key="name" value="%s"/>\n'
             '%s\n'
-            '  </object>\n'
+            '  </object>' % (assembly_id, clean_title, parts_settings_joined)
+        )
+        # Każdy sub-object — z przypisanym extruderem
+        for idx, p in enumerate(valid_parts):
+            sub_id = 2 + idx
+            c_3mf = format_hex_color(p["color_hex"])
+            ext_id = color_to_slot[c_3mf]
+            safe_pn = sanitize_filename(p["name"])
+            model_settings_objects.append(
+                '  <object id="%d">\n'
+                '    <metadata key="name" value="%s"/>\n'
+                '    <metadata key="extruder" value="%d"/>\n'
+                '  </object>' % (sub_id, safe_pn, ext_id)
+            )
+
+        model_settings_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<config>\n'
+            '%s\n'
             '</config>'
-        ) % (assembly_id, clean_title, parts_settings_joined)
+        ) % ("\n".join(model_settings_objects))
 
         # ---- Paleta filamentów dla project_settings ----
         for c_3mf in unique_colors:
@@ -428,39 +447,39 @@ def generate_production_3mf(
 
     # ──────────────────────────────────────────────────────────────
     # 6. Konfiguracja Bambu Studio / OrcaSlicer (Metadata/project_settings.config)
-    #    Format kompatybilny z parserem Bambu Studio / OrcaSlicer (filament_colour array)
+    #    Format XML kompatybilny z parserem Bambu Studio / OrcaSlicer
+    #    WAŻNE: Bambu Studio oczekuje formatu XML z metadanymi jako <plate>
+    #    z wartościami semicolon-separated, NIE JSON!
     # ──────────────────────────────────────────────────────────────
-    filament_settings = []
-    for idx, c in enumerate(unique_colors):
-        filament_settings.append({
-            "id": idx + 1,
-            "type": material,
-            "color": c[:7],
-            "nozzle_diameter": nozzle_size,
-            "layer_height": layer_height,
-            "infill_density": infill,
-        })
+    filament_colours_str = ";".join([c[:7] for c in unique_colors])
+    filament_types_str = ";".join([material for _ in unique_colors])
+    filament_settings_ids_str = ";".join(
+        ["Generic %s @BBL X1C" % material for _ in unique_colors]
+    )
+    filament_vendors_str = ";".join(["Generic" for _ in unique_colors])
 
-    bambu_project_config = {
-        "version": "1.0.0",
-        "plate_name": "Zlecenie #%s" % order_id[:8],
-        "filament_colour": [c[:7] for c in unique_colors],
-        "filament_type": [material for _ in unique_colors],
-        "filament_vendor": ["Generic" for _ in unique_colors],
-        "filament_density": ["1.24" for _ in unique_colors],
-        "filament_cost": ["80" for _ in unique_colors],
-        "filament_settings_id": ["Generic %s @BBL X1C" % material for _ in unique_colors],
-        "nozzle_diameter": [nozzle_size for _ in unique_colors],
-        "first_layer_print_sequence": [idx + 1 for idx in range(len(unique_colors))],
-        "palette": palette_entries,
-        "filament_settings": filament_settings,
-        "generator": "Drukstacja 3D Automation",
-        "order": {
-            "id": order_id,
-            "filename": file_name,
-            "date": created_at,
-        },
-    }
+    project_settings_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<config>\n'
+        '  <plate>\n'
+        '    <metadata key="filament_colour" value="%s"/>\n'
+        '    <metadata key="filament_type" value="%s"/>\n'
+        '    <metadata key="filament_settings_id" value="%s"/>\n'
+        '    <metadata key="filament_vendor" value="%s"/>\n'
+        '    <metadata key="nozzle_diameter" value="%s"/>\n'
+        '    <metadata key="layer_height" value="%s"/>\n'
+        '    <metadata key="fill_density" value="%s%%"/>\n'
+        '  </plate>\n'
+        '</config>'
+    ) % (
+        filament_colours_str,
+        filament_types_str,
+        filament_settings_ids_str,
+        filament_vendors_str,
+        nozzle_size,
+        layer_height,
+        infill,
+    )
 
     # ──────────────────────────────────────────────────────────────
     # 7. Slicer manifest (Metadata/slice_info.config) — kluczowy dla AMS
@@ -532,7 +551,7 @@ def generate_production_3mf(
         zf.writestr("_rels/.rels", rels_xml)
         zf.writestr("3D/3dmodel.model", model_xml)
         zf.writestr("Metadata/SlicingConfig.ini", slicing_ini)
-        zf.writestr("Metadata/project_settings.config", json.dumps(bambu_project_config, indent=2))
+        zf.writestr("Metadata/project_settings.config", project_settings_xml)
         zf.writestr("Metadata/model_settings.config", model_settings_xml)
         zf.writestr("Metadata/slice_info.config", slice_info_xml)
         zf.writestr("Metadata/plate_1.config", plate_config_xml)
