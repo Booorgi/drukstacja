@@ -1159,10 +1159,14 @@ export default function KeychainGenerator() {
   const [layerViewEnabled, setLayerViewEnabled] = useState(false);
   const [layerSeparation, setLayerSeparation] = useState(0);
 
-  // --- NOWE: Eksport STL ---
+  // --- NOWE: Eksport STL & 3MF Bambu ---
   const viewerRef = useRef(null);
   const exportHandlerRef = useRef(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExporting3MF, setIsExporting3MF] = useState(false);
+  const [layerHeight, setLayerHeight] = useState("0.20");
+  const [infill, setInfill] = useState(100);
+  const [nozzleSize, setNozzleSize] = useState("0.4");
 
   const exportKeychainGeometry = () => {
     try {
@@ -1427,6 +1431,71 @@ export default function KeychainGenerator() {
     }
   }
 
+  // Eksport natywnego projektu Bambu Lab .3MF (Multi-Color AMS)
+  async function handleExport3MF() {
+    setIsExporting3MF(true);
+    try {
+      const parts = exportKeychainParts();
+      const combinedStlBlob = exportKeychainGeometry();
+      if (!combinedStlBlob && (!parts || parts.length === 0)) {
+        alert("Scena 3D breloka nie jest jeszcze gotowa do eksportu. Spróbuj za chwilę.");
+        setIsExporting3MF(false);
+        return;
+      }
+
+      const formData = new FormData();
+      const cleanSafeName = `brelok_${shapeType}_${Date.now()}.stl`;
+      if (combinedStlBlob) {
+        formData.append("file", combinedStlBlob, cleanSafeName);
+      }
+      formData.append("file_name", `brelok_${shapeType}.3mf`);
+      formData.append("material", baseFilament?.name || "PLA");
+      formData.append("color_hex", baseFilament?.hex || "#222222");
+      formData.append("layer_height", String(layerHeight));
+      formData.append("nozzle_size", String(nozzleSize));
+      formData.append("infill", String(infill));
+
+      if (parts && parts.length > 0) {
+        const partsMeta = parts.map((p, idx) => ({
+          index: idx,
+          name: p.name,
+          color: p.color,
+          role: p.role,
+          filename: `part_${idx}_${p.name.replace(/[^a-zA-Z0-9_]/g, "_")}.stl`,
+        }));
+        formData.append("parts_json", JSON.stringify(partsMeta));
+        parts.forEach((p, idx) => {
+          formData.append("parts_files", p.blob, partsMeta[idx].filename);
+        });
+      }
+
+      const res = await fetch(`${API_URL || ""}/api/breloki/generate-direct-3mf`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || "Błąd generowania pliku .3MF na serwerze");
+      }
+
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = `brelok_${shapeType}_${layerHeight}mm_${infill}pct.3mf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error("Błąd pobierania projektu 3MF:", err);
+      alert("Błąd pobierania 3MF: " + err.message);
+    } finally {
+      setIsExporting3MF(false);
+    }
+  }
+
   async function fetchCart(userId) {
     if (!userId) return;
     const { data } = await supabase
@@ -1556,9 +1625,9 @@ export default function KeychainGenerator() {
           formData.append("file_name", orderPayload.file_name);
           formData.append("material", materialName);
           formData.append("color_hex", baseFilament?.hex || "#222222");
-          formData.append("layer_height", "0.20");
-          formData.append("nozzle_size", "0.4");
-          formData.append("infill", "100");
+          formData.append("layer_height", String(layerHeight));
+          formData.append("nozzle_size", String(nozzleSize));
+          formData.append("infill", String(infill));
 
           if (parts && parts.length > 0) {
             const partsMeta = parts.map((p, idx) => ({
@@ -1663,11 +1732,25 @@ export default function KeychainGenerator() {
                   onClick={handleExportSTL}
                   disabled={isExporting}
                   className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-slate-900 text-white border border-slate-700 hover:bg-slate-800 shadow-sm transition cursor-pointer disabled:opacity-50"
+                  title="Pobierz model jako pojedynczy plik STL"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
                   {isExporting ? "..." : "STL"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExport3MF}
+                  disabled={isExporting3MF}
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 shadow-sm transition cursor-pointer disabled:opacity-50"
+                  title="Pobierz gotowy projekt wielokolorowy dla Bambu Studio (AMS)"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  {isExporting3MF ? "..." : ".3MF (Bambu)"}
                 </button>
               </div>
             </div>
@@ -1773,20 +1856,21 @@ export default function KeychainGenerator() {
                 />
               </div>
 
-              {/* Taby konfiguracji — teraz 4 zakładki */}
+              {/* Taby konfiguracji — 5 zakładek (w tym Druk 3D) */}
               <div>
-                <div className="grid grid-cols-4 gap-1.5 p-1 bg-slate-100 rounded-2xl">
+                <div className="grid grid-cols-5 gap-1 p-1 bg-slate-100 rounded-2xl">
                   {[
                     { id: "shape", label: "Kształt" },
-                    { id: "graphic", label: "Grafika AI" },
+                    { id: "graphic", label: "Grafika" },
                     { id: "text", label: "Tekst" },
-                    { id: "layers", label: "Kolory AMS" },
+                    { id: "layers", label: "AMS" },
+                    { id: "settings", label: "Druk 3D" },
                   ].map((tab) => (
                     <button
                       key={tab.id}
                       type="button"
                       onClick={() => setActiveTab(tab.id)}
-                      className={`py-2 text-[11px] font-bold rounded-xl transition ${activeTab === tab.id
+                      className={`py-2 text-[10px] md:text-[11px] font-bold rounded-xl transition ${activeTab === tab.id
                         ? "bg-white text-slate-900 shadow-sm"
                         : "text-slate-500 hover:text-slate-800"
                         }`}
@@ -2176,6 +2260,92 @@ export default function KeychainGenerator() {
                       />
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* TAB 5: PARAMETRY DRUKU 3D */}
+              {activeTab === "settings" && (
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-800">
+                      <span>Wysokość warstwy</span>
+                      <span className="text-[#EF4444] font-black">{layerHeight} mm</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[
+                        { val: "0.12", label: "0.12 mm", desc: "Detale" },
+                        { val: "0.16", label: "0.16 mm", desc: "Optymalna" },
+                        { val: "0.20", label: "0.20 mm", desc: "Standard" },
+                        { val: "0.28", label: "0.28 mm", desc: "Szybki" },
+                      ].map((item) => (
+                        <button
+                          key={item.val}
+                          type="button"
+                          onClick={() => setLayerHeight(item.val)}
+                          className={`py-2 px-1 rounded-xl text-center border text-[11px] font-bold transition ${layerHeight === item.val
+                            ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
+                            : "border-slate-200 text-slate-600 hover:border-slate-300"
+                            }`}
+                        >
+                          <div>{item.label}</div>
+                          <div className="text-[9px] text-slate-400 font-normal">{item.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-800">
+                      <span>Wypełnienie (Infill)</span>
+                      <span className="text-[#EF4444] font-black">{infill}%</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { val: 20, label: "20%", desc: "Lekkie" },
+                        { val: 40, label: "40%", desc: "Mocne" },
+                        { val: 100, label: "100%", desc: "Pełne (Solid)" },
+                      ].map((item) => (
+                        <button
+                          key={item.val}
+                          type="button"
+                          onClick={() => setInfill(item.val)}
+                          className={`py-2 px-1 rounded-xl text-center border text-[11px] font-bold transition ${infill === item.val
+                            ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
+                            : "border-slate-200 text-slate-600 hover:border-slate-300"
+                            }`}
+                        >
+                          <div>{item.label}</div>
+                          <div className="text-[9px] text-slate-400 font-normal">{item.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-800">
+                      <span>Średnica dyszy</span>
+                      <span className="text-[#EF4444] font-black">{nozzleSize} mm</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { val: "0.2", label: "Dysza 0.2 mm", desc: "Mikro detale" },
+                        { val: "0.4", label: "Dysza 0.4 mm", desc: "Standardowa" },
+                      ].map((item) => (
+                        <button
+                          key={item.val}
+                          type="button"
+                          onClick={() => setNozzleSize(item.val)}
+                          className={`py-2 px-1 rounded-xl text-center border text-[11px] font-bold transition ${nozzleSize === item.val
+                            ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
+                            : "border-slate-200 text-slate-600 hover:border-slate-300"
+                            }`}
+                        >
+                          <div>{item.label}</div>
+                          <div className="text-[9px] text-slate-400 font-normal">{item.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

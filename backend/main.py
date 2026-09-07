@@ -1019,6 +1019,90 @@ async def upload_order_geometry_endpoint(
     }
 
 
+@app.post("/api/breloki/generate-direct-3mf")
+async def generate_direct_3mf_endpoint(
+    file: UploadFile | None = File(None),
+    parts_files: list[UploadFile] | None = File(None),
+    parts_json: str | None = Form(None),
+    file_name: str | None = Form(None),
+    material: str = Form("PLA"),
+    color_hex: str = Form("#222222"),
+    layer_height: float = Form(0.20),
+    nozzle_size: float = Form(0.4),
+    infill: int = Form(100),
+):
+    """
+    Szybki generator .3MF bezpośrednio dla konfiguratora w przeglądarce.
+    Przyjmuje części STL, generuje plik projektu Bambu i od razu zwraca FileResponse.
+    """
+    temp_id = uuid.uuid4().hex[:8].upper()
+    safe_file_name = sanitize_filename(Path(file_name or "keychain").stem)
+    safe_mat = sanitize_filename(str(material).split()[0])
+    target_3mf_name = f"BRELOK_{safe_file_name}_{safe_mat}_{nozzle_size}mm.3mf"
+    local_3mf_path = os.path.join(PROJECTS_3MF_CACHE_DIR, f"DIRECT_{temp_id}_{target_3mf_name}")
+
+    parts_list = []
+    if parts_json and parts_files:
+        try:
+            parts_meta = json.loads(parts_json)
+        except Exception:
+            parts_meta = []
+
+        for idx, p_file in enumerate(parts_files):
+            try:
+                p_content = await p_file.read()
+                matched_meta = next((m for m in parts_meta if m.get("filename") == p_file.filename), None)
+                if not matched_meta and idx < len(parts_meta):
+                    matched_meta = parts_meta[idx]
+
+                p_name = matched_meta.get("name", f"Part_{idx+1}") if matched_meta else f"Part_{idx+1}"
+                p_color = matched_meta.get("color", color_hex) if matched_meta else color_hex
+                p_role = matched_meta.get("role", "") if matched_meta else ""
+                safe_pname = sanitize_filename(p_name)
+
+                target_part_name = f"TMP_{temp_id}_part_{idx}_{safe_pname}.stl"
+                local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
+                with open(local_part_path, "wb") as f_out:
+                    f_out.write(p_content)
+
+                parts_list.append({
+                    "name": p_name,
+                    "color_hex": p_color,
+                    "path": local_part_path,
+                    "role": p_role,
+                })
+            except Exception as part_err:
+                print(f"[WARN] Błąd zapisu części {p_file.filename}: {part_err}")
+
+    local_stl_path = None
+    if file:
+        content = await file.read()
+        target_stl_name = f"TMP_{temp_id}_{safe_file_name}.stl"
+        local_stl_path = os.path.join(MODELS_CACHE_DIR, target_stl_name)
+        with open(local_stl_path, "wb") as f_out:
+            f_out.write(content)
+
+    generate_production_3mf(
+        model_path=local_stl_path if local_stl_path and os.path.exists(local_stl_path) else None,
+        order_metadata={"order_id": temp_id, "file_name": file_name or target_3mf_name},
+        print_settings={
+            "layer_height": layer_height,
+            "nozzle_size": nozzle_size,
+            "infill": infill,
+            "material": material,
+            "color_hex": color_hex,
+        },
+        output_path=local_3mf_path,
+        parts=parts_list if parts_list else None,
+    )
+
+    return FileResponse(
+        local_3mf_path,
+        media_type="application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
+        filename=target_3mf_name,
+    )
+
+
 @app.get("/api/orders/{order_id}/download-3mf")
 def download_order_3mf(
     order_id: str,
