@@ -583,12 +583,15 @@ export default function Home() {
         onOpenCart={() => setIsCartOpen(true)}
       />
 
-      {/* GŁÓWNY UKŁAD STRONY: 2 KOLUMNY GÓRA + 1 KOLUMNA PEŁNA SZEROKOŚĆ DÓŁ */}
-      <main className="max-w-7xl w-full mx-auto px-4 md:px-6 py-8 space-y-8">
-        <div id="configurator" className="bg-white rounded-[32px] border border-slate-200/80 shadow-[0_25px_70px_rgba(0,0,0,0.06)] w-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-[640px] scroll-mt-24">
+      {/* GŁÓWNY UKŁAD STRONY: 1 KOLUMNA MOBILE / 12 KOLUMN DESKTOP + 1 KOLUMNA PEŁNA SZEROKOŚĆ DÓŁ */}
+      <main className="max-w-7xl mx-auto px-4 py-6 sm:py-10 space-y-8">
+        
+        {/* GÓRNY RZĄD: 1 KOLUMNA NA MOBILE / 12 KOLUMN NA DESKTOP (lg:) */}
+        <div id="configurator" className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start scroll-mt-24">
           
-          {/* LEWA STRONA: 3D STUDIO STAGE LUB KARTA DOKUMENTACJI RFQ */}
-          <div className="lg:col-span-7 bg-gradient-to-b from-[#F8FAFC] to-[#EDF2F7] relative flex flex-col justify-between p-6 md:p-8">
+          {/* LEWA STRONA: UPLOAD / PODGLĄD 3D */}
+          <div className="lg:col-span-7 xl:col-span-7 w-full space-y-4">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-4 sm:p-6 md:p-8 flex flex-col justify-between min-h-[520px] lg:min-h-[640px] bg-gradient-to-b from-[#F8FAFC] to-[#EDF2F7] relative">
             <div className="flex items-center justify-between z-10">
               <div>
                 <span className="text-[11px] font-bold uppercase tracking-widest text-[#EF4444] block">
@@ -804,7 +807,7 @@ export default function Home() {
             )}
 
             {/* Dolny pasek ceny lub statusu RFQ */}
-            <div className="flex items-end justify-between z-10 pt-3 border-t border-slate-200/70">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-end justify-between gap-3 z-10 pt-3 border-t border-slate-200/70">
               {analysisData && analysisData.instant_pricing === false ? (
                 <>
                   <div>
@@ -817,7 +820,7 @@ export default function Home() {
                       </span>
                     </div>
                   </div>
-                  <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3.5 py-1.5 rounded-full border border-emerald-200 shadow-xs">
+                  <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3.5 py-1.5 rounded-full border border-emerald-200 shadow-xs text-center">
                     Bezpłatna weryfikacja DFM (24h)
                   </span>
                 </>
@@ -862,8 +865,8 @@ export default function Home() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center bg-white border border-slate-200 rounded-full px-2 py-1 shadow-sm">
+                  <div className="flex items-center justify-between sm:justify-end gap-3 flex-wrap sm:flex-nowrap">
+                    <div className="flex items-center bg-white border border-slate-200 rounded-full px-2 py-1 shadow-sm shrink-0">
                       <button
                         onClick={() => setQuantity(Math.max(1, quantity - 1))}
                         disabled={!hasModel}
@@ -886,10 +889,10 @@ export default function Home() {
                     <button
                       disabled={!hasModel || addingToCart || isAnalyzing}
                       onClick={handleAddToCart}
-                      className={`px-6 py-3.5 rounded-full font-bold text-xs uppercase tracking-wider transition ${
+                      className={`px-5 sm:px-6 py-3.5 rounded-full font-bold text-xs uppercase tracking-wider transition text-center shrink-0 ${
                         !hasModel || addingToCart || isAnalyzing
                           ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
-                          : "bg-[#EF4444] hover:bg-[#DC2626] text-white shadow-lg shadow-red-500/25 cursor-pointer"
+                          : "bg-[#EF4444] hover:bg-[#DC2626] text-white shadow-lg shadow-red-500/25 cursor-pointer active:scale-98"
                       }`}
                     >
                       {addingToCart ? "Zapisuję..." : isAnalyzing ? "Analizuję..." : !hasModel ? "Wgraj model 3D" : "Dodaj do koszyka +"}
@@ -899,9 +902,10 @@ export default function Home() {
               )}
             </div>
           </div>
+        </div>
 
-          {/* PRAWA STRONA: MODUŁ PARAMETRÓW LUB FORMULARZ RFQ */}
-          <div className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-white border-l border-slate-100">
+        {/* PRAWA STRONA: KONFIGURATOR */}
+        <div className="lg:col-span-5 xl:col-span-5 w-full space-y-6 bg-white p-4 sm:p-6 rounded-3xl border border-slate-200 shadow-sm">
             <div className="space-y-6">
               <input
                 ref={fileInputRef}
@@ -1365,6 +1369,62 @@ export default function Home() {
                   : "Dokładność: ±0.1 mm"}
               </span>
             </div>
+
+            {/* Koszyk w Konfiguratorze (podsumowanie i przycisk zakupu) */}
+            {(!analysisData || analysisData.instant_pricing !== false) && (
+              <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">
+                    Łącznie brutto
+                  </span>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-black text-slate-900 tracking-tight">
+                      {hasModel ? totalPrice : "--"}
+                    </span>
+                    <span className="text-xs font-bold text-slate-500">PLN</span>
+                    {hasModel && quantity > 1 && (
+                      <span className="text-[11px] font-semibold text-slate-400">
+                        ({unitPrice} zł/szt.)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center bg-slate-50 border border-slate-200 rounded-full px-2 py-1 shadow-sm shrink-0">
+                    <button
+                      onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                      disabled={!hasModel}
+                      className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-200 rounded-full transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      -
+                    </button>
+                    <span className="w-8 text-center font-bold text-sm text-slate-800">
+                      {quantity}
+                    </span>
+                    <button
+                      onClick={() => setQuantity(quantity + 1)}
+                      disabled={!hasModel}
+                      className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-200 rounded-full transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <button
+                    disabled={!hasModel || addingToCart || isAnalyzing}
+                    onClick={handleAddToCart}
+                    className={`flex-1 sm:flex-none px-6 py-3.5 rounded-full font-bold text-xs uppercase tracking-wider transition text-center shrink-0 ${
+                      !hasModel || addingToCart || isAnalyzing
+                        ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+                        : "bg-[#EF4444] hover:bg-[#DC2626] text-white shadow-lg shadow-red-500/25 cursor-pointer active:scale-98"
+                    }`}
+                  >
+                    {addingToCart ? "Zapisuję..." : isAnalyzing ? "Analizuję..." : !hasModel ? "Wgraj model" : "Dodaj do koszyka +"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1535,8 +1595,10 @@ export default function Home() {
           </div>
         </div>
 
-        {/* KOMPLEKSOWY KATALOG MATERIAŁÓW INŻYNIERYJNYCH FDM */}
-        <MaterialCatalog onSelectMaterial={handleSelectMaterial} />
+        {/* DOLNA SEKCJA: KATALOG MATERIAŁÓW (Pełna szerokość) */}
+        <div className="w-full">
+          <MaterialCatalog onSelectMaterial={handleSelectMaterial} />
+        </div>
 
       </main>
 

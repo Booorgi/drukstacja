@@ -66,28 +66,28 @@ export default function Navbar({
   const isKontaktActive = activePage === "kontakt" || router.pathname.startsWith("/kontakt");
 
   return (
-    <header className="sticky top-0 z-40 w-full backdrop-blur-md bg-white/90 border-b border-slate-200/80 shadow-xs transition-all">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-18 flex items-center justify-between gap-4">
+    <header className="w-full bg-white border-b border-slate-200 sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto px-4 h-16 sm:h-20 flex items-center justify-between gap-2 sm:gap-4">
         
         {/* LEWA STRONA: LOGO & GŁÓWNA NAWIGACJA PILLS */}
-        <div className="flex items-center gap-6 lg:gap-8">
+        <div className="flex items-center gap-3 sm:gap-6 lg:gap-8 shrink-0 min-w-0">
           {/* LOGO */}
-          <Link href="/" className="flex items-center gap-3 group flex-shrink-0">
+          <Link href="/" className="flex items-center gap-3 group shrink-0">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#EF4444] to-[#DC2626] flex items-center justify-center shadow-md shadow-red-500/25 group-hover:scale-105 transition-transform">
               <span className="font-extrabold text-xl text-white tracking-wider">D</span>
             </div>
             <div className="flex flex-col">
-              <span className="text-xl font-black tracking-tight text-slate-900 leading-none">
+              <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900 leading-none">
                 DRUK<span className="text-[#EF4444]">STACJA</span>
               </span>
-              <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mt-0.5">
+              <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mt-0.5 hidden sm:block">
                 Additive Manufacturing
               </span>
             </div>
           </Link>
 
           {/* DESKTOP PILLS NAVIGATION */}
-          <nav className="hidden md:flex items-center gap-1.5 bg-slate-100/70 p-1.5 rounded-full border border-slate-200/60 shadow-inner">
+          <nav className="hidden lg:flex items-center gap-2 bg-slate-100/70 p-1.5 rounded-full border border-slate-200/60 shadow-inner">
             {/* 1. Wycena druku 3D */}
             <Link
               href="/"
@@ -248,7 +248,7 @@ export default function Navbar({
         </div>
 
         {/* PRAWA STRONA: KOSZYK & PROFIL UŻYTKOWNIKA */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 shrink-0">
           {/* PRZYCISK KOSZYKA */}
           <button
             type="button"
@@ -272,10 +272,10 @@ export default function Navbar({
               <button
                 type="button"
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm text-xs font-bold text-slate-800 hover:border-slate-400 transition cursor-pointer"
+                className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3.5 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm text-xs font-bold text-slate-800 hover:border-slate-400 transition cursor-pointer"
               >
-                <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-100" />
-                <span className="truncate max-w-[120px]">{user.email.split("@")[0]}</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-100 shrink-0" />
+                <span className="truncate max-w-[120px] hidden sm:inline">{user.email.split("@")[0]}</span>
                 <svg
                   className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
                     isUserMenuOpen ? "rotate-180 text-slate-700" : ""
@@ -330,7 +330,7 @@ export default function Navbar({
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+            className="lg:hidden p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
             aria-label="Menu mobilne"
           >
             {isMobileMenuOpen ? (
@@ -348,7 +348,7 @@ export default function Navbar({
 
       {/* MOBILE DRAWER / MENU */}
       {isMobileMenuOpen && (
-        <div className="md:hidden border-t border-slate-200 bg-white px-4 py-4 space-y-3 animate-in slide-in-from-top duration-200 shadow-xl">
+        <div className="lg:hidden border-t border-slate-200 bg-white px-4 py-4 space-y-3 animate-in slide-in-from-top duration-200 shadow-xl">
           <div className="space-y-1">
             <Link
               href="/"
