@@ -241,20 +241,22 @@ def generate_production_3mf(
 
     # Złożenie nadrzędne (id=1)
     assembly_name = xml_escape(f"{clean_title}_Assembly")
+    components_joined = "\n".join(components_xml)
     assembly_obj_str = (
         f'    <object id="1" type="model" name="{assembly_name}">\n'
         f'      <components>\n'
-        f'{"\n".join(components_xml)}\n'
+        f'{components_joined}\n'
         f'      </components>\n'
         f'    </object>'
     )
     sub_objects_xml.append(assembly_obj_str)
 
+    sub_objects_joined = "\n".join(sub_objects_xml)
     object_1_model_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n'
         '  <resources>\n'
-        f'{"\n".join(sub_objects_xml)}\n'
+        f'{sub_objects_joined}\n'
         '  </resources>\n'
         '  <build>\n'
         '    <item objectid="1"/>\n'
@@ -285,11 +287,12 @@ def generate_production_3mf(
     # ──────────────────────────────────────────────────────────────
     # 5. Metadata/model_settings.config (mapowanie ekstruderów AMS)
     # ──────────────────────────────────────────────────────────────
+    model_settings_parts_joined = "\n".join(model_settings_parts_xml)
     model_settings_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<config>\n'
         '  <object id="1">\n'
-        f'{"\n".join(model_settings_parts_xml)}\n'
+        f'{model_settings_parts_joined}\n'
         '  </object>\n'
         '</config>'
     )
