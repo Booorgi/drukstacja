@@ -60,7 +60,7 @@ def _color_name_from_hex(hex_str: str) -> str:
     return mapping.get("#" + clean, "Kolor_" + clean[:6])
 
 
-def _mesh_to_xml(mesh, indent="     "):
+def _mesh_to_xml(mesh, pindex=None, indent="     "):
     """Konwertuje trimesh.Trimesh do stringów XML vertices i triangles."""
     vert_lines = []
     for v in mesh.vertices:
@@ -69,9 +69,14 @@ def _mesh_to_xml(mesh, indent="     "):
         )
     tri_lines = []
     for f in mesh.faces:
-        tri_lines.append(
-            '%s<triangle v1="%d" v2="%d" v3="%d"/>' % (indent, f[0], f[1], f[2])
-        )
+        if pindex is not None:
+            tri_lines.append(
+                '%s<triangle v1="%d" v2="%d" v3="%d" pid="1" p1="%d"/>' % (indent, f[0], f[1], f[2], pindex)
+            )
+        else:
+            tri_lines.append(
+                '%s<triangle v1="%d" v2="%d" v3="%d"/>' % (indent, f[0], f[1], f[2])
+            )
     return "\n".join(vert_lines), "\n".join(tri_lines)
 
 
@@ -179,11 +184,15 @@ def generate_production_3mf(
                 color_to_slot[c_3mf] = len(unique_colors) + 1  # 1-based extruder
                 unique_colors.append(c_3mf)
 
+        # ID obiektu złożenia (Assembly) — w standardzie Bambu/MakerWorld to np. 10
+        # Musi być unikalne i większe od ID wszystkich części składowych, aby nie kolidować z colorgroup (id=1)
+        assembly_id = 10 if len(valid_parts) < 8 else (len(valid_parts) + 5)
+
         # ---- Osobne <object> dla każdej części (id zaczyna od 2) ----
         objects_xml_list = []
         component_tags = []
         model_settings_parts = []   # <part> entries for model_settings.config
-        palette_entries = []        # dla project_settings palette
+        model_settings_objects = []
 
         for idx, p in enumerate(valid_parts):
             part_id = 2 + idx
@@ -193,7 +202,7 @@ def generate_production_3mf(
             safe_part_name = sanitize_filename(p["name"])
 
             m = p["mesh"]
-            v_xml, t_xml = _mesh_to_xml(m)
+            v_xml, t_xml = _mesh_to_xml(m, pindex=color_pindex)
 
             part_obj_xml = (
                 '  <object id="%d" type="model" name="%s" pid="1" pindex="%d">\n'
@@ -215,9 +224,14 @@ def generate_production_3mf(
                 '      <metadata key="extruder" value="%d"/>\n'
                 '    </part>' % (part_id, safe_part_name, extruder_id)
             )
+            model_settings_objects.append(
+                '  <object id="%d">\n'
+                '    <metadata key="name" value="%s"/>\n'
+                '    <metadata key="extruder" value="%d"/>\n'
+                '  </object>' % (part_id, safe_part_name, extruder_id)
+            )
 
-        # ---- Assembly object (id=1) z <components> ----
-        assembly_id = 1
+        # ---- Assembly object w <resources> z <components> ----
         components_joined = "\n".join(component_tags)
         assembly_obj_xml = (
             '  <object id="%d" type="model" name="%s">\n'
@@ -227,51 +241,46 @@ def generate_production_3mf(
             '  </object>'
         ) % (assembly_id, clean_title, components_joined)
 
-        # Assembly jako pierwszy w kolejności, potem części
-        all_objects_xml = assembly_obj_xml + "\n" + "\n".join(objects_xml_list)
+        # W 3MF obiekty składowe deklarowane są najpierw, potem obiekt nadrzędny
+        all_objects_xml = "\n".join(objects_xml_list) + "\n" + assembly_obj_xml
         build_item_id = assembly_id
 
         # ---- model_settings.config (Bambu Studio / OrcaSlicer) ----
-        # Każda część ma wpis <object> z extruder i name
-        model_settings_objects = []
         parts_settings_joined = "\n".join(model_settings_parts)
-        # Assembly object — bez extruder, tylko name + wpisy <part>
-        model_settings_objects.append(
+        model_settings_all = [
             '  <object id="%d">\n'
             '    <metadata key="name" value="%s"/>\n'
             '%s\n'
             '  </object>' % (assembly_id, clean_title, parts_settings_joined)
-        )
-        # Każdy sub-object — z przypisanym extruderem
-        for idx, p in enumerate(valid_parts):
-            sub_id = 2 + idx
-            c_3mf = format_hex_color(p["color_hex"])
-            ext_id = color_to_slot[c_3mf]
-            safe_pn = sanitize_filename(p["name"])
-            model_settings_objects.append(
-                '  <object id="%d">\n'
-                '    <metadata key="name" value="%s"/>\n'
-                '    <metadata key="extruder" value="%d"/>\n'
-                '  </object>' % (sub_id, safe_pn, ext_id)
-            )
+        ] + model_settings_objects
 
         model_settings_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<config>\n'
             '%s\n'
             '</config>'
-        ) % ("\n".join(model_settings_objects))
+        ) % ("\n".join(model_settings_all))
 
-        # ---- Paleta filamentów dla project_settings ----
-        for c_3mf in unique_colors:
+        # ---- Paleta filamentów dla project_settings.config (natywny JSON Bambu Lab) ----
+        filaments_json_list = []
+        for idx, c_3mf in enumerate(unique_colors):
             c_short = c_3mf[:7]  # #RRGGBB
-            palette_entries.append({
+            matching_part = next((p for p in valid_parts if format_hex_color(p["color_hex"]) == c_3mf), None)
+            part_label = matching_part["name"] if matching_part else _color_name_from_hex(c_short)
+            filaments_json_list.append({
                 "color": c_short,
                 "type": material,
-                "name": _color_name_from_hex(c_short),
+                "name": part_label,
             })
 
-        # ---- Colorgroup XML (standard 3MF spec, opcjonalny backup) ----
+        project_settings_data = {
+            "version": "1.0",
+            "project_type": "bambu_project",
+            "filaments": filaments_json_list,
+        }
+        project_settings_content = json.dumps(project_settings_data, indent=2)
+
+        # ---- Colorgroup XML (standard 3MF spec) ----
         color_entries = ['   <m:color color="%s"/>' % c for c in unique_colors]
         colorgroup_xml = "\n".join(color_entries)
 
@@ -317,7 +326,7 @@ def generate_production_3mf(
         unique_colors = [color_3mf]
         colorgroup_xml = '   <m:color color="%s"/>' % color_3mf
 
-        v_xml, t_xml = _mesh_to_xml(mesh)
+        v_xml, t_xml = _mesh_to_xml(mesh, pindex=0)
 
         all_objects_xml = (
             '  <object id="2" type="model" name="%s" pid="1" pindex="0">\n'
@@ -345,11 +354,18 @@ def generate_production_3mf(
             '</config>'
         ) % (clean_title, clean_title)
 
-        palette_entries = [{
-            "color": color_3mf[:7],
-            "type": material,
-            "name": _color_name_from_hex(color_3mf[:7]),
-        }]
+        project_settings_data = {
+            "version": "1.0",
+            "project_type": "bambu_project",
+            "filaments": [
+                {
+                    "color": color_3mf[:7],
+                    "type": material,
+                    "name": clean_title,
+                }
+            ],
+        }
+        project_settings_content = json.dumps(project_settings_data, indent=2)
 
     # ──────────────────────────────────────────────────────────────
     # 3. Główny plik modelu 3D/3dmodel.model
@@ -446,43 +462,7 @@ def generate_production_3mf(
     )
 
     # ──────────────────────────────────────────────────────────────
-    # 6. Konfiguracja Bambu Studio / OrcaSlicer (Metadata/project_settings.config)
-    #    Format XML kompatybilny z parserem Bambu Studio / OrcaSlicer
-    #    WAŻNE: Bambu Studio oczekuje formatu XML z metadanymi jako <plate>
-    #    z wartościami semicolon-separated, NIE JSON!
-    # ──────────────────────────────────────────────────────────────
-    filament_colours_str = ";".join([c[:7] for c in unique_colors])
-    filament_types_str = ";".join([material for _ in unique_colors])
-    filament_settings_ids_str = ";".join(
-        ["Generic %s @BBL X1C" % material for _ in unique_colors]
-    )
-    filament_vendors_str = ";".join(["Generic" for _ in unique_colors])
-
-    project_settings_xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<config>\n'
-        '  <plate>\n'
-        '    <metadata key="filament_colour" value="%s"/>\n'
-        '    <metadata key="filament_type" value="%s"/>\n'
-        '    <metadata key="filament_settings_id" value="%s"/>\n'
-        '    <metadata key="filament_vendor" value="%s"/>\n'
-        '    <metadata key="nozzle_diameter" value="%s"/>\n'
-        '    <metadata key="layer_height" value="%s"/>\n'
-        '    <metadata key="fill_density" value="%s%%"/>\n'
-        '  </plate>\n'
-        '</config>'
-    ) % (
-        filament_colours_str,
-        filament_types_str,
-        filament_settings_ids_str,
-        filament_vendors_str,
-        nozzle_size,
-        layer_height,
-        infill,
-    )
-
-    # ──────────────────────────────────────────────────────────────
-    # 7. Slicer manifest (Metadata/slice_info.config) — kluczowy dla AMS
+    # 6. Slicer manifest (Metadata/slice_info.config) — sygnatura Bambu Lab i AMS
     # ──────────────────────────────────────────────────────────────
     filaments_slice_xml = []
     for idx, c in enumerate(unique_colors):
@@ -495,8 +475,9 @@ def generate_production_3mf(
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<config>\n'
         '  <header>\n'
+        '    <tool name="BambuStudio" version="01.09.00.00"/>\n'
         '    <header_item key="X-BBL-Client-Type" value="slicer"/>\n'
-        '    <header_item key="X-BBL-Client-Version" value="01.10.00.89"/>\n'
+        '    <header_item key="X-BBL-Client-Version" value="01.09.00.00"/>\n'
         '  </header>\n'
         '  <plate>\n'
         '    <metadata key="index" value="1"/>\n'
@@ -514,7 +495,7 @@ def generate_production_3mf(
     ) % (nozzle_size, "\n".join(filaments_slice_xml))
 
     # ──────────────────────────────────────────────────────────────
-    # 8. Plate settings (Metadata/plate_1.config) — Bambu Studio plate definition
+    # 7. Plate settings (Metadata/plate_1.config) — Bambu Studio plate definition
     # ──────────────────────────────────────────────────────────────
     plate_config_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -529,7 +510,7 @@ def generate_production_3mf(
     ) % build_item_id
 
     # ──────────────────────────────────────────────────────────────
-    # 9. Określenie docelowej ścieżki pliku wyjściowego
+    # 8. Określenie docelowej ścieżki pliku wyjściowego
     # ──────────────────────────────────────────────────────────────
     if not output_path:
         if model_path:
@@ -544,14 +525,14 @@ def generate_production_3mf(
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
     # ──────────────────────────────────────────────────────────────
-    # 10. Spakowanie do archiwum ZIP ze standardem .3MF
+    # 9. Spakowanie do archiwum ZIP ze standardem .3MF
     # ──────────────────────────────────────────────────────────────
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", content_types_xml)
         zf.writestr("_rels/.rels", rels_xml)
         zf.writestr("3D/3dmodel.model", model_xml)
         zf.writestr("Metadata/SlicingConfig.ini", slicing_ini)
-        zf.writestr("Metadata/project_settings.config", project_settings_xml)
+        zf.writestr("Metadata/project_settings.config", project_settings_content)
         zf.writestr("Metadata/model_settings.config", model_settings_xml)
         zf.writestr("Metadata/slice_info.config", slice_info_xml)
         zf.writestr("Metadata/plate_1.config", plate_config_xml)
