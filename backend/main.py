@@ -811,6 +811,17 @@ def generate_3mf_endpoint(req: Generate3MFRequest):
     target_3mf_name = f"ORDER_{order_id}_{safe_name}_{safe_mat}_{clean_nozzle_size}mm.3mf"
     local_3mf_path = os.path.join(PROJECTS_3MF_CACHE_DIR, target_3mf_name)
 
+    # Sprawdzenie czy dla tego zamówienia istnieją zapisane części wielomateriałowe AMS
+    clean_prefix = order_id[:8]
+    cached_parts = None
+    parts_meta_file = os.path.join(MODELS_CACHE_DIR, f"ORDER_{clean_prefix}_parts.json")
+    if os.path.exists(parts_meta_file):
+        try:
+            with open(parts_meta_file, "r", encoding="utf-8") as f_meta:
+                cached_parts = json.load(f_meta)
+        except Exception as meta_err:
+            print(f"[WARN] Błąd odczytu {parts_meta_file}: {meta_err}")
+
     # Generowanie .3MF
     generate_production_3mf(
         model_path=local_model,
@@ -822,6 +833,7 @@ def generate_3mf_endpoint(req: Generate3MFRequest):
             "material": req.material,
             "color_hex": req.color_hex,
         },
+        parts=cached_parts,
         output_path=local_3mf_path,
     )
 
