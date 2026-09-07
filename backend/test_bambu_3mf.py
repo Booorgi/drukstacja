@@ -18,6 +18,8 @@ import os
 import sys
 import json
 import zipfile
+import tempfile
+import uuid
 import trimesh
 
 backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -336,6 +338,50 @@ def test_bambu_real_scenario():
     print("test_bambu_real_scenario: PASSED [OK]")
 
 
+def test_polymer_mapping_and_safe_infill():
+    """
+    Testuje przypadki brzegowe z rzeczywistego użycia:
+    1. Nazwa materiału "Kobaltowy Błękit" musi zostać bezpiecznie zmapowana do polimeru "PLA"
+       oraz profilu "Generic PLA @BBL A1", aby Bambu Studio nie zgłaszało błędu obcego profilu.
+    2. Wypełnienie 100% musi zostać ograniczone do bezpiecznych 99% w sparse_infill_density,
+       aby Bambu Studio nie wyrzucało czerwonego błędu cubic infill.
+    """
+    print("\n--- Running test_polymer_mapping_and_safe_infill ---")
+    out_path = os.path.join(tempfile.gettempdir(), f"test_polymer_{uuid.uuid4().hex[:6]}.3mf")
+    parts = [
+        {"name": "Baza", "color_hex": "#0063A0", "mesh": trimesh.creation.box((40, 40, 2))},
+        {"name": "Rant", "color_hex": "#FFFFFF", "mesh": trimesh.creation.box((42, 42, 1))},
+    ]
+
+    saved = generate_production_3mf(
+        output_path=out_path,
+        parts=parts,
+        print_settings={
+            "material": "Kobaltowy Błękit",
+            "infill": 100,
+            "layer_height": 0.20,
+            "nozzle_size": 0.4,
+        }
+    )
+    assert os.path.exists(saved)
+
+    with zipfile.ZipFile(saved, "r") as zf:
+        ps = json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
+        # 1. Sprawdź, czy filament_type to PLA (a NIE KOBALTOWY)
+        assert all(t == "PLA" for t in ps["filament_type"]), f"Błędny typ filamentu: {ps['filament_type']}"
+        assert all("Generic PLA @BBL A1" in sid for sid in ps["filament_settings_id"]), f"Błędny preset: {ps['filament_settings_id']}"
+
+        # 2. Sprawdź, czy sparse_infill_density to 99% (bezpieczna gęstość)
+        assert ps["sparse_infill_density"] == "99%", f"Gęstość infill nie została bezpiecznie ograniczona: {ps['sparse_infill_density']}"
+
+        # 3. Sprawdź model_settings.config
+        ms_xml = zf.read("Metadata/model_settings.config").decode("utf-8")
+        assert 'value="Baza"' in ms_xml
+        assert 'value="Rant"' in ms_xml
+
+    print("test_polymer_mapping_and_safe_infill: PASSED [OK]")
+
+
 if __name__ == "__main__":
     print("Starting Comprehensive Bambu Studio 3MF Compatibility Suite...")
     test_parts_are_distinct()
@@ -347,6 +393,8 @@ if __name__ == "__main__":
     test_bambu_metadata()
     test_relationships()
     test_bambu_real_scenario()
+    test_polymer_mapping_and_safe_infill()
     print("\n=======================================================")
-    print("ALL 9 COMPREHENSIVE BAMBU COMPATIBILITY TESTS PASSED! [OK]")
+    print("ALL 10 COMPREHENSIVE BAMBU COMPATIBILITY TESTS PASSED! [OK]")
     print("=======================================================")
+

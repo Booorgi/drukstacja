@@ -9,10 +9,11 @@ import shutil
 import tempfile
 import uuid
 import traceback
+import base64
 from pathlib import Path
 
 from typing import Any
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -885,10 +886,9 @@ def download_3mf_file(filename: str):
 
 @app.post("/api/orders/upload-geometry")
 async def upload_order_geometry_endpoint(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile | None = File(None),
-    parts_files: list[UploadFile] | None = File(None),
-    parts_json: str | None = Form(None),
     order_id: str = Form(...),
     file_name: str | None = Form(None),
     material: str = Form("PLA"),
@@ -925,40 +925,59 @@ async def upload_order_geometry_endpoint(
 
         background_tasks.add_task(_bg_upload_stl, local_stl_path, r2_model_key)
 
-    # 2. Obsługa wieloczęściowych siatek AMS (parts_files + parts_json)
+    # 2. Obsługa wieloczęściowych siatek AMS (parts_files + parts_json + stl_base64)
+    form = await request.form()
+    parts_json_raw = form.get("parts_json")
+    parts_files_list = form.getlist("parts_files")
+
     parts_list = []
-    if parts_json and parts_files:
+    if parts_json_raw:
         try:
-            parts_meta = json.loads(parts_json)
+            parts_meta = json.loads(parts_json_raw)
         except Exception as json_err:
             print(f"[WARN] Błąd dekodowania parts_json: {json_err}")
             parts_meta = []
 
-        for idx, p_file in enumerate(parts_files):
-            try:
-                p_content = await p_file.read()
-                matched_meta = next((m for m in parts_meta if m.get("filename") == p_file.filename), None)
-                if not matched_meta and idx < len(parts_meta):
-                    matched_meta = parts_meta[idx]
+        file_map = {}
+        for pf in parts_files_list:
+            if hasattr(pf, "filename") and pf.filename:
+                file_map[pf.filename] = pf
 
-                p_name = matched_meta.get("name", f"Part_{idx+1}") if matched_meta else f"Part_{idx+1}"
-                p_color = matched_meta.get("color", color_hex) if matched_meta else color_hex
-                p_role = matched_meta.get("role", "") if matched_meta else ""
-                safe_pname = sanitize_filename(p_name)
+        for idx, p_meta in enumerate(parts_meta):
+            p_name = p_meta.get("name", f"Part_{idx+1}")
+            p_color = p_meta.get("color", color_hex)
+            p_role = p_meta.get("role", "")
+            safe_pname = sanitize_filename(p_name)
+            target_part_name = f"ORDER_{clean_prefix}_part_{idx}_{safe_pname}.stl"
+            local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
 
-                target_part_name = f"ORDER_{clean_prefix}_part_{idx}_{safe_pname}.stl"
-                local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
+            p_bytes = None
+            if p_meta.get("stl_base64"):
+                try:
+                    p_bytes = base64.b64decode(p_meta["stl_base64"])
+                except Exception as b64_err:
+                    print(f"[WARN] Błąd dekodowania base64 dla {p_name}: {b64_err}")
+
+            if not p_bytes:
+                fname = p_meta.get("filename")
+                pf = file_map.get(fname)
+                if not pf and idx < len(parts_files_list):
+                    pf = parts_files_list[idx]
+                if pf and hasattr(pf, "read"):
+                    try:
+                        p_bytes = await pf.read()
+                    except Exception as rf_err:
+                        print(f"[WARN] Błąd odczytu pliku {fname}: {rf_err}")
+
+            if p_bytes and len(p_bytes) > 0:
                 with open(local_part_path, "wb") as f_out:
-                    f_out.write(p_content)
-
+                    f_out.write(p_bytes)
                 parts_list.append({
                     "name": p_name,
                     "color_hex": p_color,
                     "path": local_part_path,
                     "role": p_role,
                 })
-            except Exception as part_err:
-                print(f"[WARN] Błąd zapisu części {p_file.filename}: {part_err}")
 
         # Zapis metadanych części do cache JSON na potrzeby późniejszego pobierania
         if parts_list:
@@ -1021,9 +1040,8 @@ async def upload_order_geometry_endpoint(
 
 @app.post("/api/breloki/generate-direct-3mf")
 async def generate_direct_3mf_endpoint(
+    request: Request,
     file: UploadFile | None = File(None),
-    parts_files: list[UploadFile] | None = File(None),
-    parts_json: str | None = Form(None),
     file_name: str | None = Form(None),
     material: str = Form("PLA"),
     color_hex: str = Form("#222222"),
@@ -1041,38 +1059,60 @@ async def generate_direct_3mf_endpoint(
     target_3mf_name = f"BRELOK_{safe_file_name}_{safe_mat}_{nozzle_size}mm.3mf"
     local_3mf_path = os.path.join(PROJECTS_3MF_CACHE_DIR, f"DIRECT_{temp_id}_{target_3mf_name}")
 
+    form = await request.form()
+    parts_json_raw = form.get("parts_json")
+    parts_files_list = form.getlist("parts_files")
+
     parts_list = []
-    if parts_json and parts_files:
+    if parts_json_raw:
         try:
-            parts_meta = json.loads(parts_json)
-        except Exception:
+            parts_meta = json.loads(parts_json_raw)
+        except Exception as json_err:
+            print(f"[WARN] Błąd dekodowania parts_json: {json_err}")
             parts_meta = []
 
-        for idx, p_file in enumerate(parts_files):
-            try:
-                p_content = await p_file.read()
-                matched_meta = next((m for m in parts_meta if m.get("filename") == p_file.filename), None)
-                if not matched_meta and idx < len(parts_meta):
-                    matched_meta = parts_meta[idx]
+        file_map = {}
+        for pf in parts_files_list:
+            if hasattr(pf, "filename") and pf.filename:
+                file_map[pf.filename] = pf
 
-                p_name = matched_meta.get("name", f"Part_{idx+1}") if matched_meta else f"Part_{idx+1}"
-                p_color = matched_meta.get("color", color_hex) if matched_meta else color_hex
-                p_role = matched_meta.get("role", "") if matched_meta else ""
-                safe_pname = sanitize_filename(p_name)
+        for idx, p_meta in enumerate(parts_meta):
+            p_name = p_meta.get("name", f"Part_{idx+1}")
+            p_color = p_meta.get("color", color_hex)
+            p_role = p_meta.get("role", "")
+            safe_pname = sanitize_filename(p_name)
+            target_part_name = f"TMP_{temp_id}_part_{idx}_{safe_pname}.stl"
+            local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
 
-                target_part_name = f"TMP_{temp_id}_part_{idx}_{safe_pname}.stl"
-                local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
+            p_bytes = None
+            # 1. Priorytet: stl_base64 osadzony w parts_json
+            if p_meta.get("stl_base64"):
+                try:
+                    p_bytes = base64.b64decode(p_meta["stl_base64"])
+                except Exception as b64_err:
+                    print(f"[WARN] Błąd dekodowania base64 dla {p_name}: {b64_err}")
+
+            # 2. Alternatywa: plik binarny w parts_files
+            if not p_bytes:
+                fname = p_meta.get("filename")
+                pf = file_map.get(fname)
+                if not pf and idx < len(parts_files_list):
+                    pf = parts_files_list[idx]
+                if pf and hasattr(pf, "read"):
+                    try:
+                        p_bytes = await pf.read()
+                    except Exception as rf_err:
+                        print(f"[WARN] Błąd odczytu pliku {fname}: {rf_err}")
+
+            if p_bytes and len(p_bytes) > 0:
                 with open(local_part_path, "wb") as f_out:
-                    f_out.write(p_content)
-
+                    f_out.write(p_bytes)
                 parts_list.append({
                     "name": p_name,
                     "color_hex": p_color,
                     "path": local_part_path,
                     "role": p_role,
                 })
-            except Exception as part_err:
-                print(f"[WARN] Błąd zapisu części {p_file.filename}: {part_err}")
 
     local_stl_path = None
     if file:

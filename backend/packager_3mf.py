@@ -176,9 +176,25 @@ def generate_production_3mf(
     nozzle_size = _parse_float(print_settings.get("nozzle_size"), 0.40)
     infill_val = _parse_float(print_settings.get("infill"), 40.0)
     infill = int(infill_val)
+    safe_infill = min(max(infill, 5), 99)
 
     material = str(print_settings.get("material") or "PLA")
-    clean_mat = material.split()[0].upper() if material else "PLA"
+    mat_upper = material.upper()
+    if any(k in mat_upper for k in ["PETG", "PET-G", "PET"]):
+        clean_mat = "PETG"
+    elif "ABS" in mat_upper:
+        clean_mat = "ABS"
+    elif "ASA" in mat_upper:
+        clean_mat = "ASA"
+    elif any(k in mat_upper for k in ["TPU", "FLEX"]):
+        clean_mat = "TPU"
+    elif "PC" in mat_upper:
+        clean_mat = "PC"
+    elif any(k in mat_upper for k in ["CARBON", "CF"]):
+        clean_mat = "PLA-CF"
+    else:
+        clean_mat = "PLA"
+
     color_hex = str(print_settings.get("color_hex") or "#222222")
     clean_title = sanitize_filename(Path(file_name).stem) or "Keychain"
 
@@ -199,6 +215,18 @@ def generate_production_3mf(
                     p_mesh = trimesh.load(p_path, force="mesh")
                 except Exception as load_err:
                     print(f"[WARN] Nie udało się wczytać siatki części {p_name} z {p_path}: {load_err}")
+
+            if p_mesh is not None:
+                if isinstance(p_mesh, trimesh.Scene):
+                    try:
+                        p_mesh = p_mesh.to_geometry() if hasattr(p_mesh, "to_geometry") else p_mesh.dump(concatenate=True)
+                    except Exception:
+                        pass
+                elif isinstance(p_mesh, list) and len(p_mesh) > 0:
+                    try:
+                        p_mesh = trimesh.util.concatenate(p_mesh)
+                    except Exception:
+                        pass
 
             if p_mesh is not None and hasattr(p_mesh, "vertices") and len(p_mesh.vertices) > 0:
                 try:
@@ -391,7 +419,7 @@ def generate_production_3mf(
         "nozzle_diameter": [f"{nozzle_size:.1f}"] * num_filaments,
         "layer_height": f"{layer_height:.2f}",
         "initial_layer_print_height": "0.20",
-        "sparse_infill_density": f"{infill}%",
+        "sparse_infill_density": f"{safe_infill}%",
         "printer_model": "Bambu Lab A1",
         "printer_settings_id": printer_machine,
         "print_settings_id": print_preset,
@@ -491,7 +519,7 @@ def generate_production_3mf(
         "; Kompatybilne z Bambu Studio, OrcaSlicer, PrusaSlicer, SuperSlicer\n"
         f"layer_height = {layer_height}\n"
         f"first_layer_height = {first_layer_h}\n"
-        f"fill_density = {infill}%\n"
+        f"fill_density = {safe_infill}%\n"
         "fill_pattern = gyroid\n"
         f"nozzle_diameter = {nozzle_size}\n"
         f"filament_type = {filament_types_str}\n"

@@ -870,15 +870,50 @@ const KeychainViewer3D = dynamic(
                         }
                       });
                       if (hasGeometry) {
-                        const stlBinary = exporter.parse(node, { binary: true });
-                        const uint8 = new Uint8Array(stlBinary);
-                        parts.push({
-                          name: node.userData.partName || "Part",
-                          color: node.userData.partColor || "#222222",
-                          role: node.userData.partRole || "",
-                          data: Array.from(uint8),
-                          blob: new Blob([stlBinary], { type: "application/octet-stream" }),
-                        });
+                        try {
+                          const rawOutput = exporter.parse(node, { binary: true });
+                          let arrayBuffer = null;
+                          if (rawOutput instanceof DataView) {
+                            arrayBuffer = rawOutput.buffer.slice(
+                              rawOutput.byteOffset,
+                              rawOutput.byteOffset + rawOutput.byteLength
+                            );
+                          } else if (rawOutput instanceof ArrayBuffer) {
+                            arrayBuffer = rawOutput;
+                          } else if (rawOutput && rawOutput.buffer instanceof ArrayBuffer) {
+                            const offset = rawOutput.byteOffset || 0;
+                            const length = rawOutput.byteLength || rawOutput.buffer.byteLength;
+                            arrayBuffer = rawOutput.buffer.slice(offset, offset + length);
+                          } else if (typeof rawOutput === "string") {
+                            const enc = new TextEncoder();
+                            arrayBuffer = enc.encode(rawOutput).buffer;
+                          }
+
+                          if (arrayBuffer && arrayBuffer.byteLength > 84) {
+                            let binaryStr = "";
+                            const bytes = new Uint8Array(arrayBuffer);
+                            const len = bytes.byteLength;
+                            const chunkSize = 0x8000;
+                            for (let i = 0; i < len; i += chunkSize) {
+                              binaryStr += String.fromCharCode.apply(
+                                null,
+                                bytes.subarray(i, Math.min(i + chunkSize, len))
+                              );
+                            }
+                            const b64 = window.btoa(binaryStr);
+                            const blob = new Blob([arrayBuffer], { type: "application/octet-stream" });
+
+                            parts.push({
+                              name: node.userData.partName || "Part",
+                              color: node.userData.partColor || "#222222",
+                              role: node.userData.partRole || "",
+                              stl_base64: b64,
+                              blob: blob,
+                            });
+                          }
+                        } catch (partExportErr) {
+                          console.warn("Błąd parsowania części:", node.userData?.partName, partExportErr);
+                        }
                       }
                       return; // STOP — nie wchodzić w poddrzewo
                     }
@@ -1461,11 +1496,14 @@ export default function KeychainGenerator() {
           name: p.name,
           color: p.color,
           role: p.role,
+          stl_base64: p.stl_base64 || null,
           filename: `part_${idx}_${p.name.replace(/[^a-zA-Z0-9_]/g, "_")}.stl`,
         }));
         formData.append("parts_json", JSON.stringify(partsMeta));
         parts.forEach((p, idx) => {
-          formData.append("parts_files", p.blob, partsMeta[idx].filename);
+          if (p.blob) {
+            formData.append("parts_files", p.blob, partsMeta[idx].filename);
+          }
         });
       }
 
@@ -1635,12 +1673,15 @@ export default function KeychainGenerator() {
               name: p.name,
               color: p.color,
               role: p.role,
+              stl_base64: p.stl_base64 || null,
               filename: `part_${idx}_${p.name.replace(/[^a-zA-Z0-9_]/g, "_")}.stl`,
             }));
 
             formData.append("parts_json", JSON.stringify(partsMeta));
             parts.forEach((p, idx) => {
-              formData.append("parts_files", p.blob, partsMeta[idx].filename);
+              if (p.blob) {
+                formData.append("parts_files", p.blob, partsMeta[idx].filename);
+              }
             });
           }
 
