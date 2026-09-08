@@ -316,9 +316,11 @@ def generate_production_3mf(
     # ──────────────────────────────────────────────────────────────
     # 3. Budowa 3D/3dmodel.model
     # ──────────────────────────────────────────────────────────────
-    # Zgodnie z natywnym standardem Bambu Studio:
-    # Obiekt montażu ma id=1 i zagnieżdża komponenty id=2, id=3, id=4...
-    # Każdy podobiekt ma pid="1" pindex="{c_idx}"
+    # Zgodnie z natywnym standardem Bambu Studio dla zespołów wieloczęściowych:
+    # 1. Najpierw w <resources> definiowane są pojedyncze podobiekty (id=2, id=3, ...)
+    # 2. Następnie definiowany jest obiekt montażu (Assembly) id=100 zagnieżdżający <components>
+    # 3. W <build> znajduje się wyłącznie referencja do obiektu montażu id=100
+    # 4. Każdy podobiekt posiada powiązanie pid="1" pindex="{c_idx}"
     sub_objects_xml = []
     components_xml = []
     model_settings_parts_xml = []
@@ -348,7 +350,7 @@ def generate_production_3mf(
         sub_objects_xml.append(part_obj_str)
         components_xml.append(f'    <component objectid="{obj_id}"/>')
 
-        # Wpis części wewnątrz <object id="1"> w Metadata/model_settings.config
+        # Wpis części wewnątrz <object id="100"> w Metadata/model_settings.config
         model_settings_parts_xml.append(
             f'    <part id="{obj_id}" subtype="normal_part">\n'
             f'      <metadata key="name" value="{safe_name}"/>\n'
@@ -357,15 +359,15 @@ def generate_production_3mf(
             f'      <metadata key="source_object_id" value="0"/>\n'
             f'      <metadata key="source_volume_id" value="0"/>\n'
             f'      <metadata key="extruder" value="{extruder_num}"/>\n'
-            f'      <mesh_stat face_count="{face_count}" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>\n'
+            f'      <mesh_stat face_count="{face_count}" edges_fixed="0" degenerate_facets="0" facets_reversed="0" backwards_edges="0"/>\n'
             f'    </part>'
         )
 
-    # Obiekt montażu (Assembly) id=1
+    # Obiekt montażu (Assembly) id=100 zagnieżdżający wszystkie komponenty
     components_joined = "\n".join(components_xml)
     assembly_name = xml_escape(clean_title)
     assembly_obj_str = (
-        f'  <object id="1" type="model" name="{assembly_name}">\n'
+        f'  <object id="100" type="model" name="{assembly_name}">\n'
         f'   <components>\n'
         f'{components_joined}\n'
         f'   </components>\n'
@@ -393,11 +395,11 @@ def generate_production_3mf(
         '  <m:colorgroup id="1">\n'
         f'{colorgroup_joined}\n'
         '  </m:colorgroup>\n'
-        f'{assembly_obj_str}\n'
         f'{sub_objects_joined}\n'
+        f'{assembly_obj_str}\n'
         ' </resources>\n'
         ' <build>\n'
-        '  <item objectid="1" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n'
+        '  <item objectid="100" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n'
         ' </build>\n'
         '</model>'
     )
@@ -409,7 +411,11 @@ def generate_production_3mf(
     printer_machine = f"Bambu Lab A1 {nozzle_size:.1f} nozzle" if nozzle_size in [0.2, 0.4, 0.6, 0.8] else "Bambu Lab A1 0.4 nozzle"
 
     project_settings_dict = {
-        "version": "01.10.01.50",
+        "version": "1.0",
+        "project_type": "bambu_project",
+        "filaments": [
+            {"color": c, "type": clean_mat} for c in unique_colors_6
+        ],
         "name": "project_settings",
         "from": "project",
         "filament_colour": unique_colors_6,
@@ -434,7 +440,7 @@ def generate_production_3mf(
     model_settings_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<config>\n'
-        '  <object id="1">\n'
+        '  <object id="100">\n'
         f'    <metadata key="name" value="{assembly_name}"/>\n'
         '    <metadata key="extruder" value="1"/>\n'
         f'{model_settings_parts_joined}\n'
@@ -446,14 +452,15 @@ def generate_production_3mf(
         '    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>\n'
         '    <metadata key="top_file" value="Metadata/top_1.png"/>\n'
         '    <metadata key="pick_file" value="Metadata/pick_1.png"/>\n'
+        '    <metadata key="pattern_bbox_file" value="Metadata/plate_1.bbox"/>\n'
         '    <model_instance>\n'
-        '      <metadata key="object_id" value="1"/>\n'
+        '      <metadata key="object_id" value="100"/>\n'
         '      <metadata key="instance_id" value="0"/>\n'
         '      <metadata key="identify_id" value="1"/>\n'
         '    </model_instance>\n'
         '  </plate>\n'
         '  <assemble>\n'
-        '    <assemble_item object_id="1" instance_id="0" transform="1 0 0 0 1 0 0 0 1 128 128 0" offset="0 0 0"/>\n'
+        '    <assemble_item object_id="100" instance_id="0" transform="1 0 0 0 1 0 0 0 1 128 128 0" offset="0 0 0"/>\n'
         '  </assemble>\n'
         '</config>'
     )
@@ -500,7 +507,7 @@ def generate_production_3mf(
         '    <metadata key="plater_id" value="1"/>\n'
         '    <metadata key="plater_name" value="Drukstacja"/>\n'
         '    <metadata key="locked" value="false"/>\n'
-        '    <instance object_id="1" instance_id="0" identify_id="1"/>\n'
+        '    <instance object_id="100" instance_id="0" identify_id="1"/>\n'
         '  </plate>\n'
         '</config>'
     )
@@ -689,14 +696,14 @@ def validate_3mf_package(file_path: str) -> dict:
                     errors.append("Brak atrybutów pid='1' i pindex w obiektach 3D.")
 
                 # Assembly i build
-                if '<object id="1"' not in model_content or '<build>' not in model_content:
-                    errors.append("Brak obiektu montażowego id='1' lub sekcji <build>.")
+                if '<object id="100"' not in model_content or '<build>' not in model_content or '<components>' not in model_content:
+                    errors.append("Brak obiektu montażowego id='100' z komponentami lub sekcji <build>.")
 
             # 6. Sprawdzenie Metadata/model_settings.config
             if "Metadata/model_settings.config" in namelist:
                 ms_content = zf.read("Metadata/model_settings.config").decode("utf-8", errors="replace")
-                if '<object id="1">' not in ms_content:
-                    errors.append("Brak sekcji <object id=\"1\"> w Metadata/model_settings.config.")
+                if '<object id="100">' not in ms_content:
+                    errors.append("Brak sekcji <object id=\"100\"> w Metadata/model_settings.config.")
                 if 'subtype="normal_part"' not in ms_content:
                     errors.append("Brak atrybutu subtype=\"normal_part\" w Metadata/model_settings.config.")
                 if 'key="extruder"' not in ms_content:

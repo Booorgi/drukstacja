@@ -49,8 +49,8 @@ def test_parts_are_distinct():
     with zipfile.ZipFile(saved, "r") as zf:
         model_xml = zf.read("3D/3dmodel.model").decode("utf-8")
         
-        # Obiekt montażu id="1" zawiera 3 komponenty
-        assert '<object id="1" type="model"' in model_xml, "Brak głównego obiektu montażu id='1'"
+        # Obiekt montażu id="100" zawiera 3 komponenty
+        assert '<object id="100" type="model"' in model_xml, "Brak głównego obiektu montażu id='100'"
         assert '<component objectid="2"/>' in model_xml, "Brak komponentu 2 w montażu"
         assert '<component objectid="3"/>' in model_xml, "Brak komponentu 3 w montażu"
         assert '<component objectid="4"/>' in model_xml, "Brak komponentu 4 w montażu"
@@ -60,9 +60,9 @@ def test_parts_are_distinct():
         assert '<object id="3" type="model" name="Rim"' in model_xml
         assert '<object id="4" type="model" name="Graphic"' in model_xml
 
-        # Model settings zawiera 3 części wewnątrz obiektu 1
+        # Model settings zawiera 3 części wewnątrz obiektu 100
         ms_xml = zf.read("Metadata/model_settings.config").decode("utf-8")
-        assert '<object id="1">' in ms_xml
+        assert '<object id="100">' in ms_xml
         assert '<part id="2" subtype="normal_part">' in ms_xml
         assert '<part id="3" subtype="normal_part">' in ms_xml
         assert '<part id="4" subtype="normal_part">' in ms_xml
@@ -113,6 +113,11 @@ def test_filament_mapping():
         
         assert ps.get("name") == "project_settings"
         assert ps.get("from") == "project"
+        assert ps.get("project_type") == "bambu_project"
+        assert ps.get("version") == "1.0"
+        assert isinstance(ps.get("filaments"), list) and len(ps["filaments"]) == 2
+        assert ps["filaments"][0] == {"color": "#222222", "type": "PLA"}
+        assert ps["filaments"][1] == {"color": "#FFFFFF", "type": "PLA"}
         assert ps.get("filament_colour") == ["#222222", "#FFFFFF"]
         assert ps.get("filament_type") == ["PLA", "PLA"]
         assert len(ps.get("filament_settings_id")) == 2
@@ -382,6 +387,52 @@ def test_polymer_mapping_and_safe_infill():
     print("test_polymer_mapping_and_safe_infill: PASSED [OK]")
 
 
+def test_multipart_assembly_and_plates():
+    """Testuje, czy obiekt montażu ma id=100 oraz czy plate_1.config i model_settings.config odnoszą się do id=100."""
+    print("\n--- Running test_multipart_assembly_and_plates ---")
+    out_path = os.path.join(tempfile.gettempdir(), f"test_assembly100_{uuid.uuid4().hex[:6]}.3mf")
+    parts = [
+        {"name": "Part_1", "color_hex": "#FFFFFF", "mesh": trimesh.creation.box((20, 20, 2))},
+        {"name": "Part_2", "color_hex": "#000000", "mesh": trimesh.creation.box((10, 10, 1))},
+    ]
+
+    saved = generate_production_3mf(output_path=out_path, parts=parts)
+    val = validate_3mf_package(saved)
+    assert val["valid"], f"Walidacja nie powiodła się: {val['errors']}"
+
+    with zipfile.ZipFile(saved, "r") as zf:
+        m_xml = zf.read("3D/3dmodel.model").decode("utf-8")
+        assert '<object id="100" type="model"' in m_xml
+        assert '<component objectid="2"/>' in m_xml
+        assert '<component objectid="3"/>' in m_xml
+        assert '<item objectid="100"' in m_xml
+
+        # Sprawdzenie kolejności w <resources>: obiekty 2 i 3 przed 100!
+        idx_part2 = m_xml.index('id="2"')
+        idx_part3 = m_xml.index('id="3"')
+        idx_assembly = m_xml.index('id="100"')
+        assert idx_part2 < idx_assembly, "Podobiekt 2 powinien znajdować się przed obiektem montażu 100 w <resources>"
+        assert idx_part3 < idx_assembly, "Podobiekt 3 powinien znajdować się przed obiektem montażu 100 w <resources>"
+
+        ms_xml = zf.read("Metadata/model_settings.config").decode("utf-8")
+        assert '<object id="100">' in ms_xml
+        assert '<part id="2" subtype="normal_part">' in ms_xml
+        assert '<part id="3" subtype="normal_part">' in ms_xml
+        assert '<model_instance>' in ms_xml
+        assert '<metadata key="object_id" value="100"/>' in ms_xml
+
+        plate_xml = zf.read("Metadata/plate_1.config").decode("utf-8")
+        assert '<instance object_id="100" instance_id="0" identify_id="1"/>' in plate_xml
+
+        ps = json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
+        assert ps["project_type"] == "bambu_project"
+        assert len(ps["filaments"]) == 2
+
+    if os.path.exists(saved):
+        os.remove(saved)
+    print("test_multipart_assembly_and_plates: PASSED [OK]")
+
+
 if __name__ == "__main__":
     print("Starting Comprehensive Bambu Studio 3MF Compatibility Suite...")
     test_parts_are_distinct()
@@ -394,6 +445,7 @@ if __name__ == "__main__":
     test_relationships()
     test_bambu_real_scenario()
     test_polymer_mapping_and_safe_infill()
+    test_multipart_assembly_and_plates()
     print("\n=======================================================")
     print("ALL 10 COMPREHENSIVE BAMBU COMPATIBILITY TESTS PASSED! [OK]")
     print("=======================================================")

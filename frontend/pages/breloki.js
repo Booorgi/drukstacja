@@ -982,6 +982,100 @@ const KeychainViewer3D = dynamic(
                   return [];
                 }
               },
+              exportMultiPartKeychain: async () => {
+                try {
+                  scene.updateMatrixWorld(true);
+                  const exporter = new STLExporter();
+                  const formData = new FormData();
+                  let partIndex = 1;
+                  const colors = [];
+
+                  // Zbieramy części ze sceny (węzły isExportPart lub bezpośrednie siatki)
+                  const partsToExport = [];
+                  function collectParts(node) {
+                    if (node.userData && node.userData.isExportPart) {
+                      let hasGeometry = false;
+                      node.traverse((child) => {
+                        if (child.isMesh && child.geometry) hasGeometry = true;
+                      });
+                      if (hasGeometry) {
+                        let col = node.userData.partColor;
+                        if (!col) {
+                          node.traverse((child) => {
+                            if (!col && child.isMesh && child.material && child.material.color) {
+                              col = "#" + child.material.color.getHexString();
+                            }
+                          });
+                        }
+                        partsToExport.push({
+                          node,
+                          name: node.userData.partName || `Part_${partsToExport.length + 1}`,
+                          color: col || "#222222",
+                        });
+                        return; // Nie wchodź głębiej do dzieci tej części
+                      }
+                    }
+                    if (node.children) {
+                      for (const child of node.children) {
+                        collectParts(child);
+                      }
+                    }
+                  }
+
+                  collectParts(scene);
+
+                  // Awaryjny fallback na wypadek braku oznaczonych części
+                  if (partsToExport.length === 0) {
+                    scene.traverse((child) => {
+                      if (child.isMesh && child.geometry) {
+                        let col = child.userData?.partColor;
+                        if (!col && child.material && child.material.color) {
+                          col = "#" + child.material.color.getHexString();
+                        }
+                        partsToExport.push({
+                          node: child,
+                          name: child.userData?.partName || child.name || `Part_${partsToExport.length + 1}`,
+                          color: col || "#222222",
+                        });
+                      }
+                    });
+                  }
+
+                  // Eksport każdego podobiektu do osobnego pliku binarnego STL
+                  for (const part of partsToExport) {
+                    try {
+                      const stlData = exporter.parse(part.node, { binary: true });
+                      let arrayBuffer = null;
+                      if (stlData instanceof DataView) {
+                        arrayBuffer = stlData.buffer.slice(stlData.byteOffset, stlData.byteOffset + stlData.byteLength);
+                      } else if (stlData instanceof ArrayBuffer) {
+                        arrayBuffer = stlData;
+                      } else if (stlData && stlData.buffer instanceof ArrayBuffer) {
+                        arrayBuffer = stlData.buffer.slice(stlData.byteOffset || 0, (stlData.byteOffset || 0) + (stlData.byteLength || stlData.buffer.byteLength));
+                      } else if (typeof stlData === "string") {
+                        arrayBuffer = new TextEncoder().encode(stlData).buffer;
+                      }
+
+                      if (arrayBuffer && arrayBuffer.byteLength > 84) {
+                        const blob = new Blob([arrayBuffer], { type: "application/octet-stream" });
+                        formData.append("files", blob, `part_${partIndex}.stl`);
+                        let hexColor = (part.color || "#222222").trim();
+                        if (!hexColor.startsWith("#")) hexColor = `#${hexColor}`;
+                        colors.push(hexColor);
+                        partIndex++;
+                      }
+                    } catch (err) {
+                      console.warn("Błąd parsowania części:", part.name, err);
+                    }
+                  }
+
+                  formData.append("colors", JSON.stringify(colors));
+                  return { formData, count: partIndex - 1, colors };
+                } catch (err) {
+                  console.error("Błąd podczas exportMultiPartKeychain:", err);
+                  return null;
+                }
+              },
             };
 
             if (typeof window !== "undefined") {
@@ -1011,6 +1105,12 @@ const KeychainViewer3D = dynamic(
               return exportFnRef.current.exportParts();
             }
             return [];
+          },
+          exportMultiPartKeychain: async () => {
+            if (exportFnRef.current?.exportMultiPartKeychain) {
+              return await exportFnRef.current.exportMultiPartKeychain();
+            }
+            return null;
           },
         }));
 
@@ -1297,6 +1397,22 @@ export default function KeychainGenerator() {
     }
   };
 
+  const exportMultiPartKeychain = async () => {
+    try {
+      if (exportHandlerRef.current && typeof exportHandlerRef.current.exportMultiPartKeychain === "function") {
+        return await exportHandlerRef.current.exportMultiPartKeychain();
+      } else if (viewerRef.current && typeof viewerRef.current.exportMultiPartKeychain === "function") {
+        return await viewerRef.current.exportMultiPartKeychain();
+      } else if (typeof window !== "undefined" && window.__KEYCHAIN_EXPORTER && typeof window.__KEYCHAIN_EXPORTER.exportMultiPartKeychain === "function") {
+        return await window.__KEYCHAIN_EXPORTER.exportMultiPartKeychain();
+      }
+      return null;
+    } catch (err) {
+      console.warn("Błąd generowania części wieloczęściowych breloka:", err);
+      return null;
+    }
+  };
+
   // Modale
   const [isPreprocessingOpen, setIsPreprocessingOpen] = useState(false);
   const [modalImageSrc, setModalImageSrc] = useState(null);
@@ -1528,22 +1644,42 @@ export default function KeychainGenerator() {
   async function handleExport3MF() {
     setIsExporting3MF(true);
     try {
-      const parts = exportKeychainParts();
-      console.log("[DRUKSTACJA 3MF] Wykryto części:", parts?.length, parts);
+      // 1. Pobieramy wyeksportowane osobne siatki i kolory (multi-part AMS)
+      let exportData = await exportMultiPartKeychain();
+      console.log("[DRUKSTACJA 3MF] Wykryto części wieloczęściowe:", exportData?.count, exportData?.colors);
 
-      if (!parts || parts.length === 0) {
-        alert("Scena 3D nie przygotowała jeszcze warstw breloka do eksportu. Odśwież stronę (Ctrl+F5) i spróbuj ponownie.");
-        setIsExporting3MF(false);
-        return;
+      let formData = exportData?.formData;
+
+      // Fallback jeśli exportMultiPartKeychain nie zwrócił danych
+      if (!formData || exportData.count === 0) {
+        const parts = exportKeychainParts();
+        if (!parts || parts.length === 0) {
+          alert("Scena 3D nie przygotowała jeszcze warstw breloka do eksportu. Odśwież stronę (Ctrl+F5) i spróbuj ponownie.");
+          setIsExporting3MF(false);
+          return;
+        }
+
+        formData = new FormData();
+        const colors = [];
+        parts.forEach((p, idx) => {
+          if (p.blob) {
+            formData.append("files", p.blob, `part_${idx + 1}.stl`);
+            let hex = p.color || baseFilament?.hex || "#222222";
+            if (!hex.startsWith("#")) hex = `#${hex}`;
+            colors.push(hex);
+          }
+        });
+        formData.append("colors", JSON.stringify(colors));
       }
 
+      // Dołączamy połączony plik STL dla zgodności
       const combinedStlBlob = exportKeychainGeometry();
-
-      const formData = new FormData();
       const cleanSafeName = `brelok_${shapeType}_${Date.now()}.stl`;
       if (combinedStlBlob) {
         formData.append("file", combinedStlBlob, cleanSafeName);
       }
+
+      // Parametry technologiczne druku i metadane projektu
       formData.append("file_name", `brelok_${shapeType}.3mf`);
       formData.append("material", baseFilament?.name || "PLA");
       formData.append("color_hex", baseFilament?.hex || "#222222");
@@ -1551,23 +1687,7 @@ export default function KeychainGenerator() {
       formData.append("nozzle_size", String(nozzleSize));
       formData.append("infill", String(infill));
 
-      if (parts && parts.length > 0) {
-        const partsMeta = parts.map((p, idx) => ({
-          index: idx,
-          name: p.name,
-          color: p.color,
-          role: p.role,
-          stl_base64: p.stl_base64 || null,
-          filename: `part_${idx}_${p.name.replace(/[^a-zA-Z0-9_]/g, "_")}.stl`,
-        }));
-        formData.append("parts_json", JSON.stringify(partsMeta));
-        parts.forEach((p, idx) => {
-          if (p.blob) {
-            formData.append("parts_files", p.blob, partsMeta[idx].filename);
-          }
-        });
-      }
-
+      // Ważne: NIE ustawiamy nagłówka 'Content-Type' ręcznie! Przeglądarka musi sama dodać boundary.
       const res = await fetch(`${API_URL || ""}/api/breloki/generate-direct-3mf`, {
         method: "POST",
         body: formData,
@@ -1711,11 +1831,12 @@ export default function KeychainGenerator() {
 
       // 2. Eksport geometrii STL ze sceny Three.js i przesłanie na serwer (Multi-part AMS)
       try {
+        const exportData = await exportMultiPartKeychain();
         const parts = exportKeychainParts();
         const combinedStlBlob = exportKeychainGeometry();
 
-        if (orderId && (parts.length > 0 || combinedStlBlob)) {
-          const formData = new FormData();
+        if (orderId && (exportData?.count > 0 || parts.length > 0 || combinedStlBlob)) {
+          const formData = exportData?.formData || new FormData();
           const cleanSafeName = `brelok_${shapeType}_${Date.now()}.stl`;
           if (combinedStlBlob) {
             formData.append("file", combinedStlBlob, cleanSafeName);

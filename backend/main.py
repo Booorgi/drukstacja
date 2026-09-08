@@ -925,13 +925,47 @@ async def upload_order_geometry_endpoint(
 
         background_tasks.add_task(_bg_upload_stl, local_stl_path, r2_model_key)
 
-    # 2. Obsługa wieloczęściowych siatek AMS (parts_files + parts_json + stl_base64)
+    # 2. Obsługa wieloczęściowych siatek AMS (files + colors LUB parts_files + parts_json + stl_base64)
     form = await request.form()
     parts_json_raw = form.get("parts_json")
     parts_files_list = form.getlist("parts_files")
+    uploaded_files = form.getlist("files")
+    raw_colors = form.get("colors")
+
+    parsed_colors = []
+    if raw_colors:
+        try:
+            parsed_colors = json.loads(raw_colors)
+            if not isinstance(parsed_colors, list):
+                parsed_colors = [str(raw_colors)]
+        except Exception:
+            parsed_colors = [c.strip().strip('"') for c in str(raw_colors).replace("[", "").replace("]", "").split(",") if c.strip()]
 
     parts_list = []
-    if parts_json_raw:
+
+    if uploaded_files:
+        for idx, ufile in enumerate(uploaded_files):
+            if hasattr(ufile, "read"):
+                part_pname = Path(ufile.filename).stem if (hasattr(ufile, "filename") and ufile.filename) else f"Part_{idx+1}"
+                part_color = parsed_colors[idx] if idx < len(parsed_colors) else color_hex
+                safe_pname = sanitize_filename(part_pname)
+                target_part_name = f"ORDER_{clean_prefix}_part_{idx+1}_{safe_pname}.stl"
+                local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
+
+                try:
+                    p_bytes = await ufile.read()
+                    if p_bytes and len(p_bytes) > 0:
+                        with open(local_part_path, "wb") as f_out:
+                            f_out.write(p_bytes)
+                        parts_list.append({
+                            "name": f"Part_{idx+1}",
+                            "color_hex": part_color,
+                            "path": local_part_path,
+                            "role": "part",
+                        })
+                except Exception as rf_err:
+                    print(f"[WARN] Błąd zapisu części {part_pname}: {rf_err}")
+    elif parts_json_raw:
         try:
             parts_meta = json.loads(parts_json_raw)
         except Exception as json_err:
@@ -1039,9 +1073,12 @@ async def upload_order_geometry_endpoint(
 
 
 @app.post("/api/breloki/generate-direct-3mf")
+@app.post("/api/generate-direct-3mf")
 async def generate_direct_3mf_endpoint(
     request: Request,
     file: UploadFile | None = File(None),
+    files: list[UploadFile] = File([]),
+    colors: str | None = Form(None),
     file_name: str | None = Form(None),
     material: str = Form("PLA"),
     color_hex: str = Form("#222222"),
@@ -1051,7 +1088,7 @@ async def generate_direct_3mf_endpoint(
 ):
     """
     Szybki generator .3MF bezpośrednio dla konfiguratora w przeglądarce.
-    Przyjmuje części STL, generuje plik projektu Bambu i od razu zwraca FileResponse.
+    Przyjmuje części STL (wieloczęściowy zespół AMS 'files' + 'colors'), generuje plik projektu Bambu i od razu zwraca FileResponse.
     """
     temp_id = uuid.uuid4().hex[:8].upper()
     safe_file_name = sanitize_filename(Path(file_name or "keychain").stem)
@@ -1063,8 +1100,50 @@ async def generate_direct_3mf_endpoint(
     parts_json_raw = form.get("parts_json")
     parts_files_list = form.getlist("parts_files")
 
+    # 1. Obsługa dedykowanego formatu files + colors
+    uploaded_files = list(files) if files else []
+    if not uploaded_files:
+        raw_files = form.getlist("files")
+        for rf in raw_files:
+            if hasattr(rf, "read"):
+                uploaded_files.append(rf)
+
+    raw_colors = colors or form.get("colors")
+    parsed_colors = []
+    if raw_colors:
+        try:
+            parsed_colors = json.loads(raw_colors)
+            if not isinstance(parsed_colors, list):
+                parsed_colors = [str(raw_colors)]
+        except Exception:
+            parsed_colors = [c.strip().strip('"') for c in str(raw_colors).replace("[", "").replace("]", "").split(",") if c.strip()]
+
     parts_list = []
-    if parts_json_raw:
+
+    if uploaded_files:
+        for idx, ufile in enumerate(uploaded_files):
+            part_pname = Path(ufile.filename).stem if (hasattr(ufile, "filename") and ufile.filename) else f"Part_{idx+1}"
+            part_color = parsed_colors[idx] if idx < len(parsed_colors) else color_hex
+            safe_pname = sanitize_filename(part_pname)
+            target_part_name = f"TMP_{temp_id}_part_{idx+1}_{safe_pname}.stl"
+            local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
+
+            try:
+                p_bytes = await ufile.read()
+                if p_bytes and len(p_bytes) > 0:
+                    with open(local_part_path, "wb") as f_out:
+                        f_out.write(p_bytes)
+                    parts_list.append({
+                        "name": f"Part_{idx+1}",
+                        "color_hex": part_color,
+                        "path": local_part_path,
+                        "role": "part",
+                    })
+            except Exception as rf_err:
+                print(f"[WARN] Błąd zapisu pliku części {part_pname}: {rf_err}")
+
+    # 2. Fallback na parts_json i parts_files
+    elif parts_json_raw:
         try:
             parts_meta = json.loads(parts_json_raw)
         except Exception as json_err:
@@ -1085,14 +1164,12 @@ async def generate_direct_3mf_endpoint(
             local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
 
             p_bytes = None
-            # 1. Priorytet: stl_base64 osadzony w parts_json
             if p_meta.get("stl_base64"):
                 try:
                     p_bytes = base64.b64decode(p_meta["stl_base64"])
                 except Exception as b64_err:
                     print(f"[WARN] Błąd dekodowania base64 dla {p_name}: {b64_err}")
 
-            # 2. Alternatywa: plik binarny w parts_files
             if not p_bytes:
                 fname = p_meta.get("filename")
                 pf = file_map.get(fname)
@@ -1115,6 +1192,8 @@ async def generate_direct_3mf_endpoint(
                 })
 
     print(f"[3MF DIRECT] Wywołanie generate-direct-3mf dla {file_name}:")
+    print(f"   -> uploaded_files liczba: {len(uploaded_files)}")
+    print(f"   -> parsed_colors: {parsed_colors}")
     print(f"   -> parts_json_raw obecne: {bool(parts_json_raw)}, długość: {len(parts_json_raw) if parts_json_raw else 0}")
     print(f"   -> parts_files_list liczba plików: {len(parts_files_list)}")
     print(f"   -> Załadowano poprawnych części do projektu: {len(parts_list)}")
