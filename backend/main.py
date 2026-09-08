@@ -931,6 +931,16 @@ async def upload_order_geometry_endpoint(
     parts_files_list = form.getlist("parts_files")
     uploaded_files = form.getlist("files")
     raw_colors = form.get("colors")
+    raw_metadata = form.get("metadata")
+
+    parsed_metadata = []
+    if raw_metadata:
+        try:
+            parsed_metadata = json.loads(raw_metadata)
+            if not isinstance(parsed_metadata, list):
+                parsed_metadata = []
+        except Exception as meta_err:
+            print(f"[WARN] Błąd parsowania metadata w upload-geometry: {meta_err}")
 
     parsed_colors = []
     if raw_colors:
@@ -946,9 +956,22 @@ async def upload_order_geometry_endpoint(
     if uploaded_files:
         for idx, ufile in enumerate(uploaded_files):
             if hasattr(ufile, "read"):
-                part_pname = Path(ufile.filename).stem if (hasattr(ufile, "filename") and ufile.filename) else f"Part_{idx+1}"
-                part_color = parsed_colors[idx] if idx < len(parsed_colors) else color_hex
-                safe_pname = sanitize_filename(part_pname)
+                meta_item = None
+                if parsed_metadata:
+                    if idx < len(parsed_metadata):
+                        meta_item = parsed_metadata[idx]
+                    for m in parsed_metadata:
+                        if m.get("fileName") == ufile.filename:
+                            meta_item = m
+                            break
+
+                part_name = (meta_item.get("name") if meta_item else None) or (
+                    Path(ufile.filename).stem if (hasattr(ufile, "filename") and ufile.filename) else f"Part_{idx+1}"
+                )
+                part_color = (meta_item.get("color") if meta_item else None) or (
+                    parsed_colors[idx] if idx < len(parsed_colors) else color_hex
+                )
+                safe_pname = sanitize_filename(part_name)
                 target_part_name = f"ORDER_{clean_prefix}_part_{idx+1}_{safe_pname}.stl"
                 local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
 
@@ -958,13 +981,13 @@ async def upload_order_geometry_endpoint(
                         with open(local_part_path, "wb") as f_out:
                             f_out.write(p_bytes)
                         parts_list.append({
-                            "name": f"Part_{idx+1}",
+                            "name": part_name,
                             "color_hex": part_color,
                             "path": local_part_path,
                             "role": "part",
                         })
                 except Exception as rf_err:
-                    print(f"[WARN] Błąd zapisu części {part_pname}: {rf_err}")
+                    print(f"[WARN] Błąd zapisu części {part_name}: {rf_err}")
     elif parts_json_raw:
         try:
             parts_meta = json.loads(parts_json_raw)
@@ -1108,6 +1131,16 @@ async def generate_direct_3mf_endpoint(
             if hasattr(rf, "read"):
                 uploaded_files.append(rf)
 
+    raw_metadata = form.get("metadata")
+    parsed_metadata = []
+    if raw_metadata:
+        try:
+            parsed_metadata = json.loads(raw_metadata)
+            if not isinstance(parsed_metadata, list):
+                parsed_metadata = []
+        except Exception as meta_err:
+            print(f"[WARN] Błąd parsowania metadata w generate-direct-3mf: {meta_err}")
+
     raw_colors = colors or form.get("colors")
     parsed_colors = []
     if raw_colors:
@@ -1122,9 +1155,22 @@ async def generate_direct_3mf_endpoint(
 
     if uploaded_files:
         for idx, ufile in enumerate(uploaded_files):
-            part_pname = Path(ufile.filename).stem if (hasattr(ufile, "filename") and ufile.filename) else f"Part_{idx+1}"
-            part_color = parsed_colors[idx] if idx < len(parsed_colors) else color_hex
-            safe_pname = sanitize_filename(part_pname)
+            meta_item = None
+            if parsed_metadata:
+                if idx < len(parsed_metadata):
+                    meta_item = parsed_metadata[idx]
+                for m in parsed_metadata:
+                    if m.get("fileName") == ufile.filename:
+                        meta_item = m
+                        break
+
+            part_name = (meta_item.get("name") if meta_item else None) or (
+                Path(ufile.filename).stem if (hasattr(ufile, "filename") and ufile.filename) else f"Part_{idx+1}"
+            )
+            part_color = (meta_item.get("color") if meta_item else None) or (
+                parsed_colors[idx] if idx < len(parsed_colors) else color_hex
+            )
+            safe_pname = sanitize_filename(part_name)
             target_part_name = f"TMP_{temp_id}_part_{idx+1}_{safe_pname}.stl"
             local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
 
@@ -1134,13 +1180,13 @@ async def generate_direct_3mf_endpoint(
                     with open(local_part_path, "wb") as f_out:
                         f_out.write(p_bytes)
                     parts_list.append({
-                        "name": f"Part_{idx+1}",
+                        "name": part_name,
                         "color_hex": part_color,
                         "path": local_part_path,
                         "role": "part",
                     })
             except Exception as rf_err:
-                print(f"[WARN] Błąd zapisu pliku części {part_pname}: {rf_err}")
+                print(f"[WARN] Błąd zapisu pliku części {part_name}: {rf_err}")
 
     # 2. Fallback na parts_json i parts_files
     elif parts_json_raw:

@@ -983,98 +983,100 @@ const KeychainViewer3D = dynamic(
                 }
               },
               exportMultiPartKeychain: async () => {
-                try {
-                  scene.updateMatrixWorld(true);
-                  const exporter = new STLExporter();
-                  const formData = new FormData();
-                  let partIndex = 1;
-                  const colors = [];
+                const targetContainer = keychainGroupRef?.current || scene;
+                if (!targetContainer) return null;
 
-                  // Zbieramy części ze sceny (węzły isExportPart lub bezpośrednie siatki)
-                  const partsToExport = [];
-                  function collectParts(node) {
-                    if (node.userData && node.userData.isExportPart) {
-                      let hasGeometry = false;
-                      node.traverse((child) => {
-                        if (child.isMesh && child.geometry) hasGeometry = true;
-                      });
-                      if (hasGeometry) {
-                        let col = node.userData.partColor;
-                        if (!col) {
-                          node.traverse((child) => {
-                            if (!col && child.isMesh && child.material && child.material.color) {
-                              col = "#" + child.material.color.getHexString();
-                            }
-                          });
-                        }
-                        partsToExport.push({
-                          node,
-                          name: node.userData.partName || `Part_${partsToExport.length + 1}`,
-                          color: col || "#222222",
-                        });
-                        return; // Nie wchodź głębiej do dzieci tej części
+                const exporter = new STLExporter();
+                const formData = new FormData();
+                const partsMetadata = [];
+                let partIndex = 1;
+
+                // Wymuś przeliczenie pozycji i rotacji w całej scenie
+                targetContainer.updateMatrixWorld(true);
+
+                targetContainer.traverse((node) => {
+                  // Sprawdź czy element to Mesh z faktyczną geometrią
+                  if (node.isMesh && node.geometry) {
+                    // Pobierz kolor materiału lub z metadanych
+                    let hexColor = "#FFFFFF";
+                    if (node.userData?.partColor) {
+                      hexColor = node.userData.partColor;
+                    } else if (node.parent?.userData?.partColor) {
+                      hexColor = node.parent.userData.partColor;
+                    } else if (node.parent?.parent?.userData?.partColor) {
+                      hexColor = node.parent.parent.userData.partColor;
+                    } else if (node.material) {
+                      if (Array.isArray(node.material) && node.material[0]?.color) {
+                        hexColor = "#" + node.material[0].color.getHexString().toUpperCase();
+                      } else if (node.material.color) {
+                        hexColor = "#" + node.material.color.getHexString().toUpperCase();
                       }
                     }
-                    if (node.children) {
-                      for (const child of node.children) {
-                        collectParts(child);
-                      }
-                    }
-                  }
+                    if (!hexColor.startsWith("#")) hexColor = "#" + hexColor;
 
-                  collectParts(scene);
+                    let partName =
+                      node.userData?.partName ||
+                      node.parent?.userData?.partName ||
+                      node.parent?.parent?.userData?.partName ||
+                      node.name ||
+                      `Czesc_${partIndex}`;
 
-                  // Awaryjny fallback na wypadek braku oznaczonych części
-                  if (partsToExport.length === 0) {
-                    scene.traverse((child) => {
-                      if (child.isMesh && child.geometry) {
-                        let col = child.userData?.partColor;
-                        if (!col && child.material && child.material.color) {
-                          col = "#" + child.material.color.getHexString();
-                        }
-                        partsToExport.push({
-                          node: child,
-                          name: child.userData?.partName || child.name || `Part_${partsToExport.length + 1}`,
-                          color: col || "#222222",
-                        });
-                      }
-                    });
-                  }
+                    // Klonujemy obiekt, aby zachować jego pozycję w układzie lokalnym breloka
+                    const clonedMesh = node.clone();
+                    clonedMesh.applyMatrix4(node.matrixWorld);
+                    clonedMesh.updateMatrixWorld(true);
 
-                  // Eksport każdego podobiektu do osobnego pliku binarnego STL
-                  for (const part of partsToExport) {
+                    // Eksport do binarnego STL
                     try {
-                      const stlData = exporter.parse(part.node, { binary: true });
+                      const stlData = exporter.parse(clonedMesh, { binary: true });
                       let arrayBuffer = null;
                       if (stlData instanceof DataView) {
-                        arrayBuffer = stlData.buffer.slice(stlData.byteOffset, stlData.byteOffset + stlData.byteLength);
+                        arrayBuffer = stlData.buffer.slice(
+                          stlData.byteOffset,
+                          stlData.byteOffset + stlData.byteLength
+                        );
                       } else if (stlData instanceof ArrayBuffer) {
                         arrayBuffer = stlData;
                       } else if (stlData && stlData.buffer instanceof ArrayBuffer) {
-                        arrayBuffer = stlData.buffer.slice(stlData.byteOffset || 0, (stlData.byteOffset || 0) + (stlData.byteLength || stlData.buffer.byteLength));
+                        arrayBuffer = stlData.buffer.slice(
+                          stlData.byteOffset || 0,
+                          (stlData.byteOffset || 0) + (stlData.byteLength || stlData.buffer.byteLength)
+                        );
                       } else if (typeof stlData === "string") {
                         arrayBuffer = new TextEncoder().encode(stlData).buffer;
                       }
 
                       if (arrayBuffer && arrayBuffer.byteLength > 84) {
                         const blob = new Blob([arrayBuffer], { type: "application/octet-stream" });
-                        formData.append("files", blob, `part_${partIndex}.stl`);
-                        let hexColor = (part.color || "#222222").trim();
-                        if (!hexColor.startsWith("#")) hexColor = `#${hexColor}`;
-                        colors.push(hexColor);
+                        const fileName = `part_${partIndex}.stl`;
+                        formData.append("files", blob, fileName);
+
+                        partsMetadata.push({
+                          id: partIndex + 1, // object id w XML (od 2 w górę)
+                          name: partName,
+                          color: hexColor,
+                          fileName: fileName,
+                        });
+
                         partIndex++;
                       }
-                    } catch (err) {
-                      console.warn("Błąd parsowania części:", part.name, err);
+                    } catch (meshErr) {
+                      console.warn("Błąd parsowania siatki do STL:", partName, meshErr);
                     }
                   }
+                });
 
-                  formData.append("colors", JSON.stringify(colors));
-                  return { formData, count: partIndex - 1, colors };
-                } catch (err) {
-                  console.error("Błąd podczas exportMultiPartKeychain:", err);
-                  return null;
+                console.log(`[EXPORT 3MF] Wykryto ${partsMetadata.length} części:`, partsMetadata);
+
+                if (partsMetadata.length <= 1) {
+                  console.warn(
+                    "UWAGA: Wykryto tylko 1 mesh! Upewnij się, że grafika i ramka są obiektami THREE.Mesh (ExtrudeGeometry), a nie płaskimi teksturami Canvas/Sprite."
+                  );
                 }
+
+                formData.append("metadata", JSON.stringify(partsMetadata));
+                formData.append("colors", JSON.stringify(partsMetadata.map((p) => p.color)));
+                return { formData, partsMetadata, count: partsMetadata.length };
               },
             };
 
@@ -1083,13 +1085,14 @@ const KeychainViewer3D = dynamic(
             }
             onExportReady(handlers);
           }
-        }, [scene, onExportReady]);
+        }, [scene, onExportReady, keychainGroupRef]);
 
         return null;
       }
 
       return React.forwardRef(function Viewer({ onExportReady, ...props }, ref) {
         const exportFnRef = React.useRef(null);
+        const keychainGroupRef = React.useRef(null);
 
         React.useImperativeHandle(ref, () => ({
           exportSTL: () => {
@@ -1123,9 +1126,12 @@ const KeychainViewer3D = dynamic(
             <directionalLight position={[40, 60, 50]} intensity={1.8} />
             <directionalLight position={[-40, 30, -30]} intensity={0.7} />
             <React.Suspense fallback={null}>
-              <KeychainMesh {...props} />
+              <group ref={keychainGroupRef} name="KeychainGroup">
+                <KeychainMesh {...props} />
+              </group>
             </React.Suspense>
             <ExportRegistrar
+              keychainGroupRef={keychainGroupRef}
               onExportReady={(handlers) => {
                 exportFnRef.current = handlers;
                 if (onExportReady) onExportReady(handlers);
