@@ -837,154 +837,38 @@ const KeychainViewer3D = dynamic(
       }
 
       // Komponent wewnętrzny do rejestracji eksportu
-      function ExportRegistrar({ onExportReady }) {
+      function ExportRegistrar({ keychainGroupRef, onExportReady }) {
         const { scene } = useThree();
 
         useEffect(() => {
+          if (!scene) return;
           if (typeof window !== "undefined") {
             window.__KEYCHAIN_SCENE = scene;
           }
-          if (onExportReady) {
-            const handlers = {
-              exportSTL: () => {
-                try {
-                  scene.updateMatrixWorld(true);
-                  const exporter = new STLExporter();
-                  return exporter.parse(scene, { binary: true });
-                } catch (err) {
-                  console.error("Błąd podczas eksportu STLExporter:", err);
+
+          const handlers = {
+            exportSTL: () => {
+              try {
+                if (!scene) return null;
+                scene.updateMatrixWorld(true);
+                const exporter = new STLExporter();
+                return exporter.parse(scene, { binary: true });
+              } catch (err) {
+                console.error("Błąd podczas eksportu STLExporter:", err);
+                return null;
+              }
+            },
+            exportParts: () => {
+              return [];
+            },
+            exportMultiPartKeychain: async () => {
+              try {
+                // Zabezpieczenie przed błędem undefined/null:
+                const target = (keychainGroupRef && keychainGroupRef.current) ? keychainGroupRef.current : scene;
+                if (!target) {
+                  console.warn("Brak referencji do grupy breloka.");
                   return null;
                 }
-              },
-              exportParts: () => {
-                try {
-                  scene.updateMatrixWorld(true);
-                  const exporter = new STLExporter();
-                  const parts = [];
-
-                  // Ręczne przechodzenie drzewa sceny — po znalezieniu węzła
-                  // z isExportPart wyodrębniamy geometrię i NIE wchodzimy głębiej.
-                  function collectExportParts(node) {
-                    if (node.userData && node.userData.isExportPart) {
-                      let hasGeometry = false;
-                      node.traverse((child) => {
-                        if (child.isMesh && child.geometry) {
-                          hasGeometry = true;
-                        }
-                      });
-                      if (hasGeometry) {
-                        try {
-                          const rawOutput = exporter.parse(node, { binary: true });
-                          let arrayBuffer = null;
-                          if (rawOutput instanceof DataView) {
-                            arrayBuffer = rawOutput.buffer.slice(
-                              rawOutput.byteOffset,
-                              rawOutput.byteOffset + rawOutput.byteLength
-                            );
-                          } else if (rawOutput instanceof ArrayBuffer) {
-                            arrayBuffer = rawOutput;
-                          } else if (rawOutput && rawOutput.buffer instanceof ArrayBuffer) {
-                            const offset = rawOutput.byteOffset || 0;
-                            const length = rawOutput.byteLength || rawOutput.buffer.byteLength;
-                            arrayBuffer = rawOutput.buffer.slice(offset, offset + length);
-                          } else if (typeof rawOutput === "string") {
-                            const enc = new TextEncoder();
-                            arrayBuffer = enc.encode(rawOutput).buffer;
-                          }
-
-                          if (arrayBuffer && arrayBuffer.byteLength > 84) {
-                            let binaryStr = "";
-                            const bytes = new Uint8Array(arrayBuffer);
-                            const len = bytes.byteLength;
-                            for (let i = 0; i < len; i += 8192) {
-                              binaryStr += String.fromCharCode.apply(
-                                null,
-                                bytes.subarray(i, Math.min(i + 8192, len))
-                              );
-                            }
-                            const b64 = window.btoa(binaryStr);
-                            const blob = new Blob([arrayBuffer], { type: "application/octet-stream" });
-
-                            parts.push({
-                              name: node.userData.partName || "Part",
-                              color: node.userData.partColor || "#222222",
-                              role: node.userData.partRole || "",
-                              stl_base64: b64,
-                              blob: blob,
-                            });
-                          }
-                        } catch (partExportErr) {
-                          console.warn("Błąd parsowania części:", node.userData?.partName, partExportErr);
-                        }
-                      }
-                      return; // STOP — nie wchodzić w poddrzewo
-                    }
-                    if (node.children) {
-                      for (const child of node.children) {
-                        collectExportParts(child);
-                      }
-                    }
-                  }
-                  collectExportParts(scene);
-
-                  // Przebieg awaryjny — jeśli przebieg po grupach nie znalazł części,
-                  // wyciągamy wszystkie bezpośrednie siatki (meshes) ze sceny
-                  if (parts.length === 0) {
-                    console.warn("[DRUKSTACJA] Przebieg 1 zwrócił 0 części, uruchamiam awaryjny skan siatek sceny...");
-                    scene.traverse((child) => {
-                      if (child.isMesh && child.geometry) {
-                        const name = child.userData?.partName || child.name || `Czesc_${parts.length + 1}`;
-                        let col = child.userData?.partColor;
-                        if (!col && child.material) {
-                          if (child.material.color) {
-                            col = "#" + child.material.color.getHexString();
-                          }
-                        }
-                        col = col || "#222222";
-                        try {
-                          const rawOutput = exporter.parse(child, { binary: true });
-                          let arrayBuffer = null;
-                          if (rawOutput instanceof DataView) {
-                            arrayBuffer = rawOutput.buffer.slice(rawOutput.byteOffset, rawOutput.byteOffset + rawOutput.byteLength);
-                          } else if (rawOutput instanceof ArrayBuffer) {
-                            arrayBuffer = rawOutput;
-                          } else if (rawOutput && rawOutput.buffer instanceof ArrayBuffer) {
-                            arrayBuffer = rawOutput.buffer.slice(rawOutput.byteOffset || 0, (rawOutput.byteOffset || 0) + (rawOutput.byteLength || rawOutput.buffer.byteLength));
-                          }
-                          if (arrayBuffer && arrayBuffer.byteLength > 84) {
-                            let binaryStr = "";
-                            const bytes = new Uint8Array(arrayBuffer);
-                            const len = bytes.byteLength;
-                            for (let i = 0; i < len; i += 8192) {
-                              binaryStr += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, len)));
-                            }
-                            const b64 = window.btoa(binaryStr);
-                            const blob = new Blob([arrayBuffer], { type: "application/octet-stream" });
-                            parts.push({
-                              name: name,
-                              color: col,
-                              role: child.userData?.partRole || "",
-                              stl_base64: b64,
-                              blob: blob,
-                            });
-                          }
-                        } catch (meshErr) {
-                          console.warn("Błąd awaryjnego eksportu siatki:", meshErr);
-                        }
-                      }
-                    });
-                  }
-
-                  console.log(`[DRUKSTACJA 3MF] Łącznie wyeksportowano ${parts.length} części:`, parts.map(p => p.name));
-                  return parts;
-                } catch (err) {
-                  console.error("Błąd podczas eksportu części STLExporter:", err);
-                  return [];
-                }
-              },
-              exportMultiPartKeychain: async () => {
-                const targetContainer = keychainGroupRef?.current || scene;
-                if (!targetContainer) return null;
 
                 const exporter = new STLExporter();
                 const formData = new FormData();
@@ -992,42 +876,49 @@ const KeychainViewer3D = dynamic(
                 let partIndex = 1;
 
                 // Wymuś przeliczenie pozycji i rotacji w całej scenie
-                targetContainer.updateMatrixWorld(true);
+                if (typeof target.updateMatrixWorld === "function") {
+                  target.updateMatrixWorld(true);
+                }
 
-                targetContainer.traverse((node) => {
-                  // Sprawdź czy element to Mesh z faktyczną geometrią
-                  if (node.isMesh && node.geometry) {
-                    // Pobierz kolor materiału lub z metadanych
-                    let hexColor = "#FFFFFF";
-                    if (node.userData?.partColor) {
-                      hexColor = node.userData.partColor;
-                    } else if (node.parent?.userData?.partColor) {
-                      hexColor = node.parent.userData.partColor;
-                    } else if (node.parent?.parent?.userData?.partColor) {
-                      hexColor = node.parent.parent.userData.partColor;
-                    } else if (node.material) {
-                      if (Array.isArray(node.material) && node.material[0]?.color) {
-                        hexColor = "#" + node.material[0].color.getHexString().toUpperCase();
-                      } else if (node.material.color) {
-                        hexColor = "#" + node.material.color.getHexString().toUpperCase();
+                target.traverse((node) => {
+                  try {
+                    // Sprawdź czy element to Mesh z faktyczną geometrią
+                    if (node && node.isMesh && node.geometry) {
+                      // Pobierz kolor materiału lub z metadanych
+                      let hexColor = "#FFFFFF";
+                      if (node.userData?.partColor) {
+                        hexColor = node.userData.partColor;
+                      } else if (node.parent?.userData?.partColor) {
+                        hexColor = node.parent.userData.partColor;
+                      } else if (node.parent?.parent?.userData?.partColor) {
+                        hexColor = node.parent.parent.userData.partColor;
+                      } else if (node.material) {
+                        const mat = Array.isArray(node.material) ? node.material[0] : node.material;
+                        if (mat?.color && typeof mat.color.getHexString === "function") {
+                          hexColor = "#" + mat.color.getHexString().toUpperCase();
+                        }
                       }
-                    }
-                    if (!hexColor.startsWith("#")) hexColor = "#" + hexColor;
+                      if (!hexColor || typeof hexColor !== "string" || !hexColor.startsWith("#")) {
+                        hexColor = hexColor ? `#${hexColor}` : "#FFFFFF";
+                      }
 
-                    let partName =
-                      node.userData?.partName ||
-                      node.parent?.userData?.partName ||
-                      node.parent?.parent?.userData?.partName ||
-                      node.name ||
-                      `Czesc_${partIndex}`;
+                      let partName =
+                        node.userData?.partName ||
+                        node.parent?.userData?.partName ||
+                        node.parent?.parent?.userData?.partName ||
+                        node.name ||
+                        `Czesc_${partIndex}`;
 
-                    // Klonujemy obiekt, aby zachować jego pozycję w układzie lokalnym breloka
-                    const clonedMesh = node.clone();
-                    clonedMesh.applyMatrix4(node.matrixWorld);
-                    clonedMesh.updateMatrixWorld(true);
+                      // Klonujemy obiekt, aby zachować jego pozycję w układzie lokalnym breloka
+                      const clonedMesh = node.clone();
+                      if (node.matrixWorld && typeof clonedMesh.applyMatrix4 === "function") {
+                        clonedMesh.applyMatrix4(node.matrixWorld);
+                      }
+                      if (typeof clonedMesh.updateMatrixWorld === "function") {
+                        clonedMesh.updateMatrixWorld(true);
+                      }
 
-                    // Eksport do binarnego STL
-                    try {
+                      // Eksport do binarnego STL
                       const stlData = exporter.parse(clonedMesh, { binary: true });
                       let arrayBuffer = null;
                       if (stlData instanceof DataView) {
@@ -1060,9 +951,9 @@ const KeychainViewer3D = dynamic(
 
                         partIndex++;
                       }
-                    } catch (meshErr) {
-                      console.warn("Błąd parsowania siatki do STL:", partName, meshErr);
                     }
+                  } catch (nodeErr) {
+                    console.warn("Błąd przetwarzania węzła siatki:", nodeErr);
                   }
                 });
 
@@ -1077,15 +968,20 @@ const KeychainViewer3D = dynamic(
                 formData.append("metadata", JSON.stringify(partsMetadata));
                 formData.append("colors", JSON.stringify(partsMetadata.map((p) => p.color)));
                 return { formData, partsMetadata, count: partsMetadata.length };
-              },
-            };
+              } catch (err) {
+                console.error("Błąd podczas exportMultiPartKeychain:", err);
+                return null;
+              }
+            },
+          };
 
-            if (typeof window !== "undefined") {
-              window.__KEYCHAIN_EXPORTER = handlers;
-            }
+          if (typeof window !== "undefined") {
+            window.__KEYCHAIN_EXPORTER = handlers;
+          }
+          if (typeof onExportReady === "function") {
             onExportReady(handlers);
           }
-        }, [scene, onExportReady, keychainGroupRef]);
+        }, [scene]);
 
         return null;
       }
