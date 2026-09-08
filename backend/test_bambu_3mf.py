@@ -116,12 +116,20 @@ def test_filament_mapping():
         assert ps.get("project_type") == "bambu_project"
         assert ps.get("version") == "1.0"
         assert isinstance(ps.get("filaments"), list) and len(ps["filaments"]) == 2
-        assert ps["filaments"][0] == {"color": "#222222", "type": "PLA"}
-        assert ps["filaments"][1] == {"color": "#FFFFFF", "type": "PLA"}
+        assert ps["filaments"][0]["color"] == "#222222"
+        assert ps["filaments"][0]["type"] == "PLA"
+        assert ps["filaments"][0]["nozzle_temperature"] == 215
+        assert ps["filaments"][0]["bed_temperature"] == 55
+        assert ps["filaments"][1]["color"] == "#FFFFFF"
+        assert ps["filaments"][1]["type"] == "PLA"
+        assert "name" in ps["filaments"][0]
         assert ps.get("filament_colour") == ["#222222", "#FFFFFF"]
         assert ps.get("filament_type") == ["PLA", "PLA"]
         assert len(ps.get("filament_settings_id")) == 2
         assert "Generic PLA @BBL A1" in ps.get("filament_settings_id")[0]
+        assert "filament_density" in ps
+        assert "nozzle_temperature" in ps
+        assert "bed_temperature" in ps
 
     if os.path.exists(saved):
         os.remove(saved)
@@ -433,6 +441,61 @@ def test_multipart_assembly_and_plates():
     print("test_multipart_assembly_and_plates: PASSED [OK]")
 
 
+def test_sunlu_filament_profiles_and_ams_slots():
+    """Testuje bazę filamentów SUNLU (temperatury, gęstość, typ PLA/PLA-Silk) oraz sloty AMS 1, 2, 3, 4."""
+    print("\n--- Running test_sunlu_filament_profiles_and_ams_slots ---")
+    out_path = os.path.join(tempfile.gettempdir(), f"test_sunlu_{uuid.uuid4().hex[:6]}.3mf")
+    parts = [
+        {"name": "Baza", "color_hex": "#E8D8C8", "extruder": 1, "mesh": create_cube_mesh(), "role": "base_mesh"},
+        {"name": "Rant", "color_hex": "#C49A6C", "extruder": 2, "mesh": create_cube_mesh(), "role": "border_mesh"},
+        {"name": "Grafika", "color_hex": "#1A237E", "extruder": 3, "mesh": create_cube_mesh(), "role": "graphic_mesh"},
+        {"name": "Uszko", "color_hex": "#E91E63", "extruder": 4, "mesh": create_cube_mesh(), "role": "ring_mesh"},
+    ]
+
+    saved = generate_production_3mf(output_path=out_path, parts=parts)
+    val = validate_3mf_package(saved)
+    assert val["valid"], f"Walidacja pakietu nie powiodła się: {val['errors']}"
+
+    with zipfile.ZipFile(saved, "r") as zf:
+        ps = json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
+        ms_xml = zf.read("Metadata/model_settings.config").decode("utf-8")
+
+        # 1. Sprawdź model_settings.config - sloty ekstruderów 1, 2, 3, 4
+        assert '<metadata key="extruder" value="1"/>' in ms_xml
+        assert '<metadata key="extruder" value="2"/>' in ms_xml
+        assert '<metadata key="extruder" value="3"/>' in ms_xml
+        assert '<metadata key="extruder" value="4"/>' in ms_xml
+
+        # 2. Sprawdź profile materiałowe
+        fils = {f["color"]: f for f in ps["filaments"]}
+        # Base: Beige standard PLA (215°C, 55°C, 1.24)
+        assert fils["#E8D8C8"]["type"] == "PLA"
+        assert fils["#E8D8C8"]["nozzle_temperature"] == 215
+        assert fils["#E8D8C8"]["bed_temperature"] == 55
+
+        # Wood: Maple Wood (205°C, 45°C, 1.25)
+        assert fils["#C49A6C"]["type"] == "PLA"
+        assert fils["#C49A6C"]["nozzle_temperature"] == 205
+        assert fils["#C49A6C"]["bed_temperature"] == 45
+        assert fils["#C49A6C"]["density"] == 1.25
+
+        # Silk Dual: Black Blue (PLA-Silk, 220°C, 55°C, 1.23)
+        assert fils["#1A237E"]["type"] == "PLA-Silk"
+        assert fils["#1A237E"]["nozzle_temperature"] == 220
+        assert fils["#1A237E"]["bed_temperature"] == 55
+        assert fils["#1A237E"]["density"] == 1.23
+
+        # Rainbow: Rainbow 01 (210°C, 55°C, 1.21)
+        assert fils["#E91E63"]["type"] == "PLA"
+        assert fils["#E91E63"]["nozzle_temperature"] == 210
+        assert fils["#E91E63"]["bed_temperature"] == 55
+        assert fils["#E91E63"]["density"] == 1.21
+
+    if os.path.exists(saved):
+        os.remove(saved)
+    print("test_sunlu_filament_profiles_and_ams_slots: PASSED [OK]")
+
+
 if __name__ == "__main__":
     print("Starting Comprehensive Bambu Studio 3MF Compatibility Suite...")
     test_parts_are_distinct()
@@ -446,7 +509,8 @@ if __name__ == "__main__":
     test_bambu_real_scenario()
     test_polymer_mapping_and_safe_infill()
     test_multipart_assembly_and_plates()
+    test_sunlu_filament_profiles_and_ams_slots()
     print("\n=======================================================")
-    print("ALL 10 COMPREHENSIVE BAMBU COMPATIBILITY TESTS PASSED! [OK]")
+    print("ALL 11 COMPREHENSIVE BAMBU COMPATIBILITY TESTS PASSED! [OK]")
     print("=======================================================")
 

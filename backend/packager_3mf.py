@@ -112,6 +112,149 @@ def _mesh_to_xml(mesh, indent="     "):
     return "\n".join(vert_lines), "\n".join(tri_lines)
 
 
+
+SUNLU_FILAMENT_CATALOG = {
+    # --- SUNLU PLA (Standard & Transparent) ---
+    "#E8D8C8": {"name": "SUNLU PLA Beige", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#F3EFE6": {"name": "SUNLU PLA Bone White", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#FFFFFF": {"name": "SUNLU PLA Ceramic White", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#5C3A21": {"name": "SUNLU PLA Coffee Brown", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#381E11": {"name": "SUNLU PLA Chocolate", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#00BCDB": {"name": "SUNLU PLA Cyan", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#8E9297": {"name": "SUNLU PLA Grey", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#0E8A37": {"name": "SUNLU PLA Green", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#78C850": {"name": "SUNLU PLA Light Green", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#111215": {"name": "SUNLU PLA Midnight Black", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#222222": {"name": "SUNLU PLA Black", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#6E3725": {"name": "SUNLU PLA Roasted Chestnut", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#002FA7": {"name": "SUNLU PLA Klein Blue", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#FFF033": {"name": "SUNLU PLA Lemon Yellow", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#FFCD00": {"name": "SUNLU PLA Yellow", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#D4AF37": {"name": "SUNLU PLA Light Gold", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#C5C6C7": {"name": "SUNLU PLA Silver", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#FFB3C6": {"name": "SUNLU PLA Sakura Pink", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#FF6B00": {"name": "SUNLU PLA Sunny Orange", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#56CCF2": {"name": "SUNLU PLA Sky Blue", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#D81E06": {"name": "SUNLU PLA Red", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#9B72CF": {"name": "SUNLU PLA Lavender Purple", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#88D49E": {"name": "SUNLU PLA Mint Green", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#ECEFF1": {"name": "SUNLU PLA Transparent", "type": "PLA", "nozzleTemp": 210, "bedTemp": 55, "density": 1.21},
+    "#556B2F": {"name": "SUNLU PLA Olive Green", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#C2185B": {"name": "SUNLU PLA Magenta", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#FFD000": {"name": "SUNLU PLA Vivid Yellow", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#8F6843": {"name": "SUNLU PLA Oak", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.24},
+    "#E53935": {"name": "SUNLU PLA Transparent Red", "type": "PLA", "nozzleTemp": 210, "bedTemp": 55, "density": 1.21},
+    "#FB8C00": {"name": "SUNLU PLA Transparent Orange", "type": "PLA", "nozzleTemp": 210, "bedTemp": 55, "density": 1.21},
+    "#43A047": {"name": "SUNLU PLA Transparent Green", "type": "PLA", "nozzleTemp": 210, "bedTemp": 55, "density": 1.21},
+    "#FDD835": {"name": "SUNLU PLA Transparent Yellow", "type": "PLA", "nozzleTemp": 210, "bedTemp": 55, "density": 1.21},
+    "#8E24AA": {"name": "SUNLU PLA Transparent Purple", "type": "PLA", "nozzleTemp": 210, "bedTemp": 55, "density": 1.21},
+
+    # --- PLA Wood ---
+    "#C49A6C": {"name": "SUNLU PLA Wood Maple", "type": "PLA", "nozzleTemp": 205, "bedTemp": 45, "density": 1.25},
+    "#A87C4F": {"name": "SUNLU PLA Wood Natural", "type": "PLA", "nozzleTemp": 205, "bedTemp": 45, "density": 1.25},
+    "#533826": {"name": "SUNLU PLA Wood Walnut", "type": "PLA", "nozzleTemp": 205, "bedTemp": 45, "density": 1.25},
+    "#7A2F21": {"name": "SUNLU PLA Wood Cherry", "type": "PLA", "nozzleTemp": 205, "bedTemp": 45, "density": 1.25},
+
+    # --- Silk Dual Color ---
+    "#1A237E": {"name": "SUNLU Silk Dual Black Blue", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+    "#4A148C": {"name": "SUNLU Silk Dual Black Purple", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+    "#1B5E20": {"name": "SUNLU Silk Dual Black Green", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+    "#757575": {"name": "SUNLU Silk Dual Black White", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+    "#00897B": {"name": "SUNLU Silk Dual Blue Green", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+    "#6A1B9A": {"name": "SUNLU Silk Dual Green Purple", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+    "#880E4F": {"name": "SUNLU Silk Dual Red Blue", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+    "#B71C1C": {"name": "SUNLU Silk Dual Red Gold", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+    "#F48FB1": {"name": "SUNLU Silk Dual Pink Gold", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+
+    # --- Silk Tri Color ---
+    "#6A1B9A": {"name": "SUNLU Silk Tri Black Gold Purple", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+    "#FBC02D": {"name": "SUNLU Silk Tri Red Yellow Green", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+    "#D32F2F": {"name": "SUNLU Silk Tri Red Yellow Blue", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+    "#512DA8": {"name": "SUNLU Silk Tri Blue Green Purple", "type": "PLA-Silk", "nozzleTemp": 220, "bedTemp": 55, "density": 1.23},
+
+    # --- PLA Galaxy ---
+    "#1A2A44": {"name": "SUNLU PLA Galaxy Starlit Flow", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.22},
+    "#143D28": {"name": "SUNLU PLA Galaxy Green", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.22},
+    "#381E47": {"name": "SUNLU PLA Galaxy Stardust Purple", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.22},
+    "#42281D": {"name": "SUNLU PLA Galaxy Star Brown", "type": "PLA", "nozzleTemp": 215, "bedTemp": 55, "density": 1.22},
+
+    # --- PLA Rainbow ---
+    "#E91E63": {"name": "SUNLU PLA Rainbow 01", "type": "PLA", "nozzleTemp": 210, "bedTemp": 55, "density": 1.21},
+    "#00BCD4": {"name": "SUNLU PLA Rainbow 02", "type": "PLA", "nozzleTemp": 210, "bedTemp": 55, "density": 1.21},
+    "#AB47BC": {"name": "SUNLU PLA Rainbow 03", "type": "PLA", "nozzleTemp": 210, "bedTemp": 55, "density": 1.21},
+    "#26C6DA": {"name": "SUNLU PLA Rainbow 04", "type": "PLA", "nozzleTemp": 210, "bedTemp": 55, "density": 1.21},
+}
+
+
+def resolve_filament_profile(color_hex: str, user_filament: dict = None, default_mat: str = "PLA") -> dict:
+    """
+    Zwraca spójny profil filamentu z temperaturami, gęstością i typem dla slicera Bambu Studio.
+    """
+    c6 = format_hex_6(color_hex).upper()
+    cat_entry = SUNLU_FILAMENT_CATALOG.get(c6)
+
+    # 1. Sprawdź czy podano filament bezpośrednio w danych części
+    if user_filament and isinstance(user_filament, dict):
+        f_type = user_filament.get("type") or (cat_entry["type"] if cat_entry else default_mat)
+        f_name = user_filament.get("name") or (cat_entry["name"] if cat_entry else f"SUNLU PLA {c6}")
+        nozzle = (
+            user_filament.get("nozzleTemp")
+            or user_filament.get("nozzle_temperature")
+            or (cat_entry["nozzleTemp"] if cat_entry else 215)
+        )
+        bed = (
+            user_filament.get("bedTemp")
+            or user_filament.get("bed_temperature")
+            or (cat_entry["bedTemp"] if cat_entry else 55)
+        )
+        density = (
+            user_filament.get("density")
+            or (cat_entry["density"] if cat_entry else 1.24)
+        )
+        try:
+            nozzle_int = int(nozzle)
+        except Exception:
+            nozzle_int = 215
+        try:
+            bed_int = int(bed)
+        except Exception:
+            bed_int = 55
+        try:
+            density_flt = float(density)
+        except Exception:
+            density_flt = 1.24
+
+        return {
+            "color": c6,
+            "type": str(f_type),
+            "name": str(f_name),
+            "nozzle_temperature": nozzle_int,
+            "bed_temperature": bed_int,
+            "density": density_flt,
+        }
+
+    # 2. Katalog SUNLU
+    if cat_entry:
+        return {
+            "color": c6,
+            "type": cat_entry["type"],
+            "name": cat_entry["name"],
+            "nozzle_temperature": cat_entry["nozzleTemp"],
+            "bed_temperature": cat_entry["bedTemp"],
+            "density": cat_entry["density"],
+        }
+
+    # 3. Domyślny profil
+    return {
+        "color": c6,
+        "type": default_mat,
+        "name": f"SUNLU PLA {c6}",
+        "nozzle_temperature": 215,
+        "bed_temperature": 55,
+        "density": 1.24,
+    }
+
+
 def get_bambu_process_preset(layer_height: float) -> str:
     """Zwraca oficjalną nazwę profilu procesu Bambu Studio dla danej wysokości warstwy."""
     if abs(layer_height - 0.08) < 0.01:
@@ -244,6 +387,8 @@ def generate_production_3mf(
                     "color_hex": p_color,
                     "mesh": p_mesh,
                     "role": p_role,
+                    "extruder": p.get("extruder") or p.get("slot") or p.get("ams_slot"),
+                    "filament": p.get("filament") or p.get("filament_info"),
                 })
 
     # Tryb pojedynczej bryły (jeśli brak listy parts)
@@ -289,6 +434,8 @@ def generate_production_3mf(
             "color_hex": color_hex,
             "mesh": mesh,
             "role": "model",
+            "extruder": None,
+            "filament": print_settings.get("filament") if print_settings else None,
         })
 
     # ──────────────────────────────────────────────────────────────
@@ -309,7 +456,16 @@ def generate_production_3mf(
 
         c_idx = unique_colors_8.index(c8)
         part_color_indices.append(c_idx)
-        part_extruders.append(c_idx + 1)  # 1-based extruder/AMS slot
+
+        ext_val = None
+        if p.get("extruder") is not None:
+            try:
+                ext_val = int(p["extruder"])
+            except Exception:
+                ext_val = None
+        if ext_val is None:
+            ext_val = c_idx + 1
+        part_extruders.append(ext_val)
 
     num_filaments = len(unique_colors_6)
 
@@ -410,18 +566,37 @@ def generate_production_3mf(
     print_preset = get_bambu_process_preset(layer_height)
     printer_machine = f"Bambu Lab A1 {nozzle_size:.1f} nozzle" if nozzle_size in [0.2, 0.4, 0.6, 0.8] else "Bambu Lab A1 0.4 nozzle"
 
+    filaments_list = []
+    for c6 in unique_colors_6:
+        matching_user_fil = None
+        for p in valid_parts:
+            if format_hex_6(p["color_hex"]).upper() == c6.upper() and p.get("filament"):
+                matching_user_fil = p.get("filament")
+                break
+        if not matching_user_fil and print_settings and isinstance(print_settings.get("filaments"), list):
+            for f in print_settings["filaments"]:
+                f_hex = f.get("color") or f.get("hex") or ""
+                if format_hex_6(f_hex).upper() == c6.upper():
+                    matching_user_fil = f
+                    break
+        fil_profile = resolve_filament_profile(c6, matching_user_fil, clean_mat)
+        filaments_list.append(fil_profile)
+
     project_settings_dict = {
         "version": "1.0",
         "project_type": "bambu_project",
-        "filaments": [
-            {"color": c, "type": clean_mat} for c in unique_colors_6
-        ],
+        "filaments": filaments_list,
         "name": "project_settings",
         "from": "project",
         "filament_colour": unique_colors_6,
-        "filament_type": [clean_mat] * num_filaments,
-        "filament_vendor": ["Generic"] * num_filaments,
-        "filament_settings_id": [f"Generic {clean_mat} @BBL A1"] * num_filaments,
+        "filament_type": [f["type"] for f in filaments_list],
+        "filament_vendor": ["SUNLU" if "SUNLU" in f["name"] else "Generic" for f in filaments_list],
+        "filament_density": [f"{f['density']:.2f}" for f in filaments_list],
+        "nozzle_temperature": [str(f["nozzle_temperature"]) for f in filaments_list],
+        "nozzle_temperature_initial_layer": [str(f["nozzle_temperature"]) for f in filaments_list],
+        "bed_temperature": [str(f["bed_temperature"]) for f in filaments_list],
+        "bed_temperature_initial_layer": [str(f["bed_temperature"]) for f in filaments_list],
+        "filament_settings_id": [f"Generic {f['type']} @BBL A1" for f in filaments_list],
         "nozzle_diameter": [f"{nozzle_size:.1f}"] * num_filaments,
         "layer_height": f"{layer_height:.2f}",
         "initial_layer_print_height": "0.20",
@@ -469,9 +644,10 @@ def generate_production_3mf(
     # 6. Metadata/slice_info.config (nagłówek slicera i lista filamentów)
     # ──────────────────────────────────────────────────────────────
     filament_slice_tags = []
-    for idx, c6 in enumerate(unique_colors_6):
+    for idx, f in enumerate(filaments_list):
+        c6 = unique_colors_6[idx]
         filament_slice_tags.append(
-            f'    <filament id="{idx + 1}" tray_info_idx="" type="{clean_mat}" color="{c6}" used_m="1.00" used_g="3.00"/>'
+            f'    <filament id="{idx + 1}" tray_info_idx="" type="{f["type"]}" color="{c6}" used_m="1.00" used_g="3.00"/>'
         )
     filament_slice_joined = "\n".join(filament_slice_tags)
 

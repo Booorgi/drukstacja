@@ -16,6 +16,13 @@ import {
   getPlaFinishType,
   getPlaFinishLabel,
 } from "../lib/filament";
+import KeychainColorSelector from "../components/KeychainColorSelector";
+import {
+  FILAMENTS,
+  FILAMENT_CATEGORIES,
+  getFilamentById,
+  getFilamentByHex,
+} from "../config/filamentDatabase";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -324,6 +331,8 @@ const KeychainViewer3D = dynamic(
               partName: "Rant",
               partColor: strokeFilament?.hex || "#FFFFFF",
               partRole: "border_mesh",
+              partSlot: 2,
+              filamentInfo: strokeFilament,
             }}
           >
             <mesh
@@ -440,6 +449,8 @@ const KeychainViewer3D = dynamic(
                       partName: cleanLayerName,
                       partColor: grp.cfg.filament?.hex || "#EF4444",
                       partRole: "graphic_mesh",
+                      partSlot: 3,
+                      filamentInfo: grp.cfg.filament,
                     }}
                   >
                     {grp.shapes.map((shape, sIdx) => (
@@ -588,6 +599,8 @@ const KeychainViewer3D = dynamic(
               partName: "Tekst_3D",
               partColor: textFilament?.hex || "#FFFFFF",
               partRole: "text_mesh",
+              partSlot: 3,
+              filamentInfo: textFilament,
             }}
           >
             {shapes.map((shape, idx) => (
@@ -639,6 +652,7 @@ const KeychainViewer3D = dynamic(
         textOffsetY,
         textFilament,
         textThickness,
+        ringFilament,
       }) {
         const radius = (baseDiameter || 60) / 2;
 
@@ -686,6 +700,8 @@ const KeychainViewer3D = dynamic(
                     partName: "Baza",
                     partColor: baseFilament?.hex || "#222222",
                     partRole: "base_mesh",
+                    partSlot: 1,
+                    filamentInfo: baseFilament,
                   }}
                 >
                   <RoundedBox
@@ -702,13 +718,15 @@ const KeychainViewer3D = dynamic(
                     userData={{
                       isExportPart: true,
                       partName: "Uszko",
-                      partColor: baseFilament?.hex || "#222222",
+                      partColor: ringFilament?.hex || baseFilament?.hex || "#D4AF37",
                       partRole: "ring_mesh",
+                      partSlot: 4,
+                      filamentInfo: ringFilament || baseFilament,
                     }}
                   >
                     <mesh position={[-baseWidth / 2 - 4.5, 0, 0]}>
                       <torusGeometry args={[5, 1.6, 16, 32]} />
-                      <SunluDynamicMaterial filamentInfo={baseFilament} />
+                      <SunluDynamicMaterial filamentInfo={ringFilament || baseFilament} />
                     </mesh>
                   </group>
                 )}
@@ -723,6 +741,8 @@ const KeychainViewer3D = dynamic(
                     partName: "Baza",
                     partColor: baseFilament?.hex || "#222222",
                     partRole: "base_mesh",
+                    partSlot: 1,
+                    filamentInfo: baseFilament,
                   }}
                 >
                   <mesh rotation={[Math.PI / 2, 0, 0]}>
@@ -735,13 +755,15 @@ const KeychainViewer3D = dynamic(
                     userData={{
                       isExportPart: true,
                       partName: "Uszko",
-                      partColor: baseFilament?.hex || "#222222",
+                      partColor: ringFilament?.hex || baseFilament?.hex || "#D4AF37",
                       partRole: "ring_mesh",
+                      partSlot: 4,
+                      filamentInfo: ringFilament || baseFilament,
                     }}
                   >
                     <mesh position={[0, radius + 4.5, 0]}>
                       <torusGeometry args={[5, 1.6, 16, 32]} />
-                      <SunluDynamicMaterial filamentInfo={baseFilament} />
+                      <SunluDynamicMaterial filamentInfo={ringFilament || baseFilament} />
                     </mesh>
                   </group>
                 )}
@@ -756,6 +778,8 @@ const KeychainViewer3D = dynamic(
                     partName: "Baza",
                     partColor: baseFilament?.hex || "#222222",
                     partRole: "base_mesh",
+                    partSlot: 1,
+                    filamentInfo: baseFilament,
                   }}
                 >
                   <mesh rotation={[Math.PI / 2, 0, 0]}>
@@ -768,13 +792,15 @@ const KeychainViewer3D = dynamic(
                     userData={{
                       isExportPart: true,
                       partName: "Uszko",
-                      partColor: baseFilament?.hex || "#222222",
+                      partColor: ringFilament?.hex || baseFilament?.hex || "#D4AF37",
                       partRole: "ring_mesh",
+                      partSlot: 4,
+                      filamentInfo: ringFilament || baseFilament,
                     }}
                   >
                     <mesh position={[0, radius + 4.5, 0]}>
                       <torusGeometry args={[5, 1.6, 16, 32]} />
-                      <SunluDynamicMaterial filamentInfo={baseFilament} />
+                      <SunluDynamicMaterial filamentInfo={ringFilament || baseFilament} />
                     </mesh>
                   </group>
                 )}
@@ -937,6 +963,31 @@ const KeychainViewer3D = dynamic(
                         arrayBuffer = new TextEncoder().encode(stlData).buffer;
                       }
 
+                      const partRole =
+                        node.userData?.partRole ||
+                        node.parent?.userData?.partRole ||
+                        node.parent?.parent?.userData?.partRole ||
+                        "";
+
+                      let partSlot =
+                        node.userData?.partSlot ||
+                        node.parent?.userData?.partSlot ||
+                        node.parent?.parent?.userData?.partSlot;
+
+                      if (!partSlot) {
+                        if (partRole === "base_mesh") partSlot = 1;
+                        else if (partRole === "border_mesh") partSlot = 2;
+                        else if (partRole === "graphic_mesh" || partRole === "text_mesh") partSlot = 3;
+                        else if (partRole === "ring_mesh") partSlot = 4;
+                        else partSlot = Math.min(partIndex, 4);
+                      }
+
+                      const filInfo =
+                        node.userData?.filamentInfo ||
+                        node.parent?.userData?.filamentInfo ||
+                        node.parent?.parent?.userData?.filamentInfo ||
+                        getFilamentByHex(hexColor);
+
                       if (arrayBuffer && arrayBuffer.byteLength > 84) {
                         const blob = new Blob([arrayBuffer], { type: "application/octet-stream" });
                         const fileName = `part_${partIndex}.stl`;
@@ -947,6 +998,15 @@ const KeychainViewer3D = dynamic(
                           name: partName,
                           color: hexColor,
                           fileName: fileName,
+                          role: partRole,
+                          extruder: partSlot,
+                          filament: filInfo ? {
+                            name: filInfo.name,
+                            type: filInfo.type || "PLA",
+                            nozzle_temperature: filInfo.nozzleTemp || 215,
+                            bed_temperature: filInfo.bedTemp || 55,
+                            density: filInfo.density || 1.24,
+                          } : null,
                         });
 
                         partIndex++;
@@ -967,6 +1027,21 @@ const KeychainViewer3D = dynamic(
 
                 formData.append("metadata", JSON.stringify(partsMetadata));
                 formData.append("colors", JSON.stringify(partsMetadata.map((p) => p.color)));
+                formData.append(
+                  "filaments",
+                  JSON.stringify(
+                    partsMetadata
+                      .filter((p) => p.filament)
+                      .map((p) => ({
+                        color: p.color,
+                        name: p.filament.name,
+                        type: p.filament.type,
+                        nozzle_temperature: p.filament.nozzle_temperature,
+                        bed_temperature: p.filament.bed_temperature,
+                        density: p.filament.density,
+                      }))
+                  )
+                );
                 return { formData, partsMetadata, count: partsMetadata.length };
               } catch (err) {
                 console.error("Błąd podczas exportMultiPartKeychain:", err);
@@ -1210,18 +1285,22 @@ export default function KeychainGenerator() {
 
   // Kształt bazy i wymiary
   const [shapeType, setShapeType] = useState("hexagon");
-  const [baseFilament, setBaseFilament] = useState(KEYCHAIN_FILAMENTS.PLA[2] || KEYCHAIN_FILAMENTS.PLA[0]); // Czerń
+  const [baseFilament, setBaseFilament] = useState(() => getFilamentById("pla_midnight") || FILAMENTS[9]); // Czerń
   const [baseWidth, setBaseWidth] = useState(65);
   const [baseHeight, setBaseHeight] = useState(50);
   const [baseDiameter, setBaseDiameter] = useState(60);
   const [baseThickness, setBaseThickness] = useState(3.0);
   const [hasHole, setHasHole] = useState(true);
 
-  // Parametry Stroke
+  // Parametry Stroke (Rant)
   const [strokeEnabled, setStrokeEnabled] = useState(true);
   const [strokeWidth, setStrokeWidth] = useState(2.0);
   const [strokeThickness, setStrokeThickness] = useState(1.0);
-  const [strokeFilament, setStrokeFilament] = useState(KEYCHAIN_FILAMENTS.PLA[2] || KEYCHAIN_FILAMENTS.PLA[0]);
+  const [strokeFilament, setStrokeFilament] = useState(() => getFilamentById("pla_ceramic") || FILAMENTS[2]);
+
+  // Kolory warstw breloka (Grafika i Uszko)
+  const [graphicFilament, setGraphicFilament] = useState(() => getFilamentById("pla_cyan") || FILAMENTS[5]);
+  const [ringFilament, setRingFilament] = useState(() => getFilamentById("pla_light_gold") || FILAMENTS[14]);
 
   const [activeTab, setActiveTab] = useState("shape");
 
@@ -1231,10 +1310,10 @@ export default function KeychainGenerator() {
 
   // Warstwy motywu
   const [layersConfig, setLayersConfig] = useState([
-    { id: 1, name: "Warstwa 1 (Baza)", filament: KEYCHAIN_FILAMENTS.PLA[2], thickness: 0.6 },
-    { id: 2, name: "Warstwa 2 (Ciało)", filament: KEYCHAIN_FILAMENTS.PLA[5], thickness: 0.7 },
-    { id: 3, name: "Warstwa 3 (Cienie)", filament: KEYCHAIN_FILAMENTS.PLA[3], thickness: 0.8 },
-    { id: 4, name: "Warstwa 4 (Detale)", filament: KEYCHAIN_FILAMENTS.PLA[0], thickness: 0.9 },
+    { id: 1, name: "Warstwa 1 (Baza)", filament: getFilamentById("pla_cyan") || FILAMENTS[5], thickness: 0.6 },
+    { id: 2, name: "Warstwa 2 (Ciało)", filament: getFilamentById("pla_klein_blue") || FILAMENTS[11], thickness: 0.7 },
+    { id: 3, name: "Warstwa 3 (Cienie)", filament: getFilamentById("pla_roasted_chestnut") || FILAMENTS[10], thickness: 0.8 },
+    { id: 4, name: "Warstwa 4 (Detale)", filament: getFilamentById("pla_ceramic") || FILAMENTS[2], thickness: 0.9 },
   ]);
 
   // --- NOWE: Tekst na breloku ---
@@ -1244,9 +1323,32 @@ export default function KeychainGenerator() {
   const [textPosition, setTextPosition] = useState("bottom"); // top, center, bottom
   const [textOffsetX, setTextOffsetX] = useState(0);
   const [textOffsetY, setTextOffsetY] = useState(0);
-  const [textFilament, setTextFilament] = useState(KEYCHAIN_FILAMENTS.PLA[0] || KEYCHAIN_FILAMENTS.PLA[2]); // Biel domyślnie
+  const [textFilament, setTextFilament] = useState(() => getFilamentById("pla_ceramic") || FILAMENTS[2]); // Biel domyślnie
   const [textThickness, setTextThickness] = useState(0.8);
 
+  // Warstwy breloka dla dedykowanego selektora 4 części
+  const keychainLayers = useMemo(() => [
+    { id: "base", name: "Warstwa 1: Płyta bazowa (Base Plate)", selected: baseFilament },
+    { id: "border", name: "Warstwa 2: Obramowanie / Rant (Border)", selected: strokeFilament },
+    { id: "graphic", name: "Warstwa 3: Grafika / Tekst (Graphic)", selected: graphicFilament },
+    { id: "ring", name: "Warstwa 4: Uszko (Ring)", selected: ringFilament },
+  ], [baseFilament, strokeFilament, graphicFilament, ringFilament]);
+
+  const handleLayerColorChange = useCallback((layerId, filament) => {
+    if (layerId === "base") {
+      setBaseFilament(filament);
+    } else if (layerId === "border") {
+      setStrokeFilament(filament);
+    } else if (layerId === "graphic") {
+      setGraphicFilament(filament);
+      setLayersConfig((prev) =>
+        prev.map((l, idx) => (idx === 0 ? { ...l, filament } : l))
+      );
+      setTextFilament(filament);
+    } else if (layerId === "ring") {
+      setRingFilament(filament);
+    }
+  }, []);
 
   // --- NOWE: Layer View ---
   const [layerViewEnabled, setLayerViewEnabled] = useState(false);
@@ -1911,6 +2013,7 @@ export default function KeychainGenerator() {
                 textOffsetY={textOffsetY}
                 textFilament={textFilament}
                 textThickness={textThickness}
+                ringFilament={ringFilament}
               />
 
               {/* Layer View indicator */}
@@ -1969,17 +2072,11 @@ export default function KeychainGenerator() {
           <div className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-white border-l border-slate-100">
             <div className="space-y-4">
 
-              {/* 1. SELEKTOR KOLORU BAZY Z KATEGORIAMI */}
-              <div>
-                <span className="text-xs font-bold uppercase text-slate-400 block mb-1.5 tracking-wider">
-                  Kolor płyty bazowej (Filament PLA):
-                </span>
-                <SunluColorPaletteSelector
-                  selectedFilament={baseFilament}
-                  onSelectColor={(fil) => setBaseFilament(fil)}
-                  filaments={filaments}
-                />
-              </div>
+              {/* SELEKTOR KOLORÓW PER WARSTWA (Baza, Rant, Grafika, Uszko) */}
+              <KeychainColorSelector
+                layers={keychainLayers}
+                onSelectColor={handleLayerColorChange}
+              />
 
               {/* Taby konfiguracji — 5 zakładek (w tym Druk 3D) */}
               <div>

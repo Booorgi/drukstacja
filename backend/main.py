@@ -984,7 +984,9 @@ async def upload_order_geometry_endpoint(
                             "name": part_name,
                             "color_hex": part_color,
                             "path": local_part_path,
-                            "role": "part",
+                            "role": meta_item.get("role", "part") if meta_item else "part",
+                            "extruder": meta_item.get("extruder") or meta_item.get("slot") if meta_item else None,
+                            "filament": meta_item.get("filament") if meta_item else None,
                         })
                 except Exception as rf_err:
                     print(f"[WARN] Błąd zapisu części {part_name}: {rf_err}")
@@ -1034,6 +1036,8 @@ async def upload_order_geometry_endpoint(
                     "color_hex": p_color,
                     "path": local_part_path,
                     "role": p_role,
+                    "extruder": p_meta.get("extruder") or p_meta.get("slot"),
+                    "filament": p_meta.get("filament"),
                 })
 
         # Zapis metadanych części do cache JSON na potrzeby późniejszego pobierania
@@ -1151,6 +1155,16 @@ async def generate_direct_3mf_endpoint(
         except Exception:
             parsed_colors = [c.strip().strip('"') for c in str(raw_colors).replace("[", "").replace("]", "").split(",") if c.strip()]
 
+    raw_filaments = form.get("filaments")
+    parsed_filaments = []
+    if raw_filaments:
+        try:
+            parsed_filaments = json.loads(raw_filaments)
+            if not isinstance(parsed_filaments, list):
+                parsed_filaments = []
+        except Exception:
+            pass
+
     parts_list = []
 
     if uploaded_files:
@@ -1183,7 +1197,9 @@ async def generate_direct_3mf_endpoint(
                         "name": part_name,
                         "color_hex": part_color,
                         "path": local_part_path,
-                        "role": "part",
+                        "role": meta_item.get("role", "part") if meta_item else "part",
+                        "extruder": meta_item.get("extruder") or meta_item.get("slot") if meta_item else None,
+                        "filament": meta_item.get("filament") if meta_item else None,
                     })
             except Exception as rf_err:
                 print(f"[WARN] Błąd zapisu pliku części {part_name}: {rf_err}")
@@ -1235,6 +1251,8 @@ async def generate_direct_3mf_endpoint(
                     "color_hex": p_color,
                     "path": local_part_path,
                     "role": p_role,
+                    "extruder": p_meta.get("extruder") or p_meta.get("slot"),
+                    "filament": p_meta.get("filament"),
                 })
 
     print(f"[3MF DIRECT] Wywołanie generate-direct-3mf dla {file_name}:")
@@ -1263,6 +1281,7 @@ async def generate_direct_3mf_endpoint(
             "infill": infill,
             "material": material,
             "color_hex": color_hex,
+            "filaments": parsed_filaments if parsed_filaments else None,
         },
         output_path=local_3mf_path,
         parts=parts_list if parts_list else None,
