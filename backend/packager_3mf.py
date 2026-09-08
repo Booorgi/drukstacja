@@ -440,28 +440,48 @@ def generate_production_3mf(
         })
 
     # ──────────────────────────────────────────────────────────────
-    # 2. Mapowanie unikalnych kolorów na ekstrudery (AMS)
+    # 2. Mapowanie kolorów na ekstrudery (AMS)
     # ──────────────────────────────────────────────────────────────
-    # Zgodnie z wytycznymi:
-    # Części o tym samym kolorze współdzielą ten sam ekstruder/filament.
-    # Unikalne kolory -> sloty AMS 1, 2, 3...
     for p in valid_parts:
         p["color_6"] = format_hex_6(p["color_hex"])
 
-    unique_colors_6 = []
-    for p in valid_parts:
-        c = p["color_6"]
-        if c not in unique_colors_6:
-            unique_colors_6.append(c)
+    has_explicit_extruders = any(p.get("extruder") is not None for p in valid_parts)
 
-    color_to_extruder = {c: idx + 1 for idx, c in enumerate(unique_colors_6)}
+    if has_explicit_extruders:
+        for p in valid_parts:
+            ext_val = None
+            if p.get("extruder") is not None:
+                try:
+                    ext_val = int(p["extruder"])
+                except Exception:
+                    ext_val = None
+            p["assigned_extruder"] = ext_val if ext_val and ext_val > 0 else 1
 
-    for p in valid_parts:
-        # Jeśli caller przekazał jawnie ekstruder, możemy go uwzględnić o ile jest spójny,
-        # ale domyślnie mapujemy według unikalnego koloru.
-        p["assigned_extruder"] = color_to_extruder[p["color_6"]]
+        # Uporządkowanie ekstruderów w spójną sekwencję 1..N bez dziur
+        used_extruders = sorted(list(set(p["assigned_extruder"] for p in valid_parts)))
+        ext_remap = {old_ext: new_idx + 1 for new_idx, old_ext in enumerate(used_extruders)}
+        for p in valid_parts:
+            p["assigned_extruder"] = ext_remap[p["assigned_extruder"]]
 
-    num_filaments = len(unique_colors_6)
+        num_filaments = len(used_extruders)
+        filament_colours = ["#FFFFFF"] * num_filaments
+        for p in valid_parts:
+            ext_idx = p["assigned_extruder"] - 1
+            if 0 <= ext_idx < num_filaments:
+                filament_colours[ext_idx] = p["color_6"]
+        unique_colors_6 = filament_colours
+    else:
+        unique_colors_6 = []
+        for p in valid_parts:
+            c = p["color_6"]
+            if c not in unique_colors_6:
+                unique_colors_6.append(c)
+
+        color_to_extruder = {c: idx + 1 for idx, c in enumerate(unique_colors_6)}
+        for p in valid_parts:
+            p["assigned_extruder"] = color_to_extruder[p["color_6"]]
+
+        num_filaments = len(unique_colors_6)
 
     # ──────────────────────────────────────────────────────────────
     # 3. Wyznaczenie środka modelu i macierzy pozycjonowania na stole

@@ -16,7 +16,10 @@ import {
   getPlaFinishType,
   getPlaFinishLabel,
 } from "../lib/filament";
-import KeychainColorSelector from "../components/KeychainColorSelector";
+import KeychainColorSelector, {
+  FilamentPickerModal,
+  FilamentPickerRow,
+} from "../components/KeychainColorSelector";
 import {
   FILAMENTS,
   FILAMENT_CATEGORIES,
@@ -438,8 +441,8 @@ const KeychainViewer3D = dynamic(
                 const stepZ = grp.level * 0.08 + grp.level * layerSeparation;
                 if (!grp.shapes || grp.shapes.length === 0) return null;
 
-                const rawName = grp.cfg.name || `Warstwa_${gIdx + 1}`;
-                const cleanLayerName = `Grafika_${gIdx + 1}_${rawName.replace(/[^a-zA-Z0-9ąćęłńóśźżĄĆĘŁŃÓŚŹŻ_]/g, "_")}`;
+                const cleanLayerName = `Graphic_Color_${gIdx + 1}`;
+                const graphicSlot = strokeEnabled ? (3 + gIdx) : (2 + gIdx);
 
                 return (
                   <group
@@ -449,7 +452,7 @@ const KeychainViewer3D = dynamic(
                       partName: cleanLayerName,
                       partColor: grp.cfg.filament?.hex || "#EF4444",
                       partRole: "graphic_mesh",
-                      partSlot: 3,
+                      partSlot: graphicSlot,
                       filamentInfo: grp.cfg.filament,
                     }}
                   >
@@ -718,15 +721,15 @@ const KeychainViewer3D = dynamic(
                     userData={{
                       isExportPart: true,
                       partName: "Uszko",
-                      partColor: ringFilament?.hex || baseFilament?.hex || "#D4AF37",
+                      partColor: baseFilament?.hex || "#222222",
                       partRole: "ring_mesh",
-                      partSlot: 4,
-                      filamentInfo: ringFilament || baseFilament,
+                      partSlot: 1,
+                      filamentInfo: baseFilament,
                     }}
                   >
                     <mesh position={[-baseWidth / 2 - 4.5, 0, 0]}>
                       <torusGeometry args={[5, 1.6, 16, 32]} />
-                      <SunluDynamicMaterial filamentInfo={ringFilament || baseFilament} />
+                      <SunluDynamicMaterial filamentInfo={baseFilament} />
                     </mesh>
                   </group>
                 )}
@@ -755,15 +758,15 @@ const KeychainViewer3D = dynamic(
                     userData={{
                       isExportPart: true,
                       partName: "Uszko",
-                      partColor: ringFilament?.hex || baseFilament?.hex || "#D4AF37",
+                      partColor: baseFilament?.hex || "#222222",
                       partRole: "ring_mesh",
-                      partSlot: 4,
-                      filamentInfo: ringFilament || baseFilament,
+                      partSlot: 1,
+                      filamentInfo: baseFilament,
                     }}
                   >
                     <mesh position={[0, radius + 4.5, 0]}>
                       <torusGeometry args={[5, 1.6, 16, 32]} />
-                      <SunluDynamicMaterial filamentInfo={ringFilament || baseFilament} />
+                      <SunluDynamicMaterial filamentInfo={baseFilament} />
                     </mesh>
                   </group>
                 )}
@@ -792,15 +795,15 @@ const KeychainViewer3D = dynamic(
                     userData={{
                       isExportPart: true,
                       partName: "Uszko",
-                      partColor: ringFilament?.hex || baseFilament?.hex || "#D4AF37",
+                      partColor: baseFilament?.hex || "#222222",
                       partRole: "ring_mesh",
-                      partSlot: 4,
-                      filamentInfo: ringFilament || baseFilament,
+                      partSlot: 1,
+                      filamentInfo: baseFilament,
                     }}
                   >
                     <mesh position={[0, radius + 4.5, 0]}>
                       <torusGeometry args={[5, 1.6, 16, 32]} />
-                      <SunluDynamicMaterial filamentInfo={ringFilament || baseFilament} />
+                      <SunluDynamicMaterial filamentInfo={baseFilament} />
                     </mesh>
                   </group>
                 )}
@@ -1298,25 +1301,25 @@ export default function KeychainGenerator() {
   const [strokeThickness, setStrokeThickness] = useState(1.0);
   const [strokeFilament, setStrokeFilament] = useState(() => getFilamentById("pla_ceramic") || FILAMENTS[2]);
 
-  // Kolory warstw breloka (Grafika i Uszko)
-  const [graphicFilament, setGraphicFilament] = useState(() => getFilamentById("pla_cyan") || FILAMENTS[5]);
-  const [ringFilament, setRingFilament] = useState(() => getFilamentById("pla_light_gold") || FILAMENTS[14]);
+  // Uszko na kółko automatycznie dziedziczy Kolor Bazy
+  const ringFilament = baseFilament;
 
+  // Aktywna zakładka: tylko 3 główne (Kształt, Grafika, Tekst)
   const [activeTab, setActiveTab] = useState("shape");
 
   const [graphicScale, setGraphicScale] = useState(75);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
 
-  // Warstwy motywu
+  // Warstwy motywu wektorowego (do 4 kolorów z możliwością zmiany na filament SUNLU)
   const [layersConfig, setLayersConfig] = useState([
-    { id: 1, name: "Warstwa 1 (Baza)", filament: getFilamentById("pla_cyan") || FILAMENTS[5], thickness: 0.6 },
-    { id: 2, name: "Warstwa 2 (Ciało)", filament: getFilamentById("pla_klein_blue") || FILAMENTS[11], thickness: 0.7 },
-    { id: 3, name: "Warstwa 3 (Cienie)", filament: getFilamentById("pla_roasted_chestnut") || FILAMENTS[10], thickness: 0.8 },
-    { id: 4, name: "Warstwa 4 (Detale)", filament: getFilamentById("pla_ceramic") || FILAMENTS[2], thickness: 0.9 },
+    { id: 1, name: "Kolor 1 (Baza motywu)", filament: getFilamentById("pla_cyan") || FILAMENTS[5], thickness: 0.6 },
+    { id: 2, name: "Kolor 2 (Wypełnienie)", filament: getFilamentById("pla_klein_blue") || FILAMENTS[11], thickness: 0.7 },
+    { id: 3, name: "Kolor 3 (Akcent)", filament: getFilamentById("pla_roasted_chestnut") || FILAMENTS[10], thickness: 0.8 },
+    { id: 4, name: "Kolor 4 (Detale)", filament: getFilamentById("pla_ceramic") || FILAMENTS[2], thickness: 0.9 },
   ]);
 
-  // --- NOWE: Tekst na breloku ---
+  // Tekst 3D na breloku
   const [textContent, setTextContent] = useState("");
   const [textFont, setTextFont] = useState("roboto");
   const [textSize, setTextSize] = useState(6);
@@ -1326,29 +1329,24 @@ export default function KeychainGenerator() {
   const [textFilament, setTextFilament] = useState(() => getFilamentById("pla_ceramic") || FILAMENTS[2]); // Biel domyślnie
   const [textThickness, setTextThickness] = useState(0.8);
 
-  // Warstwy breloka dla dedykowanego selektora 4 części
-  const keychainLayers = useMemo(() => [
-    { id: "base", name: "Warstwa 1: Płyta bazowa (Base Plate)", selected: baseFilament },
-    { id: "border", name: "Warstwa 2: Obramowanie / Rant (Border)", selected: strokeFilament },
-    { id: "graphic", name: "Warstwa 3: Grafika / Tekst (Graphic)", selected: graphicFilament },
-    { id: "ring", name: "Warstwa 4: Uszko (Ring)", selected: ringFilament },
-  ], [baseFilament, strokeFilament, graphicFilament, ringFilament]);
+  // Stan aktywnego modalu wyboru filamentu SUNLU
+  const [pickerTarget, setPickerTarget] = useState(null);
 
-  const handleLayerColorChange = useCallback((layerId, filament) => {
-    if (layerId === "base") {
+  const handleSelectFilament = useCallback((filament) => {
+    if (!pickerTarget) return;
+    if (pickerTarget.type === "base") {
       setBaseFilament(filament);
-    } else if (layerId === "border") {
+    } else if (pickerTarget.type === "stroke") {
       setStrokeFilament(filament);
-    } else if (layerId === "graphic") {
-      setGraphicFilament(filament);
-      setLayersConfig((prev) =>
-        prev.map((l, idx) => (idx === 0 ? { ...l, filament } : l))
-      );
+    } else if (pickerTarget.type === "text") {
       setTextFilament(filament);
-    } else if (layerId === "ring") {
-      setRingFilament(filament);
+    } else if (pickerTarget.type === "graphic_layer") {
+      setLayersConfig((prev) =>
+        prev.map((l, idx) => (idx === pickerTarget.index ? { ...l, filament } : l))
+      );
     }
-  }, []);
+    setPickerTarget(null);
+  }, [pickerTarget]);
 
   // --- NOWE: Layer View ---
   const [layerViewEnabled, setLayerViewEnabled] = useState(false);
@@ -2072,30 +2070,23 @@ export default function KeychainGenerator() {
           <div className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-white border-l border-slate-100">
             <div className="space-y-4">
 
-              {/* SELEKTOR KOLORÓW PER WARSTWA (Baza, Rant, Grafika, Uszko) */}
-              <KeychainColorSelector
-                layers={keychainLayers}
-                onSelectColor={handleLayerColorChange}
-              />
-
-              {/* Taby konfiguracji — 5 zakładek (w tym Druk 3D) */}
+              {/* Taby konfiguracji — 3 główne zakładki */}
               <div>
-                <div className="grid grid-cols-5 gap-1 p-1 bg-slate-100 rounded-2xl">
+                <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-2xl">
                   {[
                     { id: "shape", label: "Kształt" },
                     { id: "graphic", label: "Grafika" },
                     { id: "text", label: "Tekst" },
-                    { id: "layers", label: "AMS" },
-                    { id: "settings", label: "Druk 3D" },
                   ].map((tab) => (
                     <button
                       key={tab.id}
                       type="button"
                       onClick={() => setActiveTab(tab.id)}
-                      className={`py-2 text-[10px] md:text-[11px] font-bold rounded-xl transition ${activeTab === tab.id
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "text-slate-500 hover:text-slate-800"
-                        }`}
+                      className={`py-2 text-xs md:text-sm font-bold rounded-xl transition cursor-pointer ${
+                        activeTab === tab.id
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
                     >
                       {tab.label}
                     </button>
@@ -2103,45 +2094,156 @@ export default function KeychainGenerator() {
                 </div>
               </div>
 
-              {/* TAB 1: KSZTAŁT, WYMIARY I STROKE */}
+              {/* TAB 1: KSZTAŁT, WYMIARY I MATERIAŁY BAZY */}
               {activeTab === "shape" && (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { id: "circle", label: "Okrąg", sub: "⌀ 60mm" },
-                      { id: "hexagon", label: "Hexagon", sub: "Modern" },
-                      { id: "rect", label: "Prostokąt", sub: "Karta" },
-                    ].map((s) => (
-                      <div
-                        key={s.id}
-                        onClick={() => setShapeType(s.id)}
-                        className={`p-2.5 rounded-2xl border flex flex-col items-center justify-center text-center cursor-pointer transition ${shapeType === s.id
-                          ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm font-bold"
-                          : "border-slate-200 hover:border-slate-300 text-slate-700"
+                <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
+                  {/* Wybór kształtu */}
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                      Kształt bazy
+                    </span>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: "circle", label: "Okrąg", sub: "⌀ 60mm" },
+                        { id: "hexagon", label: "Hexagon", sub: "Modern" },
+                        { id: "rect", label: "Prostokąt", sub: "Karta" },
+                      ].map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setShapeType(s.id)}
+                          className={`p-2.5 rounded-2xl border flex flex-col items-center justify-center text-center cursor-pointer transition ${
+                            shapeType === s.id
+                              ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm font-bold"
+                              : "border-slate-200 hover:border-slate-300 text-slate-700 bg-white"
                           }`}
-                      >
-                        <span className="text-xs font-bold block">{s.label}</span>
-                        <span className="text-[10px] text-slate-400">{s.sub}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
-                    <div>
-                      <span className="text-xs font-bold text-slate-800 block">Ucho do zawieszenia</span>
-                      <span className="text-[10px] text-slate-500">Brelok vs Tabliczka ścienna</span>
+                        >
+                          <span className="text-xs font-bold block">{s.label}</span>
+                          <span className="text-[10px] text-slate-400">{s.sub}</span>
+                        </button>
+                      ))}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setHasHole(!hasHole)}
-                      className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition ${hasHole ? "bg-[#EF4444] justify-end" : "bg-slate-300 justify-start"
-                        }`}
-                    >
-                      <div className="bg-white w-4 h-4 rounded-full shadow-md" />
-                    </button>
                   </div>
 
-                  {/* KONTROLKA STROKE */}
+                  {/* Wymiary bazy */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                      Wymiary i grubość
+                    </span>
+                    {shapeType === "rect" ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                            <span>Szerokość</span>
+                            <span className="text-[#EF4444]">{baseWidth} mm</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="35"
+                            max="90"
+                            step="1"
+                            value={baseWidth}
+                            onChange={(e) => setBaseWidth(parseInt(e.target.value))}
+                            className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                          />
+                        </div>
+                        <div>
+                          <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                            <span>Wysokość</span>
+                            <span className="text-[#EF4444]">{baseHeight} mm</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="30"
+                            max="90"
+                            step="1"
+                            value={baseHeight}
+                            onChange={(e) => setBaseHeight(parseInt(e.target.value))}
+                            className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                          <span>Średnica</span>
+                          <span className="text-[#EF4444]">{baseDiameter} mm</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="35"
+                          max="90"
+                          step="1"
+                          value={baseDiameter}
+                          onChange={(e) => setBaseDiameter(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                        />
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-200">
+                      <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                        <span>Grubość bazy</span>
+                        <span className="text-[#EF4444]">{baseThickness} mm</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1.6"
+                        max="5.0"
+                        step="0.2"
+                        value={baseThickness}
+                        onChange={(e) => setBaseThickness(parseFloat(e.target.value))}
+                        className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* WYBÓR: Kolor Bazy */}
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                      Kolor Bazy
+                    </span>
+                    <FilamentPickerRow
+                      label="Kolor Bazy"
+                      sublabel="Płyta główna breloka"
+                      filament={baseFilament}
+                      buttonText="Zmień na filament SUNLU"
+                      onClick={() =>
+                        setPickerTarget({
+                          type: "base",
+                          title: "Wybierz Kolor Bazy (SUNLU)",
+                          current: baseFilament,
+                        })
+                      }
+                    />
+                  </div>
+
+                  {/* USZKO NA KÓŁKO (Ring) - automatycznie dziedziczy kolor bazy */}
+                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 block">Uszko na kółko (Ring)</span>
+                        <span className="text-[10px] text-slate-500">Otwór do montażu kółka kluczy</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setHasHole(!hasHole)}
+                        className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition ${
+                          hasHole ? "bg-[#EF4444] justify-end" : "bg-slate-300 justify-start"
+                        }`}
+                      >
+                        <div className="bg-white w-4 h-4 rounded-full shadow-md" />
+                      </button>
+                    </div>
+                    {hasHole && (
+                      <div className="flex items-center gap-1.5 pt-1 text-[10px] text-slate-500 font-medium">
+                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+                        <span>Kolor uszka automatycznie dziedziczy <strong>Kolor Bazy</strong> ({baseFilament?.name || "Baza"})</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* KONTROLKA STROKE (Kolor Rantu) */}
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -2153,10 +2255,10 @@ export default function KeychainGenerator() {
                           className="w-4 h-4 rounded text-[#EF4444] accent-[#EF4444] cursor-pointer"
                         />
                         <label htmlFor="strokeToggle" className="text-xs font-bold text-slate-800 cursor-pointer">
-                          Stroke (Obramowanie bazy)
+                          Obramowanie / Rant (Border)
                         </label>
                       </div>
-                      <span className="text-[10px] text-slate-400 font-semibold">Ochrona rantu</span>
+                      <span className="text-[10px] text-slate-400 font-semibold">Ochrona krawędzi</span>
                     </div>
 
                     {strokeEnabled && (
@@ -2170,7 +2272,7 @@ export default function KeychainGenerator() {
                             <input
                               type="range"
                               min="1.0"
-                              max="6.0"
+                              max="5.0"
                               step="0.5"
                               value={strokeWidth}
                               onChange={(e) => setStrokeWidth(parseFloat(e.target.value))}
@@ -2196,12 +2298,20 @@ export default function KeychainGenerator() {
 
                         <div>
                           <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                            Kolor rantu:
+                            Kolor Rantu
                           </span>
-                          <SunluColorPaletteSelector
-                            selectedFilament={strokeFilament}
-                            onSelectColor={(fil) => setStrokeFilament(fil)}
-                            filaments={filaments}
+                          <FilamentPickerRow
+                            label="Kolor Rantu"
+                            sublabel="Obrys zewnętrzny bazy"
+                            filament={strokeFilament}
+                            buttonText="Zmień na filament SUNLU"
+                            onClick={() =>
+                              setPickerTarget({
+                                type: "stroke",
+                                title: "Wybierz Kolor Rantu (SUNLU)",
+                                current: strokeFilament,
+                              })
+                            }
                           />
                         </div>
                       </div>
@@ -2210,9 +2320,9 @@ export default function KeychainGenerator() {
                 </div>
               )}
 
-              {/* TAB 2: GRAFIKA & POZYCJA */}
+              {/* TAB 2: GRAFIKA & MULTI-COLOR (DO 4 KOLORÓW) */}
               {activeTab === "graphic" && (
-                <div className="space-y-3">
+                <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -2222,7 +2332,7 @@ export default function KeychainGenerator() {
                   />
                   <div
                     onClick={() => !isProcessingImg && fileInputRef.current?.click()}
-                    className="p-3 rounded-2xl border-2 border-dashed border-slate-300 hover:border-[#EF4444] bg-slate-50 flex items-center justify-between cursor-pointer transition"
+                    className="p-3.5 rounded-2xl border-2 border-dashed border-slate-300 hover:border-[#EF4444] bg-slate-50 flex items-center justify-between cursor-pointer transition"
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-red-100 text-[#EF4444] flex items-center justify-center font-bold">
@@ -2232,10 +2342,11 @@ export default function KeychainGenerator() {
                         {isProcessingImg ? "AI przetwarza grafikę..." : imageFileName}
                       </span>
                     </div>
-                    <span className="text-xs font-bold text-[#EF4444]">Wybierz</span>
+                    <span className="text-xs font-bold text-[#EF4444]">Wybierz plik</span>
                   </div>
 
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                  {/* Pozycja i skala motywu */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
                     <div>
                       <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
                         <span>Skalowanie motywu</span>
@@ -2285,13 +2396,43 @@ export default function KeychainGenerator() {
                       </div>
                     </div>
                   </div>
+
+                  {/* MULTI-COLOR: Lista wykrytych warstw kolorystycznych grafiki */}
+                  <div className="space-y-2.5 pt-2 border-t border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">
+                        Wykryte warstwy kolorystyczne ({layersConfig.length})
+                      </span>
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Bambu Lab AMS
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {layersConfig.map((layer, idx) => (
+                        <FilamentPickerRow
+                          key={layer.id || idx}
+                          label={`Kolor ${idx + 1}: ${layer.name}`}
+                          sublabel={`Wytłoczenie: ${layer.thickness} mm`}
+                          filament={layer.filament}
+                          buttonText="Zmień na filament SUNLU"
+                          onClick={() =>
+                            setPickerTarget({
+                              type: "graphic_layer",
+                              index: idx,
+                              title: `Wybierz filament dla Warstwy ${idx + 1} (${layer.name})`,
+                              current: layer.filament,
+                            })
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
 
-              {/* TAB 3: TEKST NA BRELOKU (NOWE) */}
+              {/* TAB 3: TEKST NA BRELOKU */}
               {activeTab === "text" && (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                  {/* Pole tekstowe */}
+                <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
                     <div>
                       <span className="text-xs font-bold text-slate-800 block mb-1">Treść napisu</span>
@@ -2317,10 +2458,11 @@ export default function KeychainGenerator() {
                             key={font.id}
                             type="button"
                             onClick={() => setTextFont(font.id)}
-                            className={`px-2 py-1.5 rounded-xl text-[11px] font-bold transition border ${textFont === font.id
-                              ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
-                              : "border-slate-200 text-slate-600 hover:border-slate-300"
-                              }`}
+                            className={`px-2 py-1.5 rounded-xl text-[11px] font-bold transition border cursor-pointer ${
+                              textFont === font.id
+                                ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
+                                : "border-slate-200 text-slate-600 hover:border-slate-300 bg-white"
+                            }`}
                           >
                             {font.name}
                           </button>
@@ -2373,7 +2515,7 @@ export default function KeychainGenerator() {
                               setTextOffsetX(0);
                               setTextOffsetY(0);
                             }}
-                            className="text-[10px] font-bold text-[#EF4444] hover:underline transition"
+                            className="text-[10px] font-bold text-[#EF4444] hover:underline transition cursor-pointer"
                           >
                             Wyzeruj przesunięcie
                           </button>
@@ -2393,10 +2535,11 @@ export default function KeychainGenerator() {
                               setTextOffsetX(0);
                               setTextOffsetY(0);
                             }}
-                            className={`py-1.5 rounded-xl text-[11px] font-bold border transition ${textPosition === pos.id && textOffsetX === 0 && textOffsetY === 0
-                              ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
-                              : "border-slate-200 text-slate-600 hover:border-slate-300"
-                              }`}
+                            className={`py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
+                              textPosition === pos.id && textOffsetX === 0 && textOffsetY === 0
+                                ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
+                                : "border-slate-200 text-slate-600 hover:border-slate-300 bg-white"
+                            }`}
                           >
                             {pos.label}
                           </button>
@@ -2439,134 +2582,24 @@ export default function KeychainGenerator() {
                     </div>
                   </div>
 
-                  {/* Kolor tekstu */}
+                  {/* WYBÓR: Kolor Tekstu */}
                   <div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1 tracking-wider">
-                      Kolor tekstu (filament):
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                      Kolor Tekstu (Filament SUNLU)
                     </span>
-                    <SunluColorPaletteSelector
-                      selectedFilament={textFilament}
-                      onSelectColor={(fil) => setTextFilament(fil)}
-                      filaments={filaments}
+                    <FilamentPickerRow
+                      label="Kolor Tekstu"
+                      sublabel="Wytłaczany napis 3D"
+                      filament={textFilament}
+                      buttonText="Zmień na filament SUNLU"
+                      onClick={() =>
+                        setPickerTarget({
+                          type: "text",
+                          title: "Wybierz Kolor Tekstu (SUNLU)",
+                          current: textFilament,
+                        })
+                      }
                     />
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 4: WARSTWY FILAMENTU AMS */}
-              {activeTab === "layers" && (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                  {layersConfig.map((layer, idx) => (
-                    <div
-                      key={layer.id}
-                      className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-800">
-                          {layer.name}
-                        </span>
-                        <span className="text-[11px] font-bold text-slate-500 truncate max-w-[150px]">
-                          {layer.filament?.name}
-                        </span>
-                      </div>
-                      <SunluColorPaletteSelector
-                        selectedFilament={layer.filament}
-                        filaments={filaments}
-                        onSelectColor={(fil) => {
-                          setLayersConfig((prev) => {
-                            const next = [...prev];
-                            next[idx] = { ...next[idx], filament: fil };
-                            return next;
-                          });
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* TAB 5: PARAMETRY DRUKU 3D */}
-              {activeTab === "settings" && (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-                    <div className="flex justify-between items-center text-xs font-bold text-slate-800">
-                      <span>Wysokość warstwy</span>
-                      <span className="text-[#EF4444] font-black">{layerHeight} mm</span>
-                    </div>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {[
-                        { val: "0.12", label: "0.12 mm", desc: "Detale" },
-                        { val: "0.16", label: "0.16 mm", desc: "Optymalna" },
-                        { val: "0.20", label: "0.20 mm", desc: "Standard" },
-                        { val: "0.28", label: "0.28 mm", desc: "Szybki" },
-                      ].map((item) => (
-                        <button
-                          key={item.val}
-                          type="button"
-                          onClick={() => setLayerHeight(item.val)}
-                          className={`py-2 px-1 rounded-xl text-center border text-[11px] font-bold transition ${layerHeight === item.val
-                            ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
-                            : "border-slate-200 text-slate-600 hover:border-slate-300"
-                            }`}
-                        >
-                          <div>{item.label}</div>
-                          <div className="text-[9px] text-slate-400 font-normal">{item.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-                    <div className="flex justify-between items-center text-xs font-bold text-slate-800">
-                      <span>Wypełnienie (Infill)</span>
-                      <span className="text-[#EF4444] font-black">{infill}%</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { val: 20, label: "20%", desc: "Lekkie" },
-                        { val: 40, label: "40%", desc: "Mocne" },
-                        { val: 100, label: "100%", desc: "Pełne (Solid)" },
-                      ].map((item) => (
-                        <button
-                          key={item.val}
-                          type="button"
-                          onClick={() => setInfill(item.val)}
-                          className={`py-2 px-1 rounded-xl text-center border text-[11px] font-bold transition ${infill === item.val
-                            ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
-                            : "border-slate-200 text-slate-600 hover:border-slate-300"
-                            }`}
-                        >
-                          <div>{item.label}</div>
-                          <div className="text-[9px] text-slate-400 font-normal">{item.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-                    <div className="flex justify-between items-center text-xs font-bold text-slate-800">
-                      <span>Średnica dyszy</span>
-                      <span className="text-[#EF4444] font-black">{nozzleSize} mm</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { val: "0.2", label: "Dysza 0.2 mm", desc: "Mikro detale" },
-                        { val: "0.4", label: "Dysza 0.4 mm", desc: "Standardowa" },
-                      ].map((item) => (
-                        <button
-                          key={item.val}
-                          type="button"
-                          onClick={() => setNozzleSize(item.val)}
-                          className={`py-2 px-1 rounded-xl text-center border text-[11px] font-bold transition ${nozzleSize === item.val
-                            ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm"
-                            : "border-slate-200 text-slate-600 hover:border-slate-300"
-                            }`}
-                        >
-                          <div>{item.label}</div>
-                          <div className="text-[9px] text-slate-400 font-normal">{item.desc}</div>
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 </div>
               )}
@@ -2727,6 +2760,14 @@ export default function KeychainGenerator() {
         onRemoveItem={(removedId) => {
           setCartItems((prev) => prev.filter((it) => String(it.id) !== String(removedId)));
         }}
+      />
+      <FilamentPickerModal
+        isOpen={!!pickerTarget}
+        onClose={() => setPickerTarget(null)}
+        title={pickerTarget?.title || "Wybierz Filament SUNLU"}
+        selectedFilament={pickerTarget?.current}
+        onSelectFilament={handleSelectFilament}
+        filaments={filaments}
       />
     </div>
   );

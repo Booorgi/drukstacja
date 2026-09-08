@@ -237,12 +237,58 @@ def test_process_settings_propagation():
     print("test_process_settings_propagation: PASSED [OK]")
 
 
+def test_multicolor_graphic_layers():
+    """
+    Weryfikuje wielokolorową grafikę:
+    - Baza + Uszko -> extruder="1"
+    - Rant -> extruder="2"
+    - Grafika Kolor 1 -> extruder="3"
+    - Grafika Kolor 2 -> extruder="4"
+    - Grafika Kolor 3 -> extruder="5"
+    - Grafika Kolor 4 -> extruder="6"
+    """
+    print("\n--- Running test_multicolor_graphic_layers ---")
+    out_path = os.path.join(tempfile.gettempdir(), f"test_multi_graphic_{uuid.uuid4().hex[:6]}.3mf")
+    parts = [
+        {"name": "Baza", "color_hex": "#111215", "mesh": create_cube_mesh((50, 50, 2)), "role": "base_mesh", "extruder": 1},
+        {"name": "Uszko", "color_hex": "#111215", "mesh": create_cube_mesh((8, 8, 2)), "role": "ring_mesh", "extruder": 1},
+        {"name": "Rant", "color_hex": "#FFFFFF", "mesh": create_cube_mesh((52, 52, 1)), "role": "border_mesh", "extruder": 2},
+        {"name": "Graphic_Color_1", "color_hex": "#00BCDB", "mesh": create_cube_mesh((20, 20, 1)), "role": "graphic_mesh", "extruder": 3},
+        {"name": "Graphic_Color_2", "color_hex": "#002FA7", "mesh": create_cube_mesh((15, 15, 1)), "role": "graphic_mesh", "extruder": 4},
+        {"name": "Graphic_Color_3", "color_hex": "#6E3725", "mesh": create_cube_mesh((10, 10, 1)), "role": "graphic_mesh", "extruder": 5},
+        {"name": "Graphic_Color_4", "color_hex": "#E8D8C8", "mesh": create_cube_mesh((5, 5, 1)), "role": "graphic_mesh", "extruder": 6},
+    ]
+
+    saved = generate_production_3mf(output_path=out_path, parts=parts)
+    val = validate_3mf_package(saved)
+    assert val["valid"], f"Walidacja wielokolorowej grafiki nie powiodła się: {val['errors']}"
+
+    assert len(val["details"]["component_objectids"]) == 7
+    assert len(val["details"]["filament_colours"]) == 6
+    assert val["details"]["filament_colours"] == ["#111215", "#FFFFFF", "#00BCDB", "#002FA7", "#6E3725", "#E8D8C8"]
+
+    # Baza i Uszko współdzielą ekstruder 1
+    exts = list(val["details"]["part_extruders"].values())
+    assert exts[0] == "1"
+    assert exts[1] == "1"
+    assert exts[2] == "2"
+    assert exts[3] == "3"
+    assert exts[4] == "4"
+    assert exts[5] == "5"
+    assert exts[6] == "6"
+
+    if os.path.exists(saved):
+        os.remove(saved)
+    print("test_multicolor_graphic_layers: PASSED [OK]")
+
+
 if __name__ == "__main__":
     print("Uruchamianie testów architektury MakerLab / Bambu Studio 3MF...")
     test_reference_scenario_keychain_draft()
     test_shared_color_reuses_extruder()
     test_dependency_chain_validation()
     test_process_settings_propagation()
+    test_multicolor_graphic_layers()
     print("\n=======================================================")
     print("WSZYSTKIE TESTY ZGODNOŚCI Z KEYCHAIN DRAFT PRZESZŁY POMYŚLNIE! [OK]")
     print("=======================================================")
