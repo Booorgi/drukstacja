@@ -26,6 +26,28 @@ import numpy as np
 import trimesh
 
 OVERHANG_ANGLE_DEG = 45.0  # standardowy prog nawisu uzywany przez wiekszosc slicerow
+DENSE_MESH_FACES = 20000
+SAMPLE_FACES = 8000
+AXIS_NORMALS = np.array(
+    [
+        [1.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, -1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, -1.0],
+    ],
+    dtype=float,
+)
+
+
+def _cheap_sample_mesh(mesh: trimesh.Trimesh, max_faces: int = SAMPLE_FACES) -> trimesh.Trimesh:
+    """Równomierna próbka ścianek bez quadric decimation (to wisi na gęstych 3MF)."""
+    n = int(mesh.faces.shape[0])
+    if n <= max_faces:
+        return mesh
+    idx = np.linspace(0, n - 1, max_faces, dtype=int)
+    return trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces[idx], process=False)
 
 
 def _candidate_normals(mesh: trimesh.Trimesh) -> np.ndarray:
@@ -106,19 +128,18 @@ def auto_orient_mesh(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, dict]:
     if mesh.faces.shape[0] == 0:
         return mesh, {"rotated": False, "reason": "empty_mesh"}
 
-    # Dla gęstych siatek (>25k trójkątów) wyznaczamy optymalny kąt na siatce uproszczonej,
-    # co skraca czas analizy z 40s do 0.05s i zapobiega timeoutom serwera.
-    if mesh.faces.shape[0] > 25000:
-        try:
-            eval_mesh = mesh.simplify_quadric_decimation(10000)
-            if not isinstance(eval_mesh, trimesh.Trimesh) or eval_mesh.faces.shape[0] == 0:
-                eval_mesh = mesh
-        except Exception:
-            eval_mesh = mesh
+    n_faces = int(mesh.faces.shape[0])
+    dense = n_faces > DENSE_MESH_FACES
+    if dense:
+        # MakerLab / Bambu .3mf często ma 100k+ ścianek. simplify_quadric_decimation
+        # potrafi zablokować worker na minuty i frontend zgłasza "Failed to fetch".
+        eval_mesh = _cheap_sample_mesh(mesh, SAMPLE_FACES)
+        candidates = AXIS_NORMALS
+        mode = "axis_sample"
     else:
         eval_mesh = mesh
-
-    candidates = _candidate_normals(eval_mesh)
+        candidates = _candidate_normals(eval_mesh)
+        mode = "hull"
 
     # Tolerancja porownania wynikow jako WARTOSC BEZWZGLEDNA (nie procent!) -
     # przy idealnym wyniku 0.0 (brak nawisow) procentowa tolerancja typu
@@ -160,10 +181,14 @@ def auto_orient_mesh(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, dict]:
     # zrobil, ale robimy to jawnie, zeby podglad w przegladarce tez byl poprawny
     oriented.apply_translation([0, 0, -oriented.bounds[0][2]])
 
-    baseline_score = _support_score(mesh)
-    improvement_pct = 0.0
-    if baseline_score > 0:
-        improvement_pct = round((1 - best_score / baseline_score) * 100, 1)
+    if dense:
+        baseline_score = float(best_score)
+        improvement_pct = 0.0
+    else:
+        baseline_score = _support_score(mesh)
+        improvement_pct = 0.0
+        if baseline_score > 0:
+            improvement_pct = round((1 - best_score / baseline_score) * 100, 1)
 
     return oriented, {
         "rotated": True,
@@ -171,4 +196,6 @@ def auto_orient_mesh(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, dict]:
         "support_score_after": round(best_score, 2),
         "improvement_pct": improvement_pct,
         "candidates_tested": len(candidates),
+        "mode": mode,
+        "triangle_count": n_faces,
     }

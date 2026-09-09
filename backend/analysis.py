@@ -157,44 +157,8 @@ def parse_3mf_safely(file_input) -> trimesh.Trimesh:
     except Exception as zip_err:
         print(f"[WARN] Błąd inspekcji kontenera ZIP .3MF: {zip_err}")
 
-    # 2. Próba wczytania standardowego przez trimesh
-    try:
-        loaded = trimesh.load(io.BytesIO(file_bytes), file_type="3mf")
-        if isinstance(loaded, trimesh.Scene):
-            if len(loaded.geometry) == 0:
-                raise ValueError("Brak geometrii w pliku 3MF")
-            valid_geoms = [g for g in loaded.geometry.values() if isinstance(g, trimesh.Trimesh) and len(g.faces) > 0]
-            if valid_geoms:
-                return trimesh.util.concatenate(valid_geoms) if len(valid_geoms) > 1 else valid_geoms[0]
-            raise ValueError("Brak poprawnych trójkątów w scenie 3MF")
-        elif isinstance(loaded, trimesh.Trimesh):
-            return loaded
-    except Exception as std_err:
-        print(f"[WARN] Standardowy loader trimesh 3MF nie powiódł się ({std_err}), próba ratunkowa...")
-
-    # 3. Fallback: bezpośrednia dekompresja i wczytanie przez mini-zipy
-    try:
-        with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as z:
-            model_files = [f for f in z.namelist() if f.lower().endswith(".model")]
-            meshes = []
-            for mf in model_files:
-                try:
-                    mini_zip = io.BytesIO()
-                    with zipfile.ZipFile(mini_zip, "w") as mz:
-                        mz.writestr("3D/3dmodel.model", z.read(mf))
-                        mz.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
-                    mini_zip.seek(0)
-                    m = trimesh.load(mini_zip, file_type="3mf")
-                    if isinstance(m, trimesh.Trimesh) and len(m.faces) > 0:
-                        meshes.append(m)
-                    elif isinstance(m, trimesh.Scene):
-                        meshes.extend([g for g in m.geometry.values() if isinstance(g, trimesh.Trimesh) and len(g.faces) > 0])
-                except Exception:
-                    continue
-            if meshes:
-                return trimesh.util.concatenate(meshes) if len(meshes) > 1 else meshes[0]
-    except Exception:
-        pass
+    # trimesh.load() na projektach Bambu (assembly + p:path, mesh w 3D/Objects/)
+    # potrafi zablokować worker na minuty. Nie używamy go jako fallback.
 
     raise ValueError("Nie udało się odczytać geometrii 3D z pliku .3MF.")
 

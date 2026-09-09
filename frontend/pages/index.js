@@ -282,18 +282,27 @@ export default function Home() {
     formData.append("infill", String(infill));
     formData.append("filament_type", matConfig?.name?.split(" ")[0] || "PLA");
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 55000);
+
     try {
       const res = await fetch(`${API_URL || ""}/api/analyze-model`, {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Błąd analizy modelu.");
+      const raw = await res.text();
+      let data = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(raw?.slice(0, 180) || "Serwer analizy zwrócił nieczytelną odpowiedź.");
       }
 
-      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || data.message || "Błąd analizy modelu.");
+      }
       setAnalysisData(data);
 
       if (data.instant_pricing && data.preview_stl_url) {
@@ -303,12 +312,16 @@ export default function Home() {
       }
     } catch (err) {
       console.error("Błąd zapytania analizy:", err);
+      const isAbort = err?.name === "AbortError";
       const isNetworkErr = err.message === "Failed to fetch" || err.name === "TypeError";
-      const errorMsg = isNetworkErr
+      const errorMsg = isAbort
+        ? "Analiza trwała zbyt długo. Pliki .3MF z MakerLab/Bambu bywają bardzo gęste — spróbuj ponownie albo wyeksportuj STL."
+        : isNetworkErr
         ? "Nie udało się połączyć z serwerem analizy (przekroczony limit czasu lub zbyt duży plik). Możesz ponowić próbę lub przesłać plik do bezpłatnej wyceny manualnej (RFQ)."
         : `Błąd analizy pliku: ${err.message}`;
       alert(errorMsg);
     } finally {
+      clearTimeout(timeoutId);
       setIsAnalyzing(false);
     }
   }
