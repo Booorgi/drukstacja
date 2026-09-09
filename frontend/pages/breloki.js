@@ -409,16 +409,33 @@ const KeychainViewer3D = dynamic(
 
           if (shapeType === "outline") {
             if (!outlineHull || outlineHull.length < 3) return null;
-            const outer = offsetConvexPolygon(outlineHull, strokeWidth);
-            outer.forEach((p, i) => {
+            // Rant ma leżeć NA płycie, tak jak przy okręgu/hexie: zewnętrzna krawędź
+            // = obrys bazy, wewnętrzna = wcięcie o szerokość rantu. Offset na zewnątrz
+            // zostawiał pierścień obok bazy, więc "lewitował" w powietrzu.
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
+            outlineHull.forEach((p) => {
+              if (p.x < minX) minX = p.x;
+              if (p.x > maxX) maxX = p.x;
+              if (p.y < minY) minY = p.y;
+              if (p.y > maxY) maxY = p.y;
+            });
+            const maxInset = Math.max(0.8, Math.min(maxX - minX, maxY - minY) / 2 - 1);
+            const inset = Math.min(strokeWidth, maxInset);
+
+            outlineHull.forEach((p, i) => {
               if (i === 0) shape.moveTo(p.x, p.y);
               else shape.lineTo(p.x, p.y);
             });
             shape.closePath();
+
+            const inner = offsetConvexPolygon(outlineHull, -inset);
             const hole = new THREE.Path();
-            for (let i = outlineHull.length - 1; i >= 0; i--) {
-              const p = outlineHull[i];
-              if (i === outlineHull.length - 1) hole.moveTo(p.x, p.y);
+            for (let i = inner.length - 1; i >= 0; i--) {
+              const p = inner[i];
+              if (i === inner.length - 1) hole.moveTo(p.x, p.y);
               else hole.lineTo(p.x, p.y);
             }
             hole.closePath();
