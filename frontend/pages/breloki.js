@@ -29,6 +29,10 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+const PRINT_LAYER_HEIGHT = "0.20";
+const PRINT_INFILL = 100;
+const PRINT_NOZZLE_SIZE = "0.4";
+
 // Domyślny wektor breloka
 const DEFAULT_SVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <g id="color_1" fill="#222222">
@@ -376,18 +380,38 @@ const KeychainViewer3D = dynamic(
             svgData.paths.forEach((path) => {
               const parentId = path.userData?.node?.parentElement?.id;
               const shapes = SVGLoader.createShapes(path);
-
-              // Obsługuje dynamiczną liczbę warstw (color_1...color_6)
               const match = parentId?.match(/^color_(\d+)$/);
               if (match) {
                 const key = `c${match[1]}`;
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(...shapes);
-              } else {
-                if (!groups.c1) groups.c1 = [];
-                groups.c1.push(...shapes);
+                return;
               }
+
+              let fillHex = "";
+              if (path.color && typeof path.color.getHexString === "function") {
+                fillHex = `#${path.color.getHexString()}`.toUpperCase();
+              }
+              const styleFill = path.userData?.style?.fill;
+              if (!fillHex && styleFill && styleFill !== "none") {
+                fillHex = String(styleFill).toUpperCase();
+              }
+              if (!groups.__fills) groups.__fills = {};
+              const fillKey = fillHex || "UNKNOWN";
+              if (!groups.__fills[fillKey]) groups.__fills[fillKey] = [];
+              groups.__fills[fillKey].push(...shapes);
             });
+
+            if (groups.__fills) {
+              const fills = groups.__fills;
+              delete groups.__fills;
+              const hasColorGroups = Object.keys(groups).some((k) => /^c\d+$/.test(k));
+              if (!hasColorGroups) {
+                Object.keys(fills).slice(0, 4).forEach((hex, idx) => {
+                  groups[`c${idx + 1}`] = fills[hex];
+                });
+              }
+            }
 
             return groups;
           } catch (err) {
@@ -441,8 +465,8 @@ const KeychainViewer3D = dynamic(
                 const stepZ = grp.level * 0.08 + grp.level * layerSeparation;
                 if (!grp.shapes || grp.shapes.length === 0) return null;
 
-                const cleanLayerName = `Graphic_Color_${gIdx + 1}`;
-                const graphicSlot = strokeEnabled ? (3 + gIdx) : (2 + gIdx);
+                const cleanLayerName = `Graphic_${gIdx + 1}`;
+                const graphicSlot = 3 + gIdx;
 
                 return (
                   <group
@@ -602,7 +626,7 @@ const KeychainViewer3D = dynamic(
               partName: "Tekst_3D",
               partColor: textFilament?.hex || "#FFFFFF",
               partRole: "text_mesh",
-              partSlot: 3,
+              partSlot: 7,
               filamentInfo: textFilament,
             }}
           >
@@ -865,6 +889,72 @@ const KeychainViewer3D = dynamic(
         );
       }
 
+      function findExportUserData(node) {
+        let cur = node;
+        for (let i = 0; i < 10 && cur; i++) {
+          const ud = cur.userData || {};
+          if (ud.partRole || ud.isExportPart || ud.partName) return ud;
+          cur = cur.parent;
+        }
+        return {};
+      }
+
+      function normalizeHexColor(value, fallback = "#FFFFFF") {
+        if (!value || typeof value !== "string") return fallback;
+        let hex = value.trim();
+        if (!hex.startsWith("#")) hex = `#${hex}`;
+        if (hex.length === 4) {
+          hex = `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
+        }
+        return hex.slice(0, 7).toUpperCase();
+      }
+
+      function meshHexColor(node, ud) {
+        if (ud.partColor) return normalizeHexColor(ud.partColor);
+        const mat = Array.isArray(node.material) ? node.material[0] : node.material;
+        if (mat?.color && typeof mat.color.getHexString === "function") {
+          return normalizeHexColor("#" + mat.color.getHexString());
+        }
+        return "#FFFFFF";
+      }
+
+      function logicalPartKey(ud) {
+        const role = ud.partRole || "";
+        if (role === "base_mesh" || role === "ring_mesh") return "base";
+        if (role === "border_mesh") return "border";
+        if (role === "graphic_mesh") return `graphic_${ud.partName || ud.partSlot || "1"}`;
+        if (role === "text_mesh") return "text";
+        return `other_${ud.partName || "part"}`;
+      }
+
+      function stlToArrayBuffer(stlData) {
+        if (stlData instanceof DataView) {
+          return stlData.buffer.slice(stlData.byteOffset, stlData.byteOffset + stlData.byteLength);
+        }
+        if (stlData instanceof ArrayBuffer) return stlData;
+        if (stlData && stlData.buffer instanceof ArrayBuffer) {
+          return stlData.buffer.slice(
+            stlData.byteOffset || 0,
+            (stlData.byteOffset || 0) + (stlData.byteLength || stlData.buffer.byteLength)
+          );
+        }
+        if (typeof stlData === "string") {
+          return new TextEncoder().encode(stlData).buffer;
+        }
+        return null;
+      }
+
+      function filamentPayload(filInfo) {
+        if (!filInfo) return null;
+        return {
+          name: filInfo.name,
+          type: filInfo.type || filInfo.category || "PLA",
+          nozzle_temperature: filInfo.nozzleTemp || filInfo.nozzle_temperature || 215,
+          bed_temperature: filInfo.bedTemp || filInfo.bed_temperature || 55,
+          density: filInfo.density || 1.24,
+        };
+      }
+
       // Komponent wewnętrzny do rejestracji eksportu
       function ExportRegistrar({ keychainGroupRef, onExportReady }) {
         const { scene } = useThree();
@@ -878,10 +968,12 @@ const KeychainViewer3D = dynamic(
           const handlers = {
             exportSTL: () => {
               try {
-                if (!scene) return null;
-                scene.updateMatrixWorld(true);
+                const target =
+                  keychainGroupRef && keychainGroupRef.current ? keychainGroupRef.current : scene;
+                if (!target) return null;
+                target.updateMatrixWorld(true);
                 const exporter = new STLExporter();
-                return exporter.parse(scene, { binary: true });
+                return exporter.parse(target, { binary: true });
               } catch (err) {
                 console.error("Błąd podczas eksportu STLExporter:", err);
                 return null;
@@ -892,8 +984,8 @@ const KeychainViewer3D = dynamic(
             },
             exportMultiPartKeychain: async () => {
               try {
-                // Zabezpieczenie przed błędem undefined/null:
-                const target = (keychainGroupRef && keychainGroupRef.current) ? keychainGroupRef.current : scene;
+                const target =
+                  keychainGroupRef && keychainGroupRef.current ? keychainGroupRef.current : scene;
                 if (!target) {
                   console.warn("Brak referencji do grupy breloka.");
                   return null;
@@ -901,130 +993,116 @@ const KeychainViewer3D = dynamic(
 
                 const exporter = new STLExporter();
                 const formData = new FormData();
-                const partsMetadata = [];
-                let partIndex = 1;
+                const buckets = new Map();
 
-                // Wymuś przeliczenie pozycji i rotacji w całej scenie
-                if (typeof target.updateMatrixWorld === "function") {
-                  target.updateMatrixWorld(true);
-                }
+                target.updateMatrixWorld(true);
 
                 target.traverse((node) => {
                   try {
-                    // Sprawdź czy element to Mesh z faktyczną geometrią
-                    if (node && node.isMesh && node.geometry) {
-                      // Pobierz kolor materiału lub z metadanych
-                      let hexColor = "#FFFFFF";
-                      if (node.userData?.partColor) {
-                        hexColor = node.userData.partColor;
-                      } else if (node.parent?.userData?.partColor) {
-                        hexColor = node.parent.userData.partColor;
-                      } else if (node.parent?.parent?.userData?.partColor) {
-                        hexColor = node.parent.parent.userData.partColor;
-                      } else if (node.material) {
-                        const mat = Array.isArray(node.material) ? node.material[0] : node.material;
-                        if (mat?.color && typeof mat.color.getHexString === "function") {
-                          hexColor = "#" + mat.color.getHexString().toUpperCase();
-                        }
-                      }
-                      if (!hexColor || typeof hexColor !== "string" || !hexColor.startsWith("#")) {
-                        hexColor = hexColor ? `#${hexColor}` : "#FFFFFF";
-                      }
+                    if (!node || !node.isMesh || !node.geometry) return;
+                    const pos = node.geometry.attributes?.position;
+                    if (!pos || pos.count < 3) return;
+                    if (node.visible === false) return;
 
-                      let partName =
-                        node.userData?.partName ||
-                        node.parent?.userData?.partName ||
-                        node.parent?.parent?.userData?.partName ||
-                        node.name ||
-                        `Czesc_${partIndex}`;
+                    const ud = findExportUserData(node);
+                    const key = logicalPartKey(ud);
+                    const hexColor = meshHexColor(node, ud);
+                    const partName =
+                      key === "base"
+                        ? "Baza"
+                        : ud.partName || node.name || key;
+                    const partRole =
+                      key === "base"
+                        ? "base_mesh"
+                        : ud.partRole || "part";
 
-                      // Klonujemy obiekt, aby zachować jego pozycję w układzie lokalnym breloka
-                      const clonedMesh = node.clone();
-                      if (node.matrixWorld && typeof clonedMesh.applyMatrix4 === "function") {
-                        clonedMesh.applyMatrix4(node.matrixWorld);
-                      }
-                      if (typeof clonedMesh.updateMatrixWorld === "function") {
-                        clonedMesh.updateMatrixWorld(true);
-                      }
-
-                      // Eksport do binarnego STL
-                      const stlData = exporter.parse(clonedMesh, { binary: true });
-                      let arrayBuffer = null;
-                      if (stlData instanceof DataView) {
-                        arrayBuffer = stlData.buffer.slice(
-                          stlData.byteOffset,
-                          stlData.byteOffset + stlData.byteLength
-                        );
-                      } else if (stlData instanceof ArrayBuffer) {
-                        arrayBuffer = stlData;
-                      } else if (stlData && stlData.buffer instanceof ArrayBuffer) {
-                        arrayBuffer = stlData.buffer.slice(
-                          stlData.byteOffset || 0,
-                          (stlData.byteOffset || 0) + (stlData.byteLength || stlData.buffer.byteLength)
-                        );
-                      } else if (typeof stlData === "string") {
-                        arrayBuffer = new TextEncoder().encode(stlData).buffer;
-                      }
-
-                      const partRole =
-                        node.userData?.partRole ||
-                        node.parent?.userData?.partRole ||
-                        node.parent?.parent?.userData?.partRole ||
-                        "";
-
-                      let partSlot =
-                        node.userData?.partSlot ||
-                        node.parent?.userData?.partSlot ||
-                        node.parent?.parent?.userData?.partSlot;
-
-                      if (!partSlot) {
-                        if (partRole === "base_mesh") partSlot = 1;
-                        else if (partRole === "border_mesh") partSlot = 2;
-                        else if (partRole === "graphic_mesh" || partRole === "text_mesh") partSlot = 3;
-                        else if (partRole === "ring_mesh") partSlot = 4;
-                        else partSlot = Math.min(partIndex, 4);
-                      }
-
-                      const filInfo =
-                        node.userData?.filamentInfo ||
-                        node.parent?.userData?.filamentInfo ||
-                        node.parent?.parent?.userData?.filamentInfo ||
-                        getFilamentByHex(hexColor);
-
-                      if (arrayBuffer && arrayBuffer.byteLength > 84) {
-                        const blob = new Blob([arrayBuffer], { type: "application/octet-stream" });
-                        const fileName = `part_${partIndex}.stl`;
-                        formData.append("files", blob, fileName);
-
-                        partsMetadata.push({
-                          id: partIndex + 1, // object id w XML (od 2 w górę)
-                          name: partName,
-                          color: hexColor,
-                          fileName: fileName,
-                          role: partRole,
-                          extruder: partSlot,
-                          filament: filInfo ? {
-                            name: filInfo.name,
-                            type: filInfo.type || "PLA",
-                            nozzle_temperature: filInfo.nozzleTemp || 215,
-                            bed_temperature: filInfo.bedTemp || 55,
-                            density: filInfo.density || 1.24,
-                          } : null,
-                        });
-
-                        partIndex++;
-                      }
+                    if (!buckets.has(key)) {
+                      buckets.set(key, {
+                        key,
+                        name: partName,
+                        color: hexColor,
+                        role: partRole,
+                        filamentInfo: ud.filamentInfo || getFilamentByHex(hexColor),
+                        meshes: [],
+                      });
                     }
+                    buckets.get(key).meshes.push(node);
                   } catch (nodeErr) {
-                    console.warn("Błąd przetwarzania węzła siatki:", nodeErr);
+                    console.warn("Błąd grupowania węzła siatki:", nodeErr);
                   }
                 });
+
+                const orderedKeys = Array.from(buckets.keys()).sort((a, b) => {
+                  const rank = (k) => {
+                    if (k === "base") return 1;
+                    if (k === "border") return 2;
+                    if (k.startsWith("graphic_")) return 3;
+                    if (k === "text") return 4;
+                    return 9;
+                  };
+                  const ra = rank(a);
+                  const rb = rank(b);
+                  if (ra !== rb) return ra - rb;
+                  return String(a).localeCompare(String(b));
+                });
+
+                const partsMetadata = [];
+                let fileIndex = 1;
+                const colorToExtruder = new Map();
+                let nextExtruder = 1;
+
+                for (const key of orderedKeys) {
+                  const bucket = buckets.get(key);
+                  const partGroup = new THREE.Group();
+
+                  bucket.meshes.forEach((node) => {
+                    const geom = node.geometry.clone();
+                    geom.applyMatrix4(node.matrixWorld);
+                    if (typeof geom.computeVertexNormals === "function") {
+                      geom.computeVertexNormals();
+                    }
+                    partGroup.add(new THREE.Mesh(geom));
+                  });
+
+                  partGroup.updateMatrixWorld(true);
+                  const stlData = exporter.parse(partGroup, { binary: true });
+                  const arrayBuffer = stlToArrayBuffer(stlData);
+                  partGroup.traverse((child) => {
+                    if (child.geometry) child.geometry.dispose();
+                  });
+
+                  if (!arrayBuffer || arrayBuffer.byteLength <= 84) continue;
+
+                  const fileName = `part_${fileIndex}.stl`;
+                  const colorKey = bucket.color.toUpperCase();
+                  if (!colorToExtruder.has(colorKey)) {
+                    colorToExtruder.set(colorKey, nextExtruder);
+                    nextExtruder += 1;
+                  }
+                  const extruder = colorToExtruder.get(colorKey);
+
+                  formData.append(
+                    "files",
+                    new File([new Uint8Array(arrayBuffer)], fileName, { type: "model/stl" })
+                  );
+
+                  partsMetadata.push({
+                    id: fileIndex + 1,
+                    name: bucket.name,
+                    color: bucket.color,
+                    fileName,
+                    role: bucket.role,
+                    extruder,
+                    filament: filamentPayload(bucket.filamentInfo),
+                  });
+                  fileIndex += 1;
+                }
 
                 console.log(`[EXPORT 3MF] Wykryto ${partsMetadata.length} części:`, partsMetadata);
 
                 if (partsMetadata.length <= 1) {
                   console.warn(
-                    "UWAGA: Wykryto tylko 1 mesh! Upewnij się, że grafika i ramka są obiektami THREE.Mesh (ExtrudeGeometry), a nie płaskimi teksturami Canvas/Sprite."
+                    "UWAGA: Wykryto tylko 1 część eksportową. Grafika i rant muszą być THREE.Mesh (ExtrudeGeometry)."
                   );
                 }
 
@@ -1045,7 +1123,12 @@ const KeychainViewer3D = dynamic(
                       }))
                   )
                 );
-                return { formData, partsMetadata, count: partsMetadata.length };
+                return {
+                  formData,
+                  partsMetadata,
+                  count: partsMetadata.length,
+                  colors: partsMetadata.map((p) => p.color),
+                };
               } catch (err) {
                 console.error("Błąd podczas exportMultiPartKeychain:", err);
                 return null;
@@ -1357,9 +1440,9 @@ export default function KeychainGenerator() {
   const exportHandlerRef = useRef(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isExporting3MF, setIsExporting3MF] = useState(false);
-  const [layerHeight, setLayerHeight] = useState("0.20");
-  const [infill, setInfill] = useState(100);
-  const [nozzleSize, setNozzleSize] = useState("0.4");
+  const layerHeight = PRINT_LAYER_HEIGHT;
+  const infill = PRINT_INFILL;
+  const nozzleSize = PRINT_NOZZLE_SIZE;
 
   const exportKeychainGeometry = () => {
     try {
@@ -1597,7 +1680,7 @@ export default function KeychainGenerator() {
       const defaultThicknesses = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1];
       const total = detectedColors.length;
 
-      const newLayers = detectedColors.map((hex, idx) => {
+      const newLayers = detectedColors.slice(0, 4).map((hex, idx) => {
         const filament = findClosestFilament(hex);
         let layerRole = `Warstwa ${idx + 1}`;
         if (idx === 0) layerRole = "Warstwa 1 (Baza / Podkład)";
@@ -1646,48 +1729,22 @@ export default function KeychainGenerator() {
   async function handleExport3MF() {
     setIsExporting3MF(true);
     try {
-      // 1. Pobieramy wyeksportowane osobne siatki i kolory (multi-part AMS)
-      let exportData = await exportMultiPartKeychain();
+      const exportData = await exportMultiPartKeychain();
       console.log("[DRUKSTACJA 3MF] Wykryto części wieloczęściowe:", exportData?.count, exportData?.colors);
 
-      let formData = exportData?.formData;
-
-      // Fallback jeśli exportMultiPartKeychain nie zwrócił danych
-      if (!formData || exportData.count === 0) {
-        const parts = exportKeychainParts();
-        if (!parts || parts.length === 0) {
-          alert("Scena 3D nie przygotowała jeszcze warstw breloka do eksportu. Odśwież stronę (Ctrl+F5) i spróbuj ponownie.");
-          setIsExporting3MF(false);
-          return;
-        }
-
-        formData = new FormData();
-        const colors = [];
-        parts.forEach((p, idx) => {
-          if (p.blob) {
-            formData.append("files", p.blob, `part_${idx + 1}.stl`);
-            let hex = p.color || baseFilament?.hex || "#222222";
-            if (!hex.startsWith("#")) hex = `#${hex}`;
-            colors.push(hex);
-          }
-        });
-        formData.append("colors", JSON.stringify(colors));
+      const formData = exportData?.formData;
+      if (!formData || !exportData?.count) {
+        alert("Scena 3D nie przygotowała jeszcze warstw breloka do eksportu. Odśwież stronę (Ctrl+F5) i spróbuj ponownie.");
+        setIsExporting3MF(false);
+        return;
       }
 
-      // Dołączamy połączony plik STL dla zgodności
-      const combinedStlBlob = exportKeychainGeometry();
-      const cleanSafeName = `brelok_${shapeType}_${Date.now()}.stl`;
-      if (combinedStlBlob) {
-        formData.append("file", combinedStlBlob, cleanSafeName);
-      }
-
-      // Parametry technologiczne druku i metadane projektu
       formData.append("file_name", `brelok_${shapeType}.3mf`);
       formData.append("material", baseFilament?.name || "PLA");
       formData.append("color_hex", baseFilament?.hex || "#222222");
-      formData.append("layer_height", String(layerHeight));
-      formData.append("nozzle_size", String(nozzleSize));
-      formData.append("infill", String(infill));
+      formData.append("layer_height", PRINT_LAYER_HEIGHT);
+      formData.append("nozzle_size", PRINT_NOZZLE_SIZE);
+      formData.append("infill", String(PRINT_INFILL));
 
       // Ważne: NIE ustawiamy nagłówka 'Content-Type' ręcznie! Przeglądarka musi sama dodać boundary.
       const res = await fetch(`${API_URL || ""}/api/breloki/generate-direct-3mf`, {
@@ -2411,8 +2468,8 @@ export default function KeychainGenerator() {
                       {layersConfig.map((layer, idx) => (
                         <FilamentPickerRow
                           key={layer.id || idx}
-                          label={`Kolor ${idx + 1}: ${layer.name}`}
-                          sublabel={`Wytłoczenie: ${layer.thickness} mm`}
+                          label={`Kolor grafiki ${idx + 1}`}
+                          sublabel={`${layer.name} · ${layer.thickness} mm`}
                           filament={layer.filament}
                           buttonText="Zmień na filament SUNLU"
                           onClick={() =>
@@ -2677,7 +2734,7 @@ export default function KeychainGenerator() {
                     <input
                       type="range"
                       min="2"
-                      max="6"
+                      max="4"
                       step="1"
                       value={nColorsModal}
                       onChange={(e) => setNColorsModal(parseInt(e.target.value))}
@@ -2685,7 +2742,7 @@ export default function KeychainGenerator() {
                     />
                     <div className="flex justify-between text-[10px] text-slate-400 mt-0.5">
                       <span>Prosty (2)</span>
-                      <span>Szczegółowy (6)</span>
+                      <span>Max AMS (4)</span>
                     </div>
                   </div>
 

@@ -8,15 +8,11 @@ STRUKTURA ARCHIWUM .3MF:
 ├── _rels/
 │   └── .rels
 ├── 3D/
-│   ├── 3dmodel.model            (Kontroler montażu / Assembly, <components>)
-│   ├── _rels/
-│   │   └── 3dmodel.model.rels   (Relacja OPC do 3D/Objects/object-XXXX.model)
-│   └── Objects/
-│       └── object-XXXX.model    (Pojedyncze obiekty/siatki dla poszczególnych części)
+│   └── 3dmodel.model            (wszystkie siatki + Assembly id=100 w jednym pliku)
 └── Metadata/
-    ├── model_settings.config    (Hierarchia części i mapowanie part ID -> extruder)
-    ├── project_settings.config  (Konfiguracja slicera JSON: filament_colour, profile Bambu A1)
-    └── plate_1.png              (Miniatura stołu roboczego)
+    ├── model_settings.config    (part id -> extruder)
+    ├── project_settings.config  (filament_colour, temperatury SUNLU, profil Bambu A1)
+    └── plate_1.png
 """
 import os
 import re
@@ -286,13 +282,10 @@ def generate_production_3mf(
     odtworzoną bezpośrednio z referencyjnego pliku Keychain Draft.3mf.
 
     Architektura:
-    1. 3D/3dmodel.model: Kontroler montażu (Assembly) z <object id="XXXX"><components>...
-    2. 3D/_rels/3dmodel.model.rels: Relacja OPC do /3D/Objects/object-XXXX.model.
-    3. 3D/Objects/object-XXXX.model: Osobne obiekty i siatki geometrii dla każdej części.
-    4. Metadata/model_settings.config: Hierarchia części z atrybutem subtype="normal_part"
-       oraz <metadata key="extruder" value="N"/> dla każdego part ID.
-    5. Metadata/project_settings.config: Rzeczywista konfiguracja slicera (JSON)
-       z tablicą filament_colour, profilem Bambu PLA Basic @BBL A1 i parametrami Bambu Lab A1.
+    1. 3D/3dmodel.model: każdy STL jako <object id="2..N"> z <mesh>, plus Assembly id="100"
+       z <components>. W <build> tylko item 100.
+    2. Metadata/model_settings.config: <object id="100"> i <part id="..."> z extruder.
+    3. Metadata/project_settings.config: filament_colour + temperatury SUNLU, profil Bambu A1.
     """
     order_metadata = order_metadata or {}
     print_settings = print_settings or {}
@@ -318,9 +311,9 @@ def generate_production_3mf(
 
     layer_height = _parse_float(print_settings.get("layer_height"), 0.20)
     nozzle_size = _parse_float(print_settings.get("nozzle_size"), 0.40)
-    infill_val = _parse_float(print_settings.get("infill"), 15.0)
+    infill_val = _parse_float(print_settings.get("infill"), 100.0)
     infill = int(infill_val)
-    safe_infill = min(max(infill, 5), 99)
+    safe_infill = min(max(infill, 5), 100)
 
     material = str(print_settings.get("material") or "PLA")
     mat_upper = material.upper()
@@ -497,28 +490,24 @@ def generate_production_3mf(
     tz = 0.0 - float(all_bounds_min[2])
     transform_matrix = f"1 0 0 0 1 0 0 0 1 {tx:.6f} {ty:.6f} {tz:.6f}"
 
-    # Identyfikatory i UUID wzorowane na referencyjnym Keychain Draft.3mf
-    main_id = 7607
-    main_uuid = str(uuid.uuid4())
+    assembly_id = 100
+    assembly_uuid = str(uuid.uuid4())
     build_uuid = str(uuid.uuid4())
     item_uuid = str(uuid.uuid4())
 
-    # ──────────────────────────────────────────────────────────────
-    # 4. Budowa 3D/Objects/object-XXXX.model (osobne obiekty i siatki)
-    # ──────────────────────────────────────────────────────────────
     objects_xml_list = []
     components_xml_list = []
     model_settings_parts_xml = []
 
     for idx, p in enumerate(valid_parts):
-        part_id = 10001 + idx
+        part_id = 2 + idx
         safe_name = xml_escape(p["name"])
         ext_num = p["assigned_extruder"]
         v_xml, t_xml = _mesh_to_xml(p["mesh"], indent="          ")
+        part_uuid = str(uuid.uuid4())
 
-        # Obiekt w 3D/Objects/object-7607.model
         objects_xml_list.append(
-            f'    <object id="{part_id}" type="model">\n'
+            f'    <object id="{part_id}" p:uuid="{part_uuid}" type="model" name="{safe_name}">\n'
             f'      <mesh>\n'
             f'        <vertices>\n'
             f'{v_xml}\n'
@@ -530,14 +519,12 @@ def generate_production_3mf(
             f'    </object>'
         )
 
-        # Komponent w kontrolerze 3D/3dmodel.model
         components_xml_list.append(
-            f'        <component p:path="/3D/Objects/object-{main_id}.model" objectid="{part_id}"/>'
+            f'        <component objectid="{part_id}"/>'
         )
 
-        # Wpis part w Metadata/model_settings.config
         model_settings_parts_xml.append(
-            f'    <part id="{part_id}" subtype="normal_part">\n'
+            f'    <part id="{part_id}" subtype="normal_part" name="{safe_name}">\n'
             f'      <metadata key="name" value="{safe_name}"/>\n'
             f'      <metadata key="extruder" value="{ext_num}"/>\n'
             f'      <mesh_stat edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>\n'
@@ -545,68 +532,41 @@ def generate_production_3mf(
         )
 
     objects_joined = "\n".join(objects_xml_list)
-    objects_model_xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<model unit="millimeter" xml:lang="en-US"'
-        ' xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06"'
-        ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"'
-        ' xmlns:BambuStudio="http://schemas.bambulab.com/package/2021"'
-        ' requiredextensions="p">\n'
-        '  <metadata name="BambuStudio:3mfVersion"> 1 </metadata>\n'
-        '  <resources>\n'
-        f'{objects_joined}\n'
-        '  </resources>\n'
-        '  <build/>\n'
-        '</model>'
-    )
-
-    # ──────────────────────────────────────────────────────────────
-    # 5. Budowa 3D/3dmodel.model (Kontroler Assembly)
-    # ──────────────────────────────────────────────────────────────
     components_joined = "\n".join(components_xml_list)
+
     main_3dmodel_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<model unit="millimeter" xml:lang="en-US"'
         ' xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
         ' xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06"'
         ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"'
+        ' xmlns:BambuStudio="http://schemas.bambulab.com/package/2021"'
         ' requiredextensions="p">\n'
         '  <metadata name="Application">BambuStudio-01.07.04.52</metadata>\n'
+        '  <metadata name="BambuStudio:3mfVersion">1</metadata>\n'
         f'  <metadata name="Title">{xml_escape(clean_title)}</metadata>\n'
         f'  <metadata name="CreationDate">{created_at}</metadata>\n'
         '  <resources>\n'
-        f'    <object id="{main_id}" p:uuid="{main_uuid}" type="model">\n'
+        f'{objects_joined}\n'
+        f'    <object id="{assembly_id}" p:uuid="{assembly_uuid}" type="model" name="Keychain_Assembly">\n'
         '      <components>\n'
         f'{components_joined}\n'
         '      </components>\n'
         '    </object>\n'
         '  </resources>\n'
         f'  <build p:uuid="{build_uuid}">\n'
-        f'    <item objectid="{main_id}" p:uuid="{item_uuid}" transform="{transform_matrix}" printable="1"/>\n'
+        f'    <item objectid="{assembly_id}" p:uuid="{item_uuid}" transform="{transform_matrix}" printable="1"/>\n'
         '  </build>\n'
         '</model>'
     )
 
-    # ──────────────────────────────────────────────────────────────
-    # 6. Budowa 3D/_rels/3dmodel.model.rels (Relacja OPC do obiektów)
-    # ──────────────────────────────────────────────────────────────
-    model_rels_xml = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
-        f'  <Relationship Target="/3D/Objects/object-{main_id}.model" Id="rel-{main_id}" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>\n'
-        '</Relationships>'
-    )
-
-    # ──────────────────────────────────────────────────────────────
-    # 7. Metadata/model_settings.config (Powiązanie Part -> Extruder)
-    # ──────────────────────────────────────────────────────────────
     parts_config_joined = "\n".join(model_settings_parts_xml)
     filament_maps_str = " ".join(["1"] * num_filaments)
 
     model_settings_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<config>\n'
-        f'  <object id="{main_id}">\n'
+        f'  <object id="{assembly_id}">\n'
         f'    <metadata key="name" value="{xml_escape(clean_title)}.3mf"/>\n'
         '    <metadata key="extruder" value="1"/>\n'
         '    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>\n'
@@ -616,22 +576,33 @@ def generate_production_3mf(
         '    <metadata key="plater_id" value="1"/>\n'
         '    <metadata key="plater_name" value="plate-1"/>\n'
         '    <model_instance>\n'
-        f'      <metadata key="object_id" value="{main_id}"/>\n'
+        f'      <metadata key="object_id" value="{assembly_id}"/>\n'
         '      <metadata key="instance_id" value="0"/>\n'
         '    </model_instance>\n'
         '    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>\n'
         f'    <metadata key="filament_maps" value="{filament_maps_str}"/>\n'
         '  </plate>\n'
         '  <assemble>\n'
-        f'    <assemble_item object_id="{main_id}" instance_id="0" offset="0 0 0"/>\n'
+        f'    <assemble_item object_id="{assembly_id}" instance_id="0" offset="0 0 0"/>\n'
         '  </assemble>\n'
         '</config>'
     )
 
-    # ──────────────────────────────────────────────────────────────
-    # 8. Metadata/project_settings.config (Konfiguracja Bambu Lab A1)
-    # ──────────────────────────────────────────────────────────────
-    # Wzorowane 1:1 na Keychain Draft.3mf
+    extra_filaments = print_settings.get("filaments")
+    filament_profiles = []
+    for i in range(num_filaments):
+        color = unique_colors_6[i] if i < len(unique_colors_6) else "#FFFFFF"
+        part_for_ext = next((p for p in valid_parts if p.get("assigned_extruder") == i + 1), None)
+        user_fil = part_for_ext.get("filament") if part_for_ext else None
+        if not user_fil and isinstance(extra_filaments, list):
+            for ef in extra_filaments:
+                if not isinstance(ef, dict):
+                    continue
+                if format_hex_6(ef.get("color") or "") == color:
+                    user_fil = ef
+                    break
+        filament_profiles.append(resolve_filament_profile(color, user_fil, clean_mat))
+
     if "PLA" in clean_mat:
         bambu_fil_id = "Bambu PLA Basic @BBL A1"
     elif "PET" in clean_mat:
@@ -655,9 +626,17 @@ def generate_production_3mf(
         ] + [""] * (num_filaments - 1),
         "wall_generator": "arachne",
         "curr_bed_type": "Textured PEI Plate",
-        "filament_colour": unique_colors_6,
+        "filament_colour": [fp["color"] for fp in filament_profiles],
         "filament_diameter": ["1.75"] * num_filaments,
         "filament_is_support": ["0"] * num_filaments,
+        "filament_type": [fp["type"] for fp in filament_profiles],
+        "filament_vendor": ["SUNLU"] * num_filaments,
+        "filament_settings_id": [bambu_fil_id] * num_filaments,
+        "nozzle_temperature": [str(fp["nozzle_temperature"]) for fp in filament_profiles],
+        "nozzle_temperature_initial_layer": [str(fp["nozzle_temperature"]) for fp in filament_profiles],
+        "hot_plate_temp": [str(fp["bed_temperature"]) for fp in filament_profiles],
+        "hot_plate_temp_initial_layer": [str(fp["bed_temperature"]) for fp in filament_profiles],
+        "filament_density": [str(fp["density"]) for fp in filament_profiles],
         "layer_height": layer_h_str,
         "wall_loops": "2",
         "sparse_infill_density": f"{safe_infill}%",
@@ -666,7 +645,6 @@ def generate_production_3mf(
         "printable_area": ["0x0", "256x0", "256x256", "0x256"],
         "printable_height": "256",
         "bed_exclude_area": [],
-        "filament_settings_id": [bambu_fil_id] * num_filaments,
         "printer_model": "Bambu Lab A1",
         "wipe_tower_x": ["15"],
         "wipe_tower_y": ["116"],
@@ -677,14 +655,8 @@ def generate_production_3mf(
     }
     project_settings_json = json.dumps(project_settings_dict, indent=4)
 
-    # ──────────────────────────────────────────────────────────────
-    # 9. Miniatura stołu (plate_1.png)
-    # ──────────────────────────────────────────────────────────────
     plate_png_bytes = create_dummy_png(200, 200, color=(38, 42, 51))
 
-    # ──────────────────────────────────────────────────────────────
-    # 10. Manifesty relacji OPC ([Content_Types].xml, _rels/.rels)
-    # ──────────────────────────────────────────────────────────────
     content_types_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n'
@@ -703,9 +675,6 @@ def generate_production_3mf(
         '</Relationships>'
     )
 
-    # ──────────────────────────────────────────────────────────────
-    # 11. Określenie docelowej ścieżki pliku wyjściowego
-    # ──────────────────────────────────────────────────────────────
     if not output_path:
         if model_path:
             out_dir = Path(model_path).parent
@@ -718,15 +687,10 @@ def generate_production_3mf(
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
-    # ──────────────────────────────────────────────────────────────
-    # 12. Pakowanie archiwum ZIP ze strukturą zgodną z Keychain Draft.3mf
-    # ──────────────────────────────────────────────────────────────
     archive_files = {
         "[Content_Types].xml": content_types_xml,
         "_rels/.rels": rels_xml,
         "3D/3dmodel.model": main_3dmodel_xml,
-        "3D/_rels/3dmodel.model.rels": model_rels_xml,
-        f"3D/Objects/object-{main_id}.model": objects_model_xml,
         "Metadata/model_settings.config": model_settings_xml,
         "Metadata/project_settings.config": project_settings_json,
         "Metadata/plate_1.png": plate_png_bytes,
@@ -846,43 +810,39 @@ def validate_3mf_package(file_path: str) -> dict:
             if not component_objectids:
                 errors.append("Brak komponentów wewnątrz obiektu montażowego w 3D/3dmodel.model.")
 
-            # 3. Relacja OPC 3D/_rels/3dmodel.model.rels
-            if "3D/_rels/3dmodel.model.rels" not in namelist:
-                errors.append("Brak pliku 3D/_rels/3dmodel.model.rels.")
-            else:
-                rels_str = zf.read("3D/_rels/3dmodel.model.rels").decode("utf-8", errors="replace")
-                if "3D/Objects/" not in rels_str:
-                    errors.append("Relacja w 3D/_rels/3dmodel.model.rels nie wskazuje na ścieżkę 3D/Objects/.")
+            build_el = model_root.find("{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}build")
+            if build_el is None:
+                build_el = model_root.find("build")
+            if build_el is not None:
+                items = list(build_el)
+                item_ids = [it.attrib.get("objectid") for it in items]
+                details["build_item_objectids"] = item_ids
+                if item_ids != [str(main_obj_id)]:
+                    errors.append(
+                        f"<build> powinno zawierać wyłącznie item objectid='{main_obj_id}', jest: {item_ids}"
+                    )
 
-            # 4. Sprawdzenie pliku 3D/Objects/object-XXXX.model
-            expected_objects_file = f"3D/Objects/object-{main_obj_id}.model"
-            matching_object_files = [f for f in namelist if f.startswith("3D/Objects/") and f.endswith(".model")]
-            if not matching_object_files:
-                errors.append(f"Brak pliku geometrii części w 3D/Objects/ (oczekiwano np. {expected_objects_file}).")
-            else:
-                obj_file_name = matching_object_files[0]
-                obj_xml_str = zf.read(obj_file_name).decode("utf-8", errors="replace")
-                try:
-                    obj_root = ET.fromstring(obj_xml_str)
-                    obj_resources = obj_root.find("{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}resources")
-                    if obj_resources is None:
-                        obj_resources = obj_root.find("resources")
+            mesh_object_ids = []
+            for obj in resources:
+                comps = obj.find("{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}components")
+                if comps is None:
+                    comps = obj.find("components")
+                mesh_el = obj.find("{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}mesh")
+                if mesh_el is None:
+                    mesh_el = obj.find("mesh")
+                oid = obj.attrib.get("id")
+                if mesh_el is not None and oid:
+                    mesh_object_ids.append(oid)
 
-                    existing_part_ids = []
-                    if obj_resources is not None:
-                        for part_node in obj_resources:
-                            pid = part_node.attrib.get("id")
-                            if pid:
-                                existing_part_ids.append(pid)
+            details["object_model_part_ids"] = mesh_object_ids
 
-                    details["object_model_part_ids"] = existing_part_ids
+            for c_id in component_objectids:
+                if c_id not in mesh_object_ids:
+                    errors.append(f"Komponent objectid='{c_id}' nie ma siatki <mesh> w 3D/3dmodel.model.")
 
-                    # Weryfikacja: każdy component_objectid musi istnieć w pliku 3D/Objects/
-                    for c_id in component_objectids:
-                        if c_id not in existing_part_ids:
-                            errors.append(f"Komponent objectid='{c_id}' nie istnieje w {obj_file_name}.")
-                except Exception as e:
-                    errors.append(f"Błąd parsowania XML w {obj_file_name}: {e}")
+            comment = details.get("zip_comment") or ""
+            if "created by BambuLab" not in comment:
+                errors.append("Komentarz archiwum ZIP nie zawiera 'created by BambuLab'.")
 
             # 5. Sprawdzenie Metadata/project_settings.config (JSON)
             if "Metadata/project_settings.config" not in namelist:

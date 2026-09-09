@@ -81,43 +81,37 @@ def test_reference_scenario_keychain_draft():
         
         # Weryfikacja struktury katalogów
         assert "3D/3dmodel.model" in namelist
-        assert "3D/_rels/3dmodel.model.rels" in namelist
-        assert any(n.startswith("3D/Objects/object-") and n.endswith(".model") for n in namelist)
+        assert not any(n.startswith("3D/Objects/") for n in namelist)
         assert "Metadata/model_settings.config" in namelist
         assert "Metadata/project_settings.config" in namelist
         assert "Metadata/plate_1.png" in namelist
         assert "[Content_Types].xml" in namelist
         assert "_rels/.rels" in namelist
 
-        # Weryfikacja relacji OPC
-        rels_xml = zf.read("3D/_rels/3dmodel.model.rels").decode("utf-8")
-        assert 'Target="/3D/Objects/object-7607.model"' in rels_xml
-
         # Weryfikacja assembly w 3D/3dmodel.model
         main_model_xml = zf.read("3D/3dmodel.model").decode("utf-8")
-        assert '<object id="7607"' in main_model_xml
-        assert '<components>' in main_model_xml
-        assert '<component p:path="/3D/Objects/object-7607.model" objectid="10001"/>' in main_model_xml
-        assert '<component p:path="/3D/Objects/object-7607.model" objectid="10002"/>' in main_model_xml
-        assert '<component p:path="/3D/Objects/object-7607.model" objectid="10003"/>' in main_model_xml
-        assert '<component p:path="/3D/Objects/object-7607.model" objectid="10004"/>' in main_model_xml
-        assert '<item objectid="7607"' in main_model_xml
-
-        # Weryfikacja obiektów w 3D/Objects/object-7607.model
-        obj_model_xml = zf.read("3D/Objects/object-7607.model").decode("utf-8")
-        assert 'BambuStudio:3mfVersion' in obj_model_xml
-        assert '<object id="10001" type="model">' in obj_model_xml
-        assert '<object id="10002" type="model">' in obj_model_xml
-        assert '<object id="10003" type="model">' in obj_model_xml
-        assert '<object id="10004" type="model">' in obj_model_xml
+        assert '<object id="100"' in main_model_xml
+        assert 'name="Keychain_Assembly"' in main_model_xml
+        assert "<components>" in main_model_xml
+        assert '<component objectid="2"/>' in main_model_xml
+        assert '<component objectid="3"/>' in main_model_xml
+        assert '<component objectid="4"/>' in main_model_xml
+        assert '<component objectid="5"/>' in main_model_xml
+        assert '<item objectid="100"' in main_model_xml
+        assert 'BambuStudio:3mfVersion' in main_model_xml
+        assert '<object id="2"' in main_model_xml
+        assert '<object id="3"' in main_model_xml
+        assert '<object id="4"' in main_model_xml
+        assert '<object id="5"' in main_model_xml
+        assert "<mesh>" in main_model_xml
 
         # Weryfikacja Metadata/model_settings.config
         ms_xml = zf.read("Metadata/model_settings.config").decode("utf-8")
-        assert '<object id="7607">' in ms_xml
-        assert '<part id="10001" subtype="normal_part">' in ms_xml
-        assert '<part id="10002" subtype="normal_part">' in ms_xml
-        assert '<part id="10003" subtype="normal_part">' in ms_xml
-        assert '<part id="10004" subtype="normal_part">' in ms_xml
+        assert '<object id="100">' in ms_xml
+        assert '<part id="2"' in ms_xml
+        assert '<part id="3"' in ms_xml
+        assert '<part id="4"' in ms_xml
+        assert '<part id="5"' in ms_xml
         assert '<metadata key="extruder" value="1"/>' in ms_xml
         assert '<metadata key="extruder" value="2"/>' in ms_xml
         assert '<metadata key="extruder" value="3"/>' in ms_xml
@@ -180,7 +174,7 @@ def test_shared_color_reuses_extruder():
 def test_dependency_chain_validation():
     """
     Testuje pełny łańcuch zależności:
-    component objectid -> object id in 3D/Objects -> part id in model_settings -> extruder -> filament_colour
+    component objectid -> object id z <mesh> w 3D/3dmodel.model -> part id in model_settings -> extruder -> filament_colour
     """
     print("\n--- Running test_dependency_chain_validation ---")
     out_path = os.path.join(tempfile.gettempdir(), f"test_chain_{uuid.uuid4().hex[:6]}.3mf")
@@ -228,7 +222,7 @@ def test_process_settings_propagation():
     with zipfile.ZipFile(saved, "r") as zf:
         ps = json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
         assert ps["layer_height"] == "0.12"
-        assert ps["sparse_infill_density"] == "99%"
+        assert ps["sparse_infill_density"] == "100%"
         assert "0.12mm High Quality @BBL A1" in ps["print_settings_id"]
         assert ps["printer_settings_id"] == "Bambu Lab A1 0.4 nozzle"
 

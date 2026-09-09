@@ -1104,8 +1104,10 @@ async def upload_order_geometry_endpoint(
 async def generate_direct_3mf_endpoint(
     request: Request,
     file: UploadFile | None = File(None),
-    files: list[UploadFile] = File([]),
+    files: list[UploadFile] | None = File(None),
     colors: str | None = Form(None),
+    metadata: str | None = Form(None),
+    filaments: str | None = Form(None),
     file_name: str | None = Form(None),
     material: str = Form("PLA"),
     color_hex: str = Form("#222222"),
@@ -1127,7 +1129,6 @@ async def generate_direct_3mf_endpoint(
     parts_json_raw = form.get("parts_json")
     parts_files_list = form.getlist("parts_files")
 
-    # 1. Obsługa dedykowanego formatu files + colors
     uploaded_files = list(files) if files else []
     if not uploaded_files:
         raw_files = form.getlist("files")
@@ -1135,7 +1136,7 @@ async def generate_direct_3mf_endpoint(
             if hasattr(rf, "read"):
                 uploaded_files.append(rf)
 
-    raw_metadata = form.get("metadata")
+    raw_metadata = metadata or form.get("metadata")
     parsed_metadata = []
     if raw_metadata:
         try:
@@ -1155,7 +1156,7 @@ async def generate_direct_3mf_endpoint(
         except Exception:
             parsed_colors = [c.strip().strip('"') for c in str(raw_colors).replace("[", "").replace("]", "").split(",") if c.strip()]
 
-    raw_filaments = form.get("filaments")
+    raw_filaments = filaments or form.get("filaments")
     parsed_filaments = []
     if raw_filaments:
         try:
@@ -1189,6 +1190,8 @@ async def generate_direct_3mf_endpoint(
             local_part_path = os.path.join(MODELS_CACHE_DIR, target_part_name)
 
             try:
+                if hasattr(ufile, "seek"):
+                    await ufile.seek(0)
                 p_bytes = await ufile.read()
                 if p_bytes and len(p_bytes) > 0:
                     with open(local_part_path, "wb") as f_out:
@@ -1265,7 +1268,9 @@ async def generate_direct_3mf_endpoint(
         print(f"      * Część: {p['name']} | Kolor: {p['color_hex']}")
 
     local_stl_path = None
-    if file:
+    if (not parts_list) and file:
+        if hasattr(file, "seek"):
+            await file.seek(0)
         content = await file.read()
         target_stl_name = f"TMP_{temp_id}_{safe_file_name}.stl"
         local_stl_path = os.path.join(MODELS_CACHE_DIR, target_stl_name)
