@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { FILAMENTS, FILAMENT_CATEGORIES } from '../config/filamentDatabase';
+import { isPlaFilament } from '../lib/filament';
 
 export function FilamentPickerModal({
   isOpen,
@@ -11,10 +12,11 @@ export function FilamentPickerModal({
 }) {
   const [activeCategory, setActiveCategory] = useState(null);
 
-  const list = useMemo(
-    () => (Array.isArray(filaments) && filaments.length > 0 ? filaments : FILAMENTS),
-    [filaments]
-  );
+  const list = useMemo(() => {
+    const raw = Array.isArray(filaments) && filaments.length > 0 ? filaments : FILAMENTS;
+    const plaOnly = raw.filter((f) => isPlaFilament(f));
+    return plaOnly.length > 0 ? plaOnly : FILAMENTS.filter((f) => isPlaFilament(f));
+  }, [filaments]);
 
   const categories = useMemo(() => {
     const seen = [];
@@ -65,6 +67,7 @@ export function FilamentPickerModal({
           </button>
         </div>
 
+        {categories.length > 1 && (
         <div className="flex gap-1.5 px-6 py-3 border-b border-slate-100 overflow-x-auto no-scrollbar bg-white">
           {categories.map((category) => (
             <button
@@ -81,6 +84,7 @@ export function FilamentPickerModal({
             </button>
           ))}
         </div>
+        )}
 
         <div className="p-6 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[50vh]">
           {visibleFilaments.map((filament) => {

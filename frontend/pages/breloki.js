@@ -2059,16 +2059,17 @@ export default function KeychainGenerator() {
     async function loadFilaments() {
       try {
         const loaded = await fetchFilamentsFromApi(API_URL);
-        if (isMounted && Array.isArray(loaded) && loaded.length > 0) {
-          setFilaments(loaded);
+        const plaOnly = (Array.isArray(loaded) ? loaded : []).filter(isPlaFilament);
+        if (isMounted && plaOnly.length > 0) {
+          setFilaments(plaOnly);
           // Zaktualizuj referencje wybranych filamentów o aktualne dane z bazy (ceny, nazwy, roughness, metalness)
-          setBaseFilament((prev) => loaded.find((f) => f.id === prev?.id) || prev || loaded[0]);
-          setStrokeFilament((prev) => loaded.find((f) => f.id === prev?.id) || prev || loaded[0]);
-          setTextFilament((prev) => loaded.find((f) => f.id === prev?.id) || prev || loaded[0]);
+          setBaseFilament((prev) => plaOnly.find((f) => f.id === prev?.id) || prev || plaOnly[0]);
+          setStrokeFilament((prev) => plaOnly.find((f) => f.id === prev?.id) || prev || plaOnly[0]);
+          setTextFilament((prev) => plaOnly.find((f) => f.id === prev?.id) || prev || plaOnly[0]);
           setLayersConfig((prev) =>
             prev.map((l) => ({
               ...l,
-              filament: loaded.find((f) => f.id === l.filament?.id) || l.filament,
+              filament: plaOnly.find((f) => f.id === l.filament?.id) || l.filament,
             }))
           );
         }

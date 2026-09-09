@@ -22,28 +22,40 @@ export const KEYCHAIN_CATEGORIES = [
 // Sprawdza, czy dany filament jest bezpiecznym tworzywem PLA dla breloków (eliminuje PET-G, TPU, ASA itp.)
 export function isPlaFilament(f) {
   if (!f) return false;
-  const type = (f.type || "").toUpperCase();
-  const name = (f.name || "").toLowerCase();
+  const hay = [f.type, f.category, f.name, f.id]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ");
 
-  const nonPlaTypes = ["PETG", "PET-G", "FLEX", "TPU", "TECH", "ASA", "ABS", "PCTG", "PP", "COMPOSITE", "CARBON", "NYLON"];
-  if (nonPlaTypes.includes(type)) return false;
+  const blocked = [
+    "pet g",
+    "petg",
+    "tpu",
+    "flex",
+    "asa",
+    "abs",
+    "pctg",
+    "nylon",
+    "pa12",
+    "pa 12",
+    "polipropylen",
+    "composite",
+    "carbon fiber",
+    "tech",
+  ];
+  if (blocked.some((token) => hay.includes(token))) return false;
 
-  if (
-    name.includes("pet-g") ||
-    name.includes("petg") ||
-    name.includes("tpu") ||
-    name.includes("flex") ||
-    name.includes("asa") ||
-    name.includes("abs") ||
-    name.includes("pctg") ||
-    name.includes("carbon") ||
-    name.includes("nylon") ||
-    name.includes("polipropylen")
-  ) {
-    return false;
+  const type = String(f.type || "").toUpperCase().replace(/[_-]+/g, " ").trim();
+  if (type.startsWith("PLA") || ["SILK", "WOOD", "MULTICOLOR"].includes(type)) return true;
+  if (hay.includes("pla")) return true;
+
+  const cat = String(f.category || "").toLowerCase();
+  if (["dual", "tri", "rainbow", "pla wood", "silk dual-color", "silk tri-color", "pla galaxy", "pla rainbow"].includes(cat)) {
+    return true;
   }
 
-  return true;
+  return false;
 }
 
 // Rozpoznaje typ wykończenia PLA (Klasyczny, Matte, Silk, Dual, Tri, Rainbow, Wood)
