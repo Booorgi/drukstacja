@@ -81,41 +81,54 @@ def test_reference_scenario_keychain_draft():
         
         # Weryfikacja struktury katalogów
         assert "3D/3dmodel.model" in namelist
-        assert not any(n.startswith("3D/Objects/") for n in namelist)
+        assert "3D/_rels/3dmodel.model.rels" in namelist
+        assert "3D/Objects/object-7607.model" in namelist
         assert "Metadata/model_settings.config" in namelist
         assert "Metadata/project_settings.config" in namelist
         assert "Metadata/plate_1.png" in namelist
         assert "[Content_Types].xml" in namelist
         assert "_rels/.rels" in namelist
 
-        # Weryfikacja assembly w 3D/3dmodel.model
+        # Weryfikacja relacji OPC
+        rels_xml = zf.read("3D/_rels/3dmodel.model.rels").decode("utf-8")
+        assert 'Target="/3D/Objects/object-7607.model"' in rels_xml
+
+        # 3D/3dmodel.model to wyłącznie kontroler montażu - bez geometrii
         main_model_xml = zf.read("3D/3dmodel.model").decode("utf-8")
-        assert '<object id="100"' in main_model_xml
-        assert 'name="Keychain_Assembly"' in main_model_xml
+        assert '<object id="7607"' in main_model_xml
         assert "<components>" in main_model_xml
-        assert '<component objectid="2"/>' in main_model_xml
-        assert '<component objectid="3"/>' in main_model_xml
-        assert '<component objectid="4"/>' in main_model_xml
-        assert '<component objectid="5"/>' in main_model_xml
-        assert '<item objectid="100"' in main_model_xml
-        assert 'BambuStudio:3mfVersion' in main_model_xml
-        assert '<object id="2"' in main_model_xml
-        assert '<object id="3"' in main_model_xml
-        assert '<object id="4"' in main_model_xml
-        assert '<object id="5"' in main_model_xml
-        assert "<mesh>" in main_model_xml
+        assert 'requiredextensions="p"' in main_model_xml
+        assert '<component p:path="/3D/Objects/object-7607.model" objectid="10001"/>' in main_model_xml
+        assert '<component p:path="/3D/Objects/object-7607.model" objectid="10002"/>' in main_model_xml
+        assert '<component p:path="/3D/Objects/object-7607.model" objectid="10003"/>' in main_model_xml
+        assert '<component p:path="/3D/Objects/object-7607.model" objectid="10004"/>' in main_model_xml
+        assert '<item objectid="7607"' in main_model_xml
+        assert "<mesh>" not in main_model_xml, "3dmodel.model nie może zawierać geometrii!"
+
+        # Geometria części w 3D/Objects/object-7607.model
+        obj_model_xml = zf.read("3D/Objects/object-7607.model").decode("utf-8")
+        assert "BambuStudio:3mfVersion" in obj_model_xml
+        assert '<object id="10001" type="model"' in obj_model_xml
+        assert '<object id="10002" type="model"' in obj_model_xml
+        assert '<object id="10003" type="model"' in obj_model_xml
+        assert '<object id="10004" type="model"' in obj_model_xml
+        assert "<mesh>" in obj_model_xml
 
         # Weryfikacja Metadata/model_settings.config
         ms_xml = zf.read("Metadata/model_settings.config").decode("utf-8")
-        assert '<object id="100">' in ms_xml
-        assert '<part id="2"' in ms_xml
-        assert '<part id="3"' in ms_xml
-        assert '<part id="4"' in ms_xml
-        assert '<part id="5"' in ms_xml
+        assert '<object id="7607">' in ms_xml
+        assert '<part id="10001" subtype="normal_part">' in ms_xml
+        assert '<part id="10002" subtype="normal_part">' in ms_xml
+        assert '<part id="10003" subtype="normal_part">' in ms_xml
+        assert '<part id="10004" subtype="normal_part">' in ms_xml
         assert '<metadata key="extruder" value="1"/>' in ms_xml
         assert '<metadata key="extruder" value="2"/>' in ms_xml
         assert '<metadata key="extruder" value="3"/>' in ms_xml
         assert '<metadata key="extruder" value="4"/>' in ms_xml
+
+        # Komentarz Bambu na każdym wpisie archiwum
+        for info in zf.infolist():
+            assert info.comment == b"created by BambuLab", f"Brak komentarza na {info.filename}"
 
         # Weryfikacja Metadata/project_settings.config
         ps = json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
@@ -174,7 +187,7 @@ def test_shared_color_reuses_extruder():
 def test_dependency_chain_validation():
     """
     Testuje pełny łańcuch zależności:
-    component objectid -> object id z <mesh> w 3D/3dmodel.model -> part id in model_settings -> extruder -> filament_colour
+    component objectid -> object id in 3D/Objects -> part id in model_settings -> extruder -> filament_colour
     """
     print("\n--- Running test_dependency_chain_validation ---")
     out_path = os.path.join(tempfile.gettempdir(), f"test_chain_{uuid.uuid4().hex[:6]}.3mf")
@@ -276,6 +289,126 @@ def test_multicolor_graphic_layers():
     print("test_multicolor_graphic_layers: PASSED [OK]")
 
 
+def test_max_palette_base_border_four_graphics_text():
+    """
+    Maksymalna konfiguracja konfiguratora: baza + uszko (wspólny kolor), rant,
+    4 kolory grafiki z wektoryzatora oraz tekst = 7 unikalnych filamentów.
+    """
+    print("\n--- Running test_max_palette_base_border_four_graphics_text ---")
+    out_path = os.path.join(tempfile.gettempdir(), f"test_max_palette_{uuid.uuid4().hex[:6]}.3mf")
+    parts = [
+        {"name": "Baza", "color_hex": "#080504", "mesh": create_cube_mesh((50, 30, 3)), "role": "base_mesh", "extruder": 1},
+        {"name": "Uszko", "color_hex": "#080504", "mesh": create_cube_mesh((6, 6, 3)), "role": "ring_mesh", "extruder": 1},
+        {"name": "Rant", "color_hex": "#854A22", "mesh": create_cube_mesh((52, 32, 1)), "role": "border_mesh", "extruder": 2},
+        {"name": "Graphic_1", "color_hex": "#C4864F", "mesh": create_cube_mesh((20, 12, 1)), "role": "graphic_mesh", "extruder": 3},
+        {"name": "Graphic_2", "color_hex": "#DFDFDE", "mesh": create_cube_mesh((16, 10, 1)), "role": "graphic_mesh", "extruder": 4},
+        {"name": "Graphic_3", "color_hex": "#00BCDB", "mesh": create_cube_mesh((12, 8, 1)), "role": "graphic_mesh", "extruder": 5},
+        {"name": "Graphic_4", "color_hex": "#E4002B", "mesh": create_cube_mesh((8, 6, 1)), "role": "graphic_mesh", "extruder": 6},
+        {"name": "Tekst", "color_hex": "#FFD100", "mesh": create_cube_mesh((24, 5, 1)), "role": "text_mesh", "extruder": 7},
+    ]
+
+    saved = generate_production_3mf(output_path=out_path, parts=parts)
+    val = validate_3mf_package(saved)
+    assert val["valid"], f"Walidacja pełnej palety nie powiodła się: {val['errors']}"
+
+    assert len(val["details"]["component_objectids"]) == 8, "Oczekiwano 8 osobnych brył"
+    assert val["details"]["filament_colours"] == [
+        "#080504", "#854A22", "#C4864F", "#DFDFDE", "#00BCDB", "#E4002B", "#FFD100",
+    ]
+
+    exts = list(val["details"]["part_extruders"].values())
+    assert exts == ["1", "1", "2", "3", "4", "5", "6", "7"], exts
+
+    if os.path.exists(saved):
+        os.remove(saved)
+    print("test_max_palette_base_border_four_graphics_text: PASSED [OK]")
+
+
+def _architecture_fingerprint(zf):
+    """Wyciąga cechy architektury 3MF istotne dla Bambu Studio."""
+    names = set(zf.namelist())
+    main = zf.read("3D/3dmodel.model").decode("utf-8", errors="replace")
+    root = ET.fromstring(main)
+    ns = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
+
+    resources = root.find(f"{ns}resources")
+    if resources is None:
+        resources = root.find("resources")
+
+    assembly_id = None
+    component_paths = set()
+    has_inline_mesh = False
+    for obj in resources:
+        comps = obj.find(f"{ns}components") if obj.find(f"{ns}components") is not None else obj.find("components")
+        mesh = obj.find(f"{ns}mesh") if obj.find(f"{ns}mesh") is not None else obj.find("mesh")
+        if mesh is not None:
+            has_inline_mesh = True
+        if comps is not None:
+            assembly_id = obj.attrib.get("id")
+            for c in comps:
+                for k, v in c.attrib.items():
+                    if k.endswith("path"):
+                        component_paths.add(v)
+
+    build = root.find(f"{ns}build") if root.find(f"{ns}build") is not None else root.find("build")
+    build_items = [i.attrib.get("objectid") for i in list(build)] if build is not None else []
+
+    return {
+        "has_objects_dir": any(n.startswith("3D/Objects/") and n.endswith(".model") for n in names),
+        "has_model_rels": "3D/_rels/3dmodel.model.rels" in names,
+        "has_model_settings": "Metadata/model_settings.config" in names,
+        "has_project_settings": "Metadata/project_settings.config" in names,
+        "assembly_id": assembly_id,
+        "component_paths": component_paths,
+        "build_items": build_items,
+        "main_has_inline_mesh": has_inline_mesh,
+        "requires_p_extension": 'requiredextensions="p"' in main,
+    }
+
+
+def test_matches_reference_draft_architecture():
+    """
+    Porównuje wygenerowany pakiet z referencyjnym Keychain Draft.3mf (MakerLab),
+    który Bambu Studio otwiera poprawnie jako wiele części AMS.
+    """
+    print("\n--- Running test_matches_reference_draft_architecture ---")
+    reference = os.path.join(os.path.dirname(backend_dir), "Keychain Draft.3mf")
+    if not os.path.exists(reference):
+        print("POMINIETO: brak pliku referencyjnego Keychain Draft.3mf")
+        return
+
+    out_path = os.path.join(tempfile.gettempdir(), f"test_ref_arch_{uuid.uuid4().hex[:6]}.3mf")
+    parts = [
+        {"name": "Baza", "color_hex": "#080504", "mesh": create_cube_mesh((40, 40, 2)), "extruder": 1},
+        {"name": "Rant", "color_hex": "#854A22", "mesh": create_cube_mesh((42, 42, 1)), "extruder": 2},
+        {"name": "Graphic_1", "color_hex": "#C4864F", "mesh": create_cube_mesh((20, 20, 1)), "extruder": 3},
+    ]
+    saved = generate_production_3mf(output_path=out_path, parts=parts)
+
+    with zipfile.ZipFile(reference) as zref, zipfile.ZipFile(saved) as zours:
+        ref = _architecture_fingerprint(zref)
+        ours = _architecture_fingerprint(zours)
+
+    for key in [
+        "has_objects_dir",
+        "has_model_rels",
+        "has_model_settings",
+        "has_project_settings",
+        "main_has_inline_mesh",
+        "requires_p_extension",
+    ]:
+        assert ours[key] == ref[key], f"Rozbieżność architektury '{key}': nasz={ours[key]}, Draft={ref[key]}"
+
+    assert ours["assembly_id"] == ref["assembly_id"] == "7607"
+    assert ours["build_items"] == ["7607"], f"build musi mieć tylko item 7607, ma {ours['build_items']}"
+    assert ours["component_paths"] == ref["component_paths"] == {"/3D/Objects/object-7607.model"}
+    assert ours["main_has_inline_mesh"] is False
+
+    if os.path.exists(saved):
+        os.remove(saved)
+    print("test_matches_reference_draft_architecture: PASSED [OK]")
+
+
 if __name__ == "__main__":
     print("Uruchamianie testów architektury MakerLab / Bambu Studio 3MF...")
     test_reference_scenario_keychain_draft()
@@ -283,6 +416,8 @@ if __name__ == "__main__":
     test_dependency_chain_validation()
     test_process_settings_propagation()
     test_multicolor_graphic_layers()
+    test_max_palette_base_border_four_graphics_text()
+    test_matches_reference_draft_architecture()
     print("\n=======================================================")
     print("WSZYSTKIE TESTY ZGODNOŚCI Z KEYCHAIN DRAFT PRZESZŁY POMYŚLNIE! [OK]")
     print("=======================================================")

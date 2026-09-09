@@ -991,7 +991,6 @@ const KeychainViewer3D = dynamic(
                   return null;
                 }
 
-                const exporter = new STLExporter();
                 const formData = new FormData();
                 const buckets = new Map();
                 let meshCount = 0;
@@ -1057,21 +1056,20 @@ const KeychainViewer3D = dynamic(
                   const bucket = buckets.get(key);
                   const partGroup = new THREE.Group();
 
+                  // Siatki trafiają do eksportu jako proxy z zamrożoną macierzą świata,
+                  // dzięki czemu STLExporter sam nakłada transformacje rodziców.
                   bucket.meshes.forEach((node) => {
-                    const geom = node.geometry.clone();
-                    geom.applyMatrix4(node.matrixWorld);
-                    if (typeof geom.computeVertexNormals === "function") {
-                      geom.computeVertexNormals();
-                    }
-                    partGroup.add(new THREE.Mesh(geom));
+                    const proxy = new THREE.Mesh(node.geometry);
+                    proxy.matrixAutoUpdate = false;
+                    proxy.matrix.copy(node.matrixWorld);
+                    proxy.matrixWorld.copy(node.matrixWorld);
+                    partGroup.add(proxy);
                   });
 
-                  partGroup.updateMatrixWorld(true);
-                  const stlData = exporter.parse(partGroup, { binary: true });
+                  // STLExporter kumuluje offset i licznik trójkątów między wywołaniami,
+                  // więc każda część potrzebuje własnej instancji.
+                  const stlData = new STLExporter().parse(partGroup, { binary: true });
                   const arrayBuffer = stlToArrayBuffer(stlData);
-                  partGroup.traverse((child) => {
-                    if (child.geometry) child.geometry.dispose();
-                  });
 
                   if (!arrayBuffer || arrayBuffer.byteLength <= 84) continue;
 

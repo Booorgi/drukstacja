@@ -5,6 +5,7 @@ oraz precyzyjną kwantyzację i wektoryzację obrazów (standard MakerWorld) pod
 """
 import os
 import re
+import json
 import shutil
 import tempfile
 import uuid

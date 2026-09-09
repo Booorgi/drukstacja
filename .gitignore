@@ -5,3 +5,6 @@ node_modules/
 .next/
 .env
 .env.local
+
+# Artefakty generowane przez testy packagera 3MF
+backend/test_generated_*.3mf

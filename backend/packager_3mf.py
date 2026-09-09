@@ -3,14 +3,18 @@ Drukstacja - Generator pakietów produkcyjnych .3MF
 Tworzy pakiet projektu .3MF w natywnej strukturze MakerLab / Bambu Studio (A1 / AMS)
 odtworzonej w 100% ze sprawdzonego pliku referencyjnego Keychain Draft.3mf.
 
-STRUKTURA ARCHIWUM .3MF:
+STRUKTURA ARCHIWUM .3MF (1:1 z Keychain Draft.3mf):
 ├── [Content_Types].xml
 ├── _rels/
 │   └── .rels
 ├── 3D/
-│   └── 3dmodel.model            (wszystkie siatki + Assembly id=100 w jednym pliku)
+│   ├── 3dmodel.model            (tylko assembly id=7607 z <components p:path>, bez <mesh>)
+│   ├── _rels/
+│   │   └── 3dmodel.model.rels   (relacja OPC do /3D/Objects/object-7607.model)
+│   └── Objects/
+│       └── object-7607.model    (siatki części: <object id="10001">…<mesh>)
 └── Metadata/
-    ├── model_settings.config    (part id -> extruder)
+    ├── model_settings.config    (object id=7607, part id -> extruder)
     ├── project_settings.config  (filament_colour, temperatury SUNLU, profil Bambu A1)
     └── plate_1.png
 """
@@ -282,10 +286,11 @@ def generate_production_3mf(
     odtworzoną bezpośrednio z referencyjnego pliku Keychain Draft.3mf.
 
     Architektura:
-    1. 3D/3dmodel.model: każdy STL jako <object id="2..N"> z <mesh>, plus Assembly id="100"
-       z <components>. W <build> tylko item 100.
-    2. Metadata/model_settings.config: <object id="100"> i <part id="..."> z extruder.
-    3. Metadata/project_settings.config: filament_colour + temperatury SUNLU, profil Bambu A1.
+    1. 3D/3dmodel.model: wyłącznie obiekt montażowy id="7607" z <component p:path=...>.
+       W <build> tylko <item objectid="7607"/>. Żadnej siatki w tym pliku.
+    2. 3D/Objects/object-7607.model: geometria każdej części jako <object id="10001+idx">.
+    3. Metadata/model_settings.config: <object id="7607"> i <part id="10001+idx"> z extruder.
+    4. Metadata/project_settings.config: filament_colour + temperatury SUNLU, profil Bambu A1.
     """
     order_metadata = order_metadata or {}
     print_settings = print_settings or {}
@@ -490,24 +495,26 @@ def generate_production_3mf(
     tz = 0.0 - float(all_bounds_min[2])
     transform_matrix = f"1 0 0 0 1 0 0 0 1 {tx:.6f} {ty:.6f} {tz:.6f}"
 
-    assembly_id = 100
-    assembly_uuid = str(uuid.uuid4())
+    # Identyfikatory odwzorowane z Keychain Draft.3mf: obiekt montażowy 7607,
+    # części numerowane od 10001 w osobnym pliku 3D/Objects/object-7607.model.
+    main_id = 7607
+    main_uuid = str(uuid.uuid4())
     build_uuid = str(uuid.uuid4())
     item_uuid = str(uuid.uuid4())
+    objects_path = f"/3D/Objects/object-{main_id}.model"
 
     objects_xml_list = []
     components_xml_list = []
     model_settings_parts_xml = []
 
     for idx, p in enumerate(valid_parts):
-        part_id = 2 + idx
+        part_id = 10001 + idx
         safe_name = xml_escape(p["name"])
         ext_num = p["assigned_extruder"]
         v_xml, t_xml = _mesh_to_xml(p["mesh"], indent="          ")
-        part_uuid = str(uuid.uuid4())
 
         objects_xml_list.append(
-            f'    <object id="{part_id}" p:uuid="{part_uuid}" type="model" name="{safe_name}">\n'
+            f'    <object id="{part_id}" type="model" name="{safe_name}">\n'
             f'      <mesh>\n'
             f'        <vertices>\n'
             f'{v_xml}\n'
@@ -520,11 +527,11 @@ def generate_production_3mf(
         )
 
         components_xml_list.append(
-            f'        <component objectid="{part_id}"/>'
+            f'        <component p:path="{objects_path}" objectid="{part_id}"/>'
         )
 
         model_settings_parts_xml.append(
-            f'    <part id="{part_id}" subtype="normal_part" name="{safe_name}">\n'
+            f'    <part id="{part_id}" subtype="normal_part">\n'
             f'      <metadata key="name" value="{safe_name}"/>\n'
             f'      <metadata key="extruder" value="{ext_num}"/>\n'
             f'      <mesh_stat edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>\n'
@@ -534,7 +541,8 @@ def generate_production_3mf(
     objects_joined = "\n".join(objects_xml_list)
     components_joined = "\n".join(components_xml_list)
 
-    main_3dmodel_xml = (
+    # 3D/Objects/object-7607.model - wyłącznie geometria poszczególnych części.
+    objects_model_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<model unit="millimeter" xml:lang="en-US"'
         ' xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
@@ -542,22 +550,43 @@ def generate_production_3mf(
         ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"'
         ' xmlns:BambuStudio="http://schemas.bambulab.com/package/2021"'
         ' requiredextensions="p">\n'
-        '  <metadata name="Application">BambuStudio-01.07.04.52</metadata>\n'
         '  <metadata name="BambuStudio:3mfVersion">1</metadata>\n'
+        '  <resources>\n'
+        f'{objects_joined}\n'
+        '  </resources>\n'
+        '  <build/>\n'
+        '</model>'
+    )
+
+    # 3D/3dmodel.model - wyłącznie kontroler montażu, bez żadnej siatki.
+    main_3dmodel_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<model unit="millimeter" xml:lang="en-US"'
+        ' xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
+        ' xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06"'
+        ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"'
+        ' requiredextensions="p">\n'
+        '  <metadata name="Application">BambuStudio-01.07.04.52</metadata>\n'
         f'  <metadata name="Title">{xml_escape(clean_title)}</metadata>\n'
         f'  <metadata name="CreationDate">{created_at}</metadata>\n'
         '  <resources>\n'
-        f'{objects_joined}\n'
-        f'    <object id="{assembly_id}" p:uuid="{assembly_uuid}" type="model" name="Keychain_Assembly">\n'
+        f'    <object id="{main_id}" p:uuid="{main_uuid}" type="model">\n'
         '      <components>\n'
         f'{components_joined}\n'
         '      </components>\n'
         '    </object>\n'
         '  </resources>\n'
         f'  <build p:uuid="{build_uuid}">\n'
-        f'    <item objectid="{assembly_id}" p:uuid="{item_uuid}" transform="{transform_matrix}" printable="1"/>\n'
+        f'    <item objectid="{main_id}" p:uuid="{item_uuid}" transform="{transform_matrix}" printable="1"/>\n'
         '  </build>\n'
         '</model>'
+    )
+
+    model_rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+        f'  <Relationship Target="{objects_path}" Id="rel-{main_id}" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>\n'
+        '</Relationships>'
     )
 
     parts_config_joined = "\n".join(model_settings_parts_xml)
@@ -566,7 +595,7 @@ def generate_production_3mf(
     model_settings_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<config>\n'
-        f'  <object id="{assembly_id}">\n'
+        f'  <object id="{main_id}">\n'
         f'    <metadata key="name" value="{xml_escape(clean_title)}.3mf"/>\n'
         '    <metadata key="extruder" value="1"/>\n'
         '    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>\n'
@@ -576,14 +605,14 @@ def generate_production_3mf(
         '    <metadata key="plater_id" value="1"/>\n'
         '    <metadata key="plater_name" value="plate-1"/>\n'
         '    <model_instance>\n'
-        f'      <metadata key="object_id" value="{assembly_id}"/>\n'
+        f'      <metadata key="object_id" value="{main_id}"/>\n'
         '      <metadata key="instance_id" value="0"/>\n'
         '    </model_instance>\n'
         '    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>\n'
         f'    <metadata key="filament_maps" value="{filament_maps_str}"/>\n'
         '  </plate>\n'
         '  <assemble>\n'
-        f'    <assemble_item object_id="{assembly_id}" instance_id="0" offset="0 0 0"/>\n'
+        f'    <assemble_item object_id="{main_id}" instance_id="0" offset="0 0 0"/>\n'
         '  </assemble>\n'
         '</config>'
     )
@@ -691,6 +720,8 @@ def generate_production_3mf(
         "[Content_Types].xml": content_types_xml,
         "_rels/.rels": rels_xml,
         "3D/3dmodel.model": main_3dmodel_xml,
+        "3D/_rels/3dmodel.model.rels": model_rels_xml,
+        f"3D/Objects/object-{main_id}.model": objects_model_xml,
         "Metadata/model_settings.config": model_settings_xml,
         "Metadata/project_settings.config": project_settings_json,
         "Metadata/plate_1.png": plate_png_bytes,
@@ -822,27 +853,66 @@ def validate_3mf_package(file_path: str) -> dict:
                         f"<build> powinno zawierać wyłącznie item objectid='{main_obj_id}', jest: {item_ids}"
                     )
 
-            mesh_object_ids = []
+            # Kontroler montażu nie może zawierać własnej geometrii - Bambu Studio
+            # spłaszcza wtedy projekt do jednej bryły.
             for obj in resources:
-                comps = obj.find("{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}components")
-                if comps is None:
-                    comps = obj.find("components")
                 mesh_el = obj.find("{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}mesh")
                 if mesh_el is None:
                     mesh_el = obj.find("mesh")
-                oid = obj.attrib.get("id")
-                if mesh_el is not None and oid:
-                    mesh_object_ids.append(oid)
+                if mesh_el is not None:
+                    errors.append(
+                        f"3D/3dmodel.model zawiera <mesh> w obiekcie id='{obj.attrib.get('id')}' "
+                        "- geometria musi być w 3D/Objects/."
+                    )
 
-            details["object_model_part_ids"] = mesh_object_ids
+            details["component_paths"] = component_paths
+            if len(component_paths) != len(component_objectids):
+                errors.append("Każdy <component> musi mieć atrybut p:path do pliku w 3D/Objects/.")
 
-            for c_id in component_objectids:
-                if c_id not in mesh_object_ids:
-                    errors.append(f"Komponent objectid='{c_id}' nie ma siatki <mesh> w 3D/3dmodel.model.")
+            # 3. Relacja OPC 3D/_rels/3dmodel.model.rels
+            if "3D/_rels/3dmodel.model.rels" not in namelist:
+                errors.append("Brak pliku 3D/_rels/3dmodel.model.rels.")
+            else:
+                rels_str = zf.read("3D/_rels/3dmodel.model.rels").decode("utf-8", errors="replace")
+                if "3D/Objects/" not in rels_str:
+                    errors.append("Relacja w 3D/_rels/3dmodel.model.rels nie wskazuje na ścieżkę 3D/Objects/.")
+
+            # 4. Geometria części w 3D/Objects/object-XXXX.model
+            expected_objects_file = f"3D/Objects/object-{main_obj_id}.model"
+            matching_object_files = [f for f in namelist if f.startswith("3D/Objects/") and f.endswith(".model")]
+            if not matching_object_files:
+                errors.append(f"Brak pliku geometrii części w 3D/Objects/ (oczekiwano {expected_objects_file}).")
+            else:
+                obj_file_name = matching_object_files[0]
+                obj_xml_str = zf.read(obj_file_name).decode("utf-8", errors="replace")
+                try:
+                    obj_root = ET.fromstring(obj_xml_str)
+                    obj_resources = obj_root.find("{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}resources")
+                    if obj_resources is None:
+                        obj_resources = obj_root.find("resources")
+
+                    existing_part_ids = []
+                    if obj_resources is not None:
+                        for part_node in obj_resources:
+                            pid = part_node.attrib.get("id")
+                            if pid:
+                                existing_part_ids.append(pid)
+
+                    details["object_model_part_ids"] = existing_part_ids
+
+                    for c_id in component_objectids:
+                        if c_id not in existing_part_ids:
+                            errors.append(f"Komponent objectid='{c_id}' nie istnieje w {obj_file_name}.")
+                except Exception as e:
+                    errors.append(f"Błąd parsowania XML w {obj_file_name}: {e}")
 
             comment = details.get("zip_comment") or ""
-            if "created by BambuLab" not in comment:
-                errors.append("Komentarz archiwum ZIP nie zawiera 'created by BambuLab'.")
+            entry_comments = {i.filename: i.comment for i in zf.infolist()}
+            details["entry_comments_ok"] = all(
+                b"created by BambuLab" in (c or b"") for c in entry_comments.values()
+            )
+            if not details["entry_comments_ok"]:
+                errors.append("Nie wszystkie wpisy ZIP mają komentarz 'created by BambuLab'.")
 
             # 5. Sprawdzenie Metadata/project_settings.config (JSON)
             if "Metadata/project_settings.config" not in namelist:
