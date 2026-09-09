@@ -94,6 +94,141 @@ const KeychainViewer3D = dynamic(
       const { SVGLoader, STLExporter } = stdlib;
       const opentype = opentypeModule.default || opentypeModule;
 
+      function convexHull2D(points) {
+        const pts = points
+          .map((p) => ({ x: Number(p.x), y: Number(p.y) }))
+          .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+          .sort((a, b) => (a.x === b.x ? a.y - b.y : a.x - b.x));
+        const uniq = [];
+        for (const p of pts) {
+          const last = uniq[uniq.length - 1];
+          if (!last || last.x !== p.x || last.y !== p.y) uniq.push(p);
+        }
+        if (uniq.length <= 2) return uniq;
+        const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+        const lower = [];
+        for (const p of uniq) {
+          while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+            lower.pop();
+          }
+          lower.push(p);
+        }
+        const upper = [];
+        for (let i = uniq.length - 1; i >= 0; i--) {
+          const p = uniq[i];
+          while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+            upper.pop();
+          }
+          upper.push(p);
+        }
+        lower.pop();
+        upper.pop();
+        return lower.concat(upper);
+      }
+
+      function offsetConvexPolygon(points, amount) {
+        const n = points.length;
+        if (n < 3) return points;
+        if (Math.abs(amount) < 1e-6) return points.map((p) => ({ x: p.x, y: p.y }));
+        const out = [];
+        for (let i = 0; i < n; i++) {
+          const prev = points[(i + n - 1) % n];
+          const curr = points[i];
+          const next = points[(i + 1) % n];
+          const e1x = curr.x - prev.x;
+          const e1y = curr.y - prev.y;
+          const e2x = next.x - curr.x;
+          const e2y = next.y - curr.y;
+          const l1 = Math.hypot(e1x, e1y) || 1;
+          const l2 = Math.hypot(e2x, e2y) || 1;
+          const n1x = e1y / l1;
+          const n1y = -e1x / l1;
+          const n2x = e2y / l2;
+          const n2y = -e2x / l2;
+          const bx = n1x + n2x;
+          const by = n1y + n2y;
+          const bl = Math.hypot(bx, by) || 1;
+          const ux = bx / bl;
+          const uy = by / bl;
+          const cos = Math.max(0.15, n1x * ux + n1y * uy);
+          out.push({ x: curr.x + ux * (amount / cos), y: curr.y + uy * (amount / cos) });
+        }
+        return out;
+      }
+
+      function collectSvgPoints(svgString) {
+        if (!svgString) return [];
+        try {
+          const loader = new SVGLoader();
+          const svgData = loader.parse(svgString);
+          const pts = [];
+          svgData.paths.forEach((path) => {
+            SVGLoader.createShapes(path).forEach((shape) => {
+              shape.getPoints(24).forEach((p) => pts.push({ x: p.x, y: p.y }));
+            });
+          });
+          return pts;
+        } catch {
+          return [];
+        }
+      }
+
+      function svgPointToWorld(p, uniformScale) {
+        return {
+          x: (p.x - 50) * uniformScale,
+          y: (50 - p.y) * uniformScale,
+        };
+      }
+
+      function shapeFromPoints(points) {
+        const shape = new THREE.Shape();
+        points.forEach((p, i) => {
+          if (i === 0) shape.moveTo(p.x, p.y);
+          else shape.lineTo(p.x, p.y);
+        });
+        shape.closePath();
+        return shape;
+      }
+
+      function ensureCCW(points) {
+        let area = 0;
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i];
+          const q = points[(i + 1) % points.length];
+          area += p.x * q.y - q.x * p.y;
+        }
+        return area < 0 ? points.slice().reverse() : points;
+      }
+
+      function computeOutlineLayout(svgString, baseDiameter, outlineMargin, graphicScale, baseBounds) {
+        const fallbackScale =
+          (Math.min(baseBounds?.width || 60, baseBounds?.height || 60) * ((graphicScale || 80) / 100)) / 100;
+        const hullSvg = convexHull2D(collectSvgPoints(svgString));
+        if (hullSvg.length < 3) {
+          return { uniformScale: fallbackScale, hull: null, hullInner: null };
+        }
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+        hullSvg.forEach((p) => {
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.y > maxY) maxY = p.y;
+        });
+        const size = Math.max(maxX - minX, maxY - minY, 1);
+        const margin = Math.max(0.8, Number(outlineMargin) || 2.5);
+        const inner = Math.max(16, (baseDiameter || 60) - 2 * margin);
+        const uniformScale = inner / size;
+        const hullInner = ensureCCW(hullSvg.map((p) => svgPointToWorld(p, uniformScale)));
+        return {
+          uniformScale,
+          hullInner,
+          hull: offsetConvexPolygon(hullInner, margin),
+        };
+      }
+
       // -------------------------------------------------------------
       // FOTOREALISTYCZNY MATERIAŁ DUAL / TRI / SINGLE COLOR DLA THREE.JS
       // -------------------------------------------------------------
@@ -263,13 +398,32 @@ const KeychainViewer3D = dynamic(
         strokeThickness,
         strokeFilament,
         layerSeparation,
+        outlineHull,
+        offsetX = 0,
+        offsetY = 0,
       }) {
         const strokeGeometry = useMemo(() => {
           if (!strokeEnabled || strokeWidth <= 0) return null;
 
           const shape = new THREE.Shape();
 
-          if (shapeType === "rect") {
+          if (shapeType === "outline") {
+            if (!outlineHull || outlineHull.length < 3) return null;
+            const outer = offsetConvexPolygon(outlineHull, strokeWidth);
+            outer.forEach((p, i) => {
+              if (i === 0) shape.moveTo(p.x, p.y);
+              else shape.lineTo(p.x, p.y);
+            });
+            shape.closePath();
+            const hole = new THREE.Path();
+            for (let i = outlineHull.length - 1; i >= 0; i--) {
+              const p = outlineHull[i];
+              if (i === outlineHull.length - 1) hole.moveTo(p.x, p.y);
+              else hole.lineTo(p.x, p.y);
+            }
+            hole.closePath();
+            shape.holes.push(hole);
+          } else if (shapeType === "rect") {
             const halfW = baseWidth / 2;
             const halfH = baseHeight / 2;
             const inW = Math.max(1, halfW - strokeWidth);
@@ -325,7 +479,7 @@ const KeychainViewer3D = dynamic(
             depth: strokeThickness,
             bevelEnabled: false,
           });
-        }, [shapeType, baseWidth, baseHeight, baseDiameter, strokeEnabled, strokeWidth, strokeThickness]);
+        }, [shapeType, baseWidth, baseHeight, baseDiameter, strokeEnabled, strokeWidth, strokeThickness, outlineHull]);
 
         if (!strokeEnabled || !strokeGeometry) return null;
 
@@ -344,7 +498,7 @@ const KeychainViewer3D = dynamic(
           >
             <mesh
               geometry={strokeGeometry}
-              position={[0, 0, baseThickness / 2 + 0.01 + separationOffset]}
+              position={[offsetX, offsetY, baseThickness / 2 + 0.01 + separationOffset]}
               renderOrder={10}
             >
               <SunluDynamicMaterial filamentInfo={strokeFilament} />
@@ -368,6 +522,7 @@ const KeychainViewer3D = dynamic(
         strokeEnabled,
         strokeWidth,
         layerSeparation,
+        graphicUniformScale,
       }) {
         const parsedGroups = useMemo(() => {
           if (!svgString) return {};
@@ -453,7 +608,10 @@ const KeychainViewer3D = dynamic(
         }));
 
         const minBound = Math.min(baseBounds?.width || 60, baseBounds?.height || 60);
-        const uniformScale = (minBound * ((graphicScale || 80) / 100)) / 100;
+        const uniformScale =
+          typeof graphicUniformScale === "number" && graphicUniformScale > 0
+            ? graphicUniformScale
+            : (minBound * ((graphicScale || 80) / 100)) / 100;
 
         return (
           <group position={[offsetX, offsetY, (baseThickness || 3) / 2]}>
@@ -680,6 +838,7 @@ const KeychainViewer3D = dynamic(
         textFilament,
         textThickness,
         ringFilament,
+        outlineMargin = 2.5,
       }) {
         const radius = (baseDiameter || 60) / 2;
 
@@ -691,6 +850,31 @@ const KeychainViewer3D = dynamic(
           }
           return { width: baseDiameter, height: baseDiameter };
         }, [shapeType, baseWidth, baseHeight, baseDiameter, radius]);
+
+        const outlineLayout = useMemo(() => {
+          if (shapeType !== "outline") return null;
+          return computeOutlineLayout(reliefSvg, baseDiameter, outlineMargin, graphicScale, baseBounds);
+        }, [shapeType, reliefSvg, baseDiameter, outlineMargin, graphicScale, baseBounds]);
+
+        const graphicUniformScale = outlineLayout?.uniformScale;
+
+        const outlineBaseGeometry = useMemo(() => {
+          if (!outlineLayout?.hull || outlineLayout.hull.length < 3) return null;
+          return new THREE.ExtrudeGeometry(shapeFromPoints(outlineLayout.hull), {
+            depth: baseThickness,
+            bevelEnabled: false,
+          });
+        }, [outlineLayout, baseThickness]);
+
+        const outlineRingPos = useMemo(() => {
+          const hull = outlineLayout?.hull;
+          if (!hull || hull.length === 0) return { x: 0, y: radius + 4.5 };
+          let top = hull[0];
+          hull.forEach((p) => {
+            if (p.y > top.y) top = p;
+          });
+          return { x: top.x, y: top.y + 4.5 };
+        }, [outlineLayout, radius]);
 
         const clipPlanes = useMemo(() => {
           const margin = strokeEnabled ? strokeWidth : 0.2;
@@ -834,6 +1018,42 @@ const KeychainViewer3D = dynamic(
               </group>
             )}
 
+            {shapeType === "outline" && outlineBaseGeometry && (
+              <group>
+                <group
+                  userData={{
+                    isExportPart: true,
+                    partName: "Baza",
+                    partColor: baseFilament?.hex || "#222222",
+                    partRole: "base_mesh",
+                    partSlot: 1,
+                    filamentInfo: baseFilament,
+                  }}
+                >
+                  <mesh geometry={outlineBaseGeometry} position={[offsetX, offsetY, -baseThickness / 2]}>
+                    <SunluDynamicMaterial filamentInfo={baseFilament} />
+                  </mesh>
+                </group>
+                {hasHole && (
+                  <group
+                    userData={{
+                      isExportPart: true,
+                      partName: "Uszko",
+                      partColor: baseFilament?.hex || "#222222",
+                      partRole: "ring_mesh",
+                      partSlot: 1,
+                      filamentInfo: baseFilament,
+                    }}
+                  >
+                    <mesh position={[offsetX + outlineRingPos.x, offsetY + outlineRingPos.y, 0]}>
+                      <torusGeometry args={[5, 1.6, 16, 32]} />
+                      <SunluDynamicMaterial filamentInfo={baseFilament} />
+                    </mesh>
+                  </group>
+                )}
+              </group>
+            )}
+
             <PlateStrokeMesh
               shapeType={shapeType}
               baseWidth={baseWidth}
@@ -845,6 +1065,9 @@ const KeychainViewer3D = dynamic(
               strokeThickness={strokeThickness}
               strokeFilament={strokeFilament}
               layerSeparation={layerSeparation}
+              outlineHull={outlineLayout?.hull}
+              offsetX={offsetX}
+              offsetY={offsetY}
             />
 
             <SvgMakerWorldLayers
@@ -862,6 +1085,7 @@ const KeychainViewer3D = dynamic(
               strokeEnabled={strokeEnabled}
               strokeWidth={strokeWidth}
               layerSeparation={layerSeparation}
+              graphicUniformScale={graphicUniformScale}
             />
 
             <TextErrorBoundary>
@@ -1381,6 +1605,7 @@ export default function KeychainGenerator() {
   const [baseDiameter, setBaseDiameter] = useState(60);
   const [baseThickness, setBaseThickness] = useState(3.0);
   const [hasHole, setHasHole] = useState(true);
+  const [outlineMargin, setOutlineMargin] = useState(2.5);
 
   // Parametry Stroke (Rant)
   const [strokeEnabled, setStrokeEnabled] = useState(true);
@@ -1398,7 +1623,7 @@ export default function KeychainGenerator() {
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
 
-  // Warstwy motywu wektorowego (do 4 kolorów z możliwością zmiany na filament SUNLU)
+  // Warstwy motywu wektorowego (do 4 kolorów)
   const [layersConfig, setLayersConfig] = useState([
     { id: 1, name: "Kolor 1 (Baza motywu)", filament: getFilamentById("pla_cyan") || FILAMENTS[5], thickness: 0.6 },
     { id: 2, name: "Kolor 2 (Wypełnienie)", filament: getFilamentById("pla_klein_blue") || FILAMENTS[11], thickness: 0.7 },
@@ -1416,7 +1641,7 @@ export default function KeychainGenerator() {
   const [textFilament, setTextFilament] = useState(() => getFilamentById("pla_ceramic") || FILAMENTS[2]); // Biel domyślnie
   const [textThickness, setTextThickness] = useState(0.8);
 
-  // Stan aktywnego modalu wyboru filamentu SUNLU
+  // Stan aktywnego modalu wyboru filamentu
   const [pickerTarget, setPickerTarget] = useState(null);
 
   const handleSelectFilament = useCallback((filament) => {
@@ -1990,7 +2215,9 @@ export default function KeychainGenerator() {
                     ? "Podkładka / Brelok Okrągły"
                     : shapeType === "rect"
                       ? "Tabliczka Prostokątna"
-                      : "Płaskorzeźba Hexagon"}
+                      : shapeType === "outline"
+                        ? "Brelok od grafiki"
+                        : "Płaskorzeźba Hexagon"}
                 </h1>
               </div>
 
@@ -2028,12 +2255,12 @@ export default function KeychainGenerator() {
                   onClick={handleExport3MF}
                   disabled={isExporting3MF}
                   className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 shadow-sm transition cursor-pointer disabled:opacity-50"
-                  title="Pobierz gotowy projekt wielokolorowy dla Bambu Studio (AMS)"
+                  title="Pobierz gotowy projekt wielokolorowy AMS"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  {isExporting3MF ? "..." : ".3MF (Bambu)"}
+                  {isExporting3MF ? "..." : ".3MF"}
                 </button>
               </div>
             </div>
@@ -2069,7 +2296,7 @@ export default function KeychainGenerator() {
                 textOffsetY={textOffsetY}
                 textFilament={textFilament}
                 textThickness={textThickness}
-                ringFilament={ringFilament}
+                outlineMargin={outlineMargin}
               />
 
               {/* Layer View indicator */}
@@ -2160,27 +2387,32 @@ export default function KeychainGenerator() {
                     <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
                       Kształt bazy
                     </span>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       {[
-                        { id: "circle", label: "Okrąg", sub: "⌀ 60mm" },
-                        { id: "hexagon", label: "Hexagon", sub: "Modern" },
-                        { id: "rect", label: "Prostokąt", sub: "Karta" },
+                        { id: "circle", label: "Okrąg" },
+                        { id: "hexagon", label: "Hexagon" },
+                        { id: "rect", label: "Prostokąt" },
+                        { id: "outline", label: "Od grafiki" },
                       ].map((s) => (
                         <button
                           key={s.id}
                           type="button"
                           onClick={() => setShapeType(s.id)}
-                          className={`p-2.5 rounded-2xl border flex flex-col items-center justify-center text-center cursor-pointer transition ${
+                          className={`p-2.5 rounded-2xl border flex items-center justify-center text-center cursor-pointer transition ${
                             shapeType === s.id
                               ? "border-[#EF4444] bg-red-50/50 text-[#EF4444] shadow-sm font-bold"
                               : "border-slate-200 hover:border-slate-300 text-slate-700 bg-white"
                           }`}
                         >
                           <span className="text-xs font-bold block">{s.label}</span>
-                          <span className="text-[10px] text-slate-400">{s.sub}</span>
                         </button>
                       ))}
                     </div>
+                    {shapeType === "outline" && (
+                      <p className="text-[10px] text-slate-500 mt-1.5">
+                        Baza obrysowuje grafikę z lekkim marginesem. Przesunięcie grafiki przesuwa też bazę.
+                      </p>
+                    )}
                   </div>
 
                   {/* Wymiary bazy */}
@@ -2222,20 +2454,39 @@ export default function KeychainGenerator() {
                         </div>
                       </div>
                     ) : (
-                      <div>
-                        <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
-                          <span>Średnica</span>
-                          <span className="text-[#EF4444]">{baseDiameter} mm</span>
+                      <div className="space-y-2.5">
+                        <div>
+                          <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                            <span>{shapeType === "outline" ? "Rozmiar" : "Średnica"}</span>
+                            <span className="text-[#EF4444]">{baseDiameter} mm</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="35"
+                            max="90"
+                            step="1"
+                            value={baseDiameter}
+                            onChange={(e) => setBaseDiameter(parseInt(e.target.value))}
+                            className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                          />
                         </div>
-                        <input
-                          type="range"
-                          min="35"
-                          max="90"
-                          step="1"
-                          value={baseDiameter}
-                          onChange={(e) => setBaseDiameter(parseInt(e.target.value))}
-                          className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
-                        />
+                        {shapeType === "outline" && (
+                          <div>
+                            <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                              <span>Margines wokół grafiki</span>
+                              <span className="text-[#EF4444]">{outlineMargin} mm</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="8"
+                              step="0.5"
+                              value={outlineMargin}
+                              onChange={(e) => setOutlineMargin(parseFloat(e.target.value))}
+                              className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -2265,11 +2516,11 @@ export default function KeychainGenerator() {
                       label="Kolor Bazy"
                       sublabel="Płyta główna breloka"
                       filament={baseFilament}
-                      buttonText="Zmień na filament SUNLU"
+                      buttonText="Zmień"
                       onClick={() =>
                         setPickerTarget({
                           type: "base",
-                          title: "Wybierz Kolor Bazy (SUNLU)",
+                          title: "Wybierz kolor bazy",
                           current: baseFilament,
                         })
                       }
@@ -2362,11 +2613,11 @@ export default function KeychainGenerator() {
                             label="Kolor Rantu"
                             sublabel="Obrys zewnętrzny bazy"
                             filament={strokeFilament}
-                            buttonText="Zmień na filament SUNLU"
+                            buttonText="Zmień"
                             onClick={() =>
                               setPickerTarget({
                                 type: "stroke",
-                                title: "Wybierz Kolor Rantu (SUNLU)",
+                                title: "Wybierz kolor rantu",
                                 current: strokeFilament,
                               })
                             }
@@ -2405,21 +2656,27 @@ export default function KeychainGenerator() {
 
                   {/* Pozycja i skala motywu */}
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-                    <div>
-                      <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
-                        <span>Skalowanie motywu</span>
-                        <span className="text-[#EF4444]">{graphicScale}%</span>
+                    {shapeType === "outline" ? (
+                      <p className="text-[11px] text-slate-500">
+                        Przy kształcie „Od grafiki” rozmiar ustawiasz suwakiem Rozmiar i Margines w zakładce Kształt. Przesunięcie poniżej rusza bazę razem z grafiką.
+                      </p>
+                    ) : (
+                      <div>
+                        <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+                          <span>Skalowanie motywu</span>
+                          <span className="text-[#EF4444]">{graphicScale}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="40"
+                          max="105"
+                          step="2"
+                          value={graphicScale}
+                          onChange={(e) => setGraphicScale(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
+                        />
                       </div>
-                      <input
-                        type="range"
-                        min="40"
-                        max="105"
-                        step="2"
-                        value={graphicScale}
-                        onChange={(e) => setGraphicScale(parseInt(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
-                      />
-                    </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200">
                       <div>
@@ -2462,7 +2719,7 @@ export default function KeychainGenerator() {
                         Wykryte warstwy kolorystyczne ({layersConfig.length})
                       </span>
                       <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                        Bambu Lab AMS
+                        AMS
                       </span>
                     </div>
                     <div className="space-y-2">
@@ -2472,7 +2729,7 @@ export default function KeychainGenerator() {
                           label={`Kolor grafiki ${idx + 1}`}
                           sublabel={`${layer.name} · ${layer.thickness} mm`}
                           filament={layer.filament}
-                          buttonText="Zmień na filament SUNLU"
+                          buttonText="Zmień"
                           onClick={() =>
                             setPickerTarget({
                               type: "graphic_layer",
@@ -2643,17 +2900,17 @@ export default function KeychainGenerator() {
                   {/* WYBÓR: Kolor Tekstu */}
                   <div>
                     <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                      Kolor Tekstu (Filament SUNLU)
+                      Kolor Tekstu
                     </span>
                     <FilamentPickerRow
                       label="Kolor Tekstu"
                       sublabel="Wytłaczany napis 3D"
                       filament={textFilament}
-                      buttonText="Zmień na filament SUNLU"
+                      buttonText="Zmień"
                       onClick={() =>
                         setPickerTarget({
                           type: "text",
-                          title: "Wybierz Kolor Tekstu (SUNLU)",
+                          title: "Wybierz kolor tekstu",
                           current: textFilament,
                         })
                       }
@@ -2664,7 +2921,7 @@ export default function KeychainGenerator() {
             </div>
 
             <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-medium text-slate-400">
-              <span>Standard FDM Bambu Lab AMS (Sunlu)</span>
+              <span>Druk FDM · AMS</span>
               <span>Wysyłka w 24h</span>
             </div>
           </div>
@@ -2822,7 +3079,7 @@ export default function KeychainGenerator() {
       <FilamentPickerModal
         isOpen={!!pickerTarget}
         onClose={() => setPickerTarget(null)}
-        title={pickerTarget?.title || "Wybierz Filament SUNLU"}
+        title={pickerTarget?.title || "Wybierz filament"}
         selectedFilament={pickerTarget?.current}
         onSelectFilament={handleSelectFilament}
         filaments={filaments}

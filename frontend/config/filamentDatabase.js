@@ -1,6 +1,6 @@
 // frontend/config/filamentDatabase.js
 export const FILAMENT_CATEGORIES = {
-  PLA_STANDARD: "SUNLU PLA",
+  PLA_STANDARD: "PLA",
   PLA_WOOD: "PLA Wood",
   PLA_SILK_DUAL: "Silk Dual-Color",
   PLA_SILK_TRI: "Silk Tri-Color",

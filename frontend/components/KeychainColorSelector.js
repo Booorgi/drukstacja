@@ -54,7 +54,7 @@ export function FilamentPickerModal({
             <h4 className="text-base font-bold text-slate-800">
               {title || "Wybierz filament"}
             </h4>
-            <p className="text-xs text-slate-500">Oryginalne filamenty SUNLU 1.75mm (Baza kolorów)</p>
+            <p className="text-xs text-slate-500">Paleta filamentów PLA 1.75 mm</p>
           </div>
           <button
             type="button"
@@ -148,7 +148,7 @@ export function FilamentPickerRow({ label, sublabel, filament, buttonText, onCli
         <div>
           <div className="text-xs font-bold text-slate-800">{label}</div>
           <div className="text-[11px] text-slate-500 font-medium">
-            {current?.name} <span className="text-slate-400 font-normal">({current?.category || "SUNLU"})</span>
+            {current?.name}
           </div>
           {sublabel && <div className="text-[10px] text-slate-400">{sublabel}</div>}
         </div>
