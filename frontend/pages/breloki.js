@@ -994,12 +994,14 @@ const KeychainViewer3D = dynamic(
                 const exporter = new STLExporter();
                 const formData = new FormData();
                 const buckets = new Map();
+                let meshCount = 0;
 
                 target.updateMatrixWorld(true);
 
                 target.traverse((node) => {
                   try {
                     if (!node || !node.isMesh || !node.geometry) return;
+                    meshCount += 1;
                     const pos = node.geometry.attributes?.position;
                     if (!pos || pos.count < 3) return;
                     if (node.visible === false) return;
@@ -1098,7 +1100,10 @@ const KeychainViewer3D = dynamic(
                   fileIndex += 1;
                 }
 
-                console.log(`[EXPORT 3MF] Wykryto ${partsMetadata.length} części:`, partsMetadata);
+                console.log(
+                  `[EXPORT 3MF] Siatki w scenie: ${meshCount}, części eksportowe: ${partsMetadata.length}`,
+                  partsMetadata
+                );
 
                 if (partsMetadata.length <= 1) {
                   console.warn(
@@ -1127,11 +1132,12 @@ const KeychainViewer3D = dynamic(
                   formData,
                   partsMetadata,
                   count: partsMetadata.length,
+                  meshCount,
                   colors: partsMetadata.map((p) => p.color),
                 };
               } catch (err) {
                 console.error("Błąd podczas exportMultiPartKeychain:", err);
-                return null;
+                throw err;
               }
             },
           };
@@ -1483,19 +1489,16 @@ export default function KeychainGenerator() {
   };
 
   const exportMultiPartKeychain = async () => {
-    try {
-      if (exportHandlerRef.current && typeof exportHandlerRef.current.exportMultiPartKeychain === "function") {
-        return await exportHandlerRef.current.exportMultiPartKeychain();
-      } else if (viewerRef.current && typeof viewerRef.current.exportMultiPartKeychain === "function") {
-        return await viewerRef.current.exportMultiPartKeychain();
-      } else if (typeof window !== "undefined" && window.__KEYCHAIN_EXPORTER && typeof window.__KEYCHAIN_EXPORTER.exportMultiPartKeychain === "function") {
-        return await window.__KEYCHAIN_EXPORTER.exportMultiPartKeychain();
-      }
-      return null;
-    } catch (err) {
-      console.warn("Błąd generowania części wieloczęściowych breloka:", err);
-      return null;
+    if (exportHandlerRef.current && typeof exportHandlerRef.current.exportMultiPartKeychain === "function") {
+      return await exportHandlerRef.current.exportMultiPartKeychain();
     }
+    if (viewerRef.current && typeof viewerRef.current.exportMultiPartKeychain === "function") {
+      return await viewerRef.current.exportMultiPartKeychain();
+    }
+    if (typeof window !== "undefined" && window.__KEYCHAIN_EXPORTER?.exportMultiPartKeychain) {
+      return await window.__KEYCHAIN_EXPORTER.exportMultiPartKeychain();
+    }
+    throw new Error("Scena 3D nie jest jeszcze gotowa (brak zarejestrowanego eksportera).");
   };
 
   // Modale
@@ -1734,9 +1737,9 @@ export default function KeychainGenerator() {
 
       const formData = exportData?.formData;
       if (!formData || !exportData?.count) {
-        alert("Scena 3D nie przygotowała jeszcze warstw breloka do eksportu. Odśwież stronę (Ctrl+F5) i spróbuj ponownie.");
-        setIsExporting3MF(false);
-        return;
+        throw new Error(
+          `Nie znaleziono części do eksportu (przeskanowano ${exportData?.meshCount ?? 0} siatek w scenie 3D).`
+        );
       }
 
       formData.append("file_name", `brelok_${shapeType}.3mf`);
