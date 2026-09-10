@@ -946,7 +946,6 @@ export default function Home() {
               )}
             </div>
           </div>
-        </div>
       </section>
 
       <main className="max-w-7xl mx-auto px-4 py-10 space-y-8 w-full">
@@ -1464,7 +1463,6 @@ export default function Home() {
               </div>
             )}
           </div>
-        </div>
 
         {/* ================================================================= */}
         {/* SEKCJA: SPECYFIKACJA TECHNICZNA WYBRANEGO MATERIAŁU               */}
