@@ -7,6 +7,7 @@ import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
 import Navbar from "../components/Navbar";
 import MaterialCatalog from "../components/MaterialCatalog";
+import StudioWheel from "../components/StudioWheel";
 import { STL_MATERIAL_GROUPS, STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -14,8 +15,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 const CadViewer3D = dynamic(() => import("../components/CadViewer3D"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[520px] rounded-3xl bg-slate-100 animate-pulse flex items-center justify-center text-xs font-bold text-slate-400">
-      Ładowanie środowiska CAD...
+    <div className="w-full h-[560px] lg:h-[720px] bg-transparent animate-pulse flex items-center justify-center text-xs font-semibold text-neutral-700">
+      Ładowanie podglądu…
     </div>
   ),
 });
@@ -590,13 +591,25 @@ export default function Home() {
     }
   }
 
+  const colorWheelItems = (matConfig?.colors || []).map((c) => ({
+    id: c.hex,
+    hex: c.hex,
+    name: c.name,
+  }));
+  const qualityWheelItems = layerHeightOptions.map((opt, i) => ({
+    id: String(opt.val),
+    value: opt.val,
+    hex: ["#111111", "#E11D2A", "#D4D4D4"][i] || "#888888",
+    name: opt.title,
+    label: opt.label,
+  }));
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#F1F5F9] text-[#0F172A] font-sans">
+    <div className="min-h-screen flex flex-col bg-[#EBE6DC] text-[#111111] font-sans">
       <Head>
-        <title>Drukstacja — Profesjonalny Druk 3D i Konfiguratory</title>
+        <title>drukstacja — wycena druku 3D</title>
       </Head>
 
-      {/* NAVBAR */}
       <Navbar
         activePage="wycena"
         user={user}
@@ -605,42 +618,58 @@ export default function Home() {
         onOpenCart={() => setIsCartOpen(true)}
       />
 
-      {/* GŁÓWNY UKŁAD STRONY: 1 KOLUMNA MOBILE / 12 KOLUMN DESKTOP + 1 KOLUMNA PEŁNA SZEROKOŚĆ DÓŁ */}
-      <main className="max-w-7xl mx-auto px-4 py-6 sm:py-10 space-y-8">
-        
-        {/* GÓRNY RZĄD: 1 KOLUMNA NA MOBILE / 12 KOLUMN NA DESKTOP (lg:) */}
-        <div id="configurator" className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start scroll-mt-24">
-          
-          {/* LEWA STRONA: UPLOAD / PODGLĄD 3D */}
-          <div className="lg:col-span-7 xl:col-span-7 w-full space-y-4">
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-4 sm:p-6 md:p-8 flex flex-col justify-between min-h-[520px] lg:min-h-[640px] bg-gradient-to-b from-[#F8FAFC] to-[#EDF2F7] relative">
-            <div className="flex items-center justify-between z-10">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-widest text-[#EF4444] block">
-                  {analysisData && analysisData.instant_pricing === false
-                    ? "Zgłoszenie Wyceny Inżynierskiej (RFQ)"
-                    : "Studio Wyceny CAD / STL"}
-                </span>
-                <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                  {selectedFile ? selectedFile.name : "Wgraj plik produkcyjny do wyceny"}
-                </h1>
-              </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".stl,.step,.stp,.obj,.3mf,.iges,.igs,.ply,.glb,.gltf,.off,.3ds,.dxf,.dwg,.pdf,.zip,.rar,.7z,.kicad_pcb,.pcbdoc,.brd,.gbr,.ger,.gtl,.gbl,.gts,.gbs,.drl,.fcstd,.ifc,.3dm,.png,.jpg,.jpeg"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
 
-              {/* Przycisk zmiany pliku */}
-              {selectedFile && (
-                <button
-                  type="button"
-                  onClick={handleResetFile}
-                  className="text-xs font-bold text-slate-500 hover:text-[#EF4444] bg-white px-3.5 py-1.5 rounded-full border border-slate-200 shadow-sm transition flex items-center gap-1.5 cursor-pointer"
-                >
-                  <span>↺</span>
-                  <span>Zmień plik</span>
-                </button>
+      <section id="configurator" className="relative scroll-mt-20 overflow-hidden bg-gradient-to-b from-[#7E7E7E] via-[#9A9A9A] to-[#B3B3B3]">
+        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/10 to-transparent pointer-events-none" />
+
+        <div className="relative max-w-[1400px] mx-auto px-4 sm:px-8 pt-6 sm:pt-8">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-800/70">
+                {analysisData && analysisData.instant_pricing === false
+                  ? "Wycena inżynierska"
+                  : "Konfigurator druku"}
+              </p>
+              <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-neutral-900 mt-1">
+                {selectedFile ? selectedFile.name : "Wgraj model do wyceny"}
+              </h1>
+              {hasModel && analysisData?.instant_pricing !== false && (
+                <p className="text-sm text-neutral-800/80 mt-1">
+                  {totalPrice} PLN
+                  {isReslicing ? <span className="ml-2 text-xs">przeliczam…</span> : null}
+                </p>
               )}
             </div>
+            {selectedFile && (
+              <button
+                type="button"
+                onClick={handleResetFile}
+                className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-800/70 hover:text-neutral-900"
+              >
+                Zmień plik
+              </button>
+            )}
+          </div>
+        </div>
 
-            {/* Główny obszar wizualny */}
-            <div className="relative w-full my-auto flex items-center justify-center">
+        <div className="relative w-full">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="hidden md:flex absolute left-6 top-8 z-20 w-14 h-14 rounded-full bg-[#111111] text-white items-center justify-center shadow-lg hover:bg-neutral-800 transition"
+            title="Wgraj lub zmień plik"
+          >
+            <span className="text-2xl leading-none">+</span>
+          </button>
+
+          <div className="relative w-full flex items-center justify-center min-h-[560px] lg:min-h-[680px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
@@ -723,8 +752,9 @@ export default function Home() {
                   </div>
                 </div>
               ) : modelPreviewUrl ? (
-                /* VIEWPORT 3D DLA INSTANT 3D PRICING - PROFESJONALNY CAD & DFM INSPECTOR */
+                <>
                 <CadViewer3D
+                  studio
                   modelUrl={modelPreviewUrl}
                   fileName={selectedFile?.name || "model.stl"}
                   analysisData={analysisData}
@@ -734,14 +764,37 @@ export default function Home() {
                   availableColors={matConfig?.colors || []}
                   showSupportsDefault={showSupports}
                 />
+                {analysisData?.instant_pricing !== false && (
+                  <div className="hidden lg:block pointer-events-none">
+                    <div className="pointer-events-auto absolute right-[7%] top-[18%] z-20">
+                      <StudioWheel
+                        items={colorWheelItems}
+                        value={selectedColor}
+                        onChange={(item) => setSelectedColor(item.hex)}
+                        size={96}
+                        label="Kolor"
+                      />
+                    </div>
+                    <div className="pointer-events-auto absolute right-[4%] top-[46%] z-20">
+                      <StudioWheel
+                        items={qualityWheelItems}
+                        value={String(layerHeight)}
+                        onChange={(item) => setLayerHeight(item.value)}
+                        size={78}
+                        label="Warstwa"
+                      />
+                    </div>
+                  </div>
+                )}
+                </>
               ) : (
                 /* DROPZONE PRZED UPLOADEM */
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full h-full max-h-[340px] rounded-3xl border-2 border-dashed border-slate-300 hover:border-[#EF4444] bg-white/60 hover:bg-white/80 flex flex-col items-center justify-center gap-3 p-6 cursor-pointer transition text-center"
+                  className="w-full max-w-md mx-auto rounded-full aspect-square max-h-[340px] border border-white/30 bg-white/10 hover:bg-white/20 flex flex-col items-center justify-center gap-3 p-8 cursor-pointer transition text-center"
                 >
-                  <div className="w-14 h-14 rounded-2xl bg-red-50 text-[#EF4444] flex items-center justify-center font-bold text-2xl shadow-sm">
-                    ↑
+                  <div className="w-14 h-14 rounded-full bg-[#111111] text-white flex items-center justify-center font-light text-3xl">
+                    +
                   </div>
                   <div>
                     <span className="font-bold text-slate-900 text-sm block">
@@ -768,9 +821,8 @@ export default function Home() {
               )}
             </div>
 
-            {/* PASEK TELEMETRII SLICERA: CZAS DRUKU, WAGA FILAMENTU, DŁUGOŚĆ ŚCIEŻKI */}
             {analysisData && analysisData.instant_pricing !== false && (
-              <div className="z-10 py-2 px-3 rounded-2xl bg-slate-50/95 border border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs mb-2">
+              <div className="absolute left-4 right-4 bottom-28 sm:bottom-32 z-10 py-2 px-3 rounded-2xl bg-white/70 backdrop-blur-md border border-white/40 flex flex-wrap items-center justify-between gap-3 text-xs max-w-xl">
                 <div className="flex items-center gap-4">
                   {/* Czas druku */}
                   <div className="flex items-center gap-1.5">
@@ -833,96 +885,61 @@ export default function Home() {
               </div>
             )}
 
-            {/* Dolny pasek ceny lub statusu RFQ */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-end justify-between gap-3 z-10 pt-3 border-t border-slate-200/70">
+            <div className="absolute left-4 sm:left-8 right-4 bottom-6 z-20 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
               {analysisData && analysisData.instant_pricing === false ? (
-                <>
-                  <div>
-                    <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
-                      Status wyceny
-                    </span>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-black text-slate-900 tracking-tight">
-                        Wycena Inżynierska
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3.5 py-1.5 rounded-full border border-emerald-200 shadow-xs text-center">
-                    Bezpłatna weryfikacja DFM (24h)
+                <div>
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-800/70 block">
+                    Status wyceny
                   </span>
-                </>
+                  <span className="text-2xl font-semibold text-neutral-900">Wycena inżynierska</span>
+                </div>
               ) : (
                 <>
                   <div>
-                    <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
-                      Cena zamówienia
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-800/70 block">
+                      Razem
                     </span>
-                    {hasModel ? (
-                      <>
-                        <div className="flex items-baseline gap-2 mt-0.5">
-                          <span className="text-3xl font-black text-slate-900 tracking-tight">
-                            {totalPrice}
-                          </span>
-                          <span className="text-sm font-bold text-slate-500">PLN</span>
-                          {quantity > 1 && (
-                            <span className="text-xs font-semibold text-slate-400">
-                              ({unitPrice} PLN / szt.)
-                            </span>
-                          )}
-                        </div>
-                        {isBelowMoq && (
-                          <div className="flex items-center gap-1.5 mt-1.5 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200/80 px-2.5 py-1 rounded-lg">
-                            <span>⚠️ Min. zamówienie w koszyku: 30.00 PLN</span>
-                            <span className="text-amber-600 font-normal">
-                              (jeszcze {diffToMoq} zł / {suggestedQtyForMoq} szt.)
-                            </span>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="flex items-baseline gap-2 mt-0.5">
-                        <span className="text-3xl font-black text-slate-300 tracking-tight">
-                          --
-                        </span>
-                        <span className="text-sm font-bold text-slate-400">PLN</span>
-                        <span className="text-xs font-medium text-slate-400 ml-1">
-                          (Wgraj model, aby poznać cenę)
-                        </span>
-                      </div>
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className="text-3xl font-semibold text-neutral-900 tracking-tight">
+                        {hasModel ? totalPrice : "—"}
+                      </span>
+                      <span className="text-sm font-medium text-neutral-700">PLN</span>
+                    </div>
+                    {isBelowMoq && hasModel && (
+                      <p className="text-[10px] text-neutral-800/80 mt-1">
+                        Min. zamówienie 30 PLN (jeszcze {diffToMoq} zł)
+                      </p>
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between sm:justify-end gap-3 flex-wrap sm:flex-nowrap">
-                    <div className="flex items-center bg-white border border-slate-200 rounded-full px-2 py-1 shadow-sm shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-white/80 rounded-full px-2 py-1">
                       <button
                         onClick={() => setQuantity(Math.max(1, quantity - 1))}
                         disabled={!hasModel}
-                        className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="w-8 h-8 flex items-center justify-center text-neutral-800 font-medium hover:bg-white rounded-full disabled:opacity-40"
                       >
-                        -
+                        −
                       </button>
-                      <span className="w-8 text-center font-bold text-sm text-slate-800">
-                        {quantity}
-                      </span>
+                      <span className="w-8 text-center font-semibold text-sm">{quantity}</span>
                       <button
                         onClick={() => setQuantity(quantity + 1)}
                         disabled={!hasModel}
-                        className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="w-8 h-8 flex items-center justify-center text-neutral-800 font-medium hover:bg-white rounded-full disabled:opacity-40"
                       >
                         +
                       </button>
                     </div>
-
                     <button
                       disabled={!hasModel || addingToCart || isAnalyzing}
                       onClick={handleAddToCart}
-                      className={`px-5 sm:px-6 py-3.5 rounded-full font-bold text-xs uppercase tracking-wider transition text-center shrink-0 ${
+                      className={`px-6 py-3 rounded-full text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
                         !hasModel || addingToCart || isAnalyzing
-                          ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
-                          : "bg-[#EF4444] hover:bg-[#DC2626] text-white shadow-lg shadow-red-500/25 cursor-pointer active:scale-98"
+                          ? "bg-neutral-400 text-white/70 cursor-not-allowed"
+                          : "bg-[#111111] hover:bg-black text-white cursor-pointer"
                       }`}
                     >
-                      {addingToCart ? "Zapisuję..." : isAnalyzing ? "Analizuję..." : !hasModel ? "Wgraj model 3D" : "Dodaj do koszyka +"}
+                      {addingToCart ? "Zapisuję…" : isAnalyzing ? "Analizuję…" : !hasModel ? "Wgraj model" : "Dodaj do koszyka"}
                     </button>
                   </div>
                 </>
@@ -930,17 +947,11 @@ export default function Home() {
             </div>
           </div>
         </div>
+      </section>
 
-        {/* PRAWA STRONA: KONFIGURATOR */}
-        <div className="lg:col-span-5 xl:col-span-5 w-full space-y-6 bg-white p-4 sm:p-6 rounded-3xl border border-slate-200 shadow-sm">
+      <main className="max-w-7xl mx-auto px-4 py-10 space-y-8 w-full">
+        <div className="w-full space-y-6 bg-white/70 p-4 sm:p-6 rounded-3xl border border-black/5">
             <div className="space-y-6">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".stl,.step,.stp,.obj,.3mf,.iges,.igs,.ply,.glb,.gltf,.off,.3ds,.dxf,.dwg,.pdf,.zip,.rar,.7z,.kicad_pcb,.pcbdoc,.brd,.gbr,.ger,.gtl,.gbl,.gts,.gbs,.drl,.fcstd,.ifc,.3dm,.png,.jpg,.jpeg"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
 
               {/* Upload pliku */}
               <div>
@@ -1628,6 +1639,28 @@ export default function Home() {
         </div>
 
       </main>
+
+      <footer className="bg-[#EBE6DC] border-t border-black/5">
+        <div className="max-w-7xl mx-auto px-6 py-14 grid grid-cols-1 md:grid-cols-2 gap-10">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight text-neutral-900 mb-6">Pomoc</h2>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm text-neutral-700">
+              <Link href="/kontakt" className="hover:text-neutral-900">Kontakt</Link>
+              <Link href="/#materialy" className="hover:text-neutral-900">Materiały</Link>
+              <Link href="/sklep" className="hover:text-neutral-900">Sklep</Link>
+              <Link href="/breloki" className="hover:text-neutral-900">Breloki 3D</Link>
+              <Link href="/orders" className="hover:text-neutral-900">Moje zlecenia</Link>
+              <a href="mailto:kontakt@drukstacja.pl" className="hover:text-neutral-900">kontakt@drukstacja.pl</a>
+            </div>
+          </div>
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight text-neutral-900 mb-6">drukstacja</h2>
+            <p className="text-sm text-neutral-600 max-w-md leading-relaxed">
+              Wycena modelu 3D w studio — materiał, kolor i jakość warstwy jak w konfiguratorze produktu.
+            </p>
+          </div>
+        </div>
+      </footer>
 
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onLoginSuccess={(u) => setUser(u)} />
       <CartDrawer

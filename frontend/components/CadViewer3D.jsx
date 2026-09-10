@@ -478,6 +478,7 @@ export default function CadViewer3D({
   materialConfig,
   availableColors = [],
   showSupportsDefault = false,
+  studio = false,
 }) {
   // Stany narzędziowe CAD
   const [isWireframe, setIsWireframe] = useState(false);
@@ -576,7 +577,10 @@ export default function CadViewer3D({
   }, [fileName]);
 
   return (
-    <div className="relative w-full h-[520px] md:h-[580px] lg:h-[620px] rounded-3xl overflow-hidden select-none bg-[#F8FAFC] border border-slate-200/90 shadow-[0_15px_40px_rgba(0,0,0,0.06)]">
+    <div className={studio
+      ? "relative w-full h-[560px] md:h-[640px] lg:h-[720px] overflow-hidden select-none bg-transparent"
+      : "relative w-full h-[520px] md:h-[580px] lg:h-[620px] rounded-3xl overflow-hidden select-none bg-[#F8FAFC] border border-slate-200/90 shadow-[0_15px_40px_rgba(0,0,0,0.06)]"
+    }>
       
       {/* ---------------------------------------------------------------------
           CANVAS THREE.JS Z SCENĄ "CAD INSPECTION ROOM"
@@ -586,7 +590,7 @@ export default function CadViewer3D({
         gl={{ preserveDrawingBuffer: true, antialias: true }}
         className="w-full h-full cursor-grab active:cursor-grabbing"
       >
-        <color attach="background" args={["#F8FAFC"]} />
+        <color attach="background" args={[studio ? "#9A9A9A" : "#F8FAFC"]} />
 
         {/* Zrównoważone oświetlenie studyjne */}
         <ambientLight intensity={0.9} />
@@ -611,16 +615,17 @@ export default function CadViewer3D({
 
         {/* Siatka pomiarowa stołu roboczego (260x260 mm) */}
         <gridHelper
-          args={[260, 26, "#94A3B8", "#E2E8F0"]}
+          args={studio ? [400, 20, "#8A8A8A", "#A0A0A0"] : [260, 26, "#94A3B8", "#E2E8F0"]}
           position={[0, 0, 0]}
         />
 
-        {/* Delikatna siatka pomiarowa na tylnej ścianie (Spatial Depth) */}
+        {!studio && (
         <gridHelper
           args={[260, 26, "#CBD5E1", "#F1F5F9"]}
           position={[0, 130, -130]}
           rotation={[Math.PI / 2, 0, 0]}
         />
+        )}
 
         {/* Kontroler kamery, Gizmo Cube i obsługa screenshotów */}
         <CameraAndActions
@@ -634,7 +639,7 @@ export default function CadViewer3D({
       {/* ---------------------------------------------------------------------
           LEWY GÓRNY PANEL: PLAKIETKA PARAMETRÓW & JEDNOSTEK (KOMPAKTOWY GLASSMORPHISM)
           --------------------------------------------------------------------- */}
-      <div className="absolute top-3 left-3 z-20 pointer-events-auto">
+      {!studio && <div className="absolute top-3 left-3 z-20 pointer-events-auto">
         <div className="bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl p-2.5 shadow-sm flex flex-col gap-1 min-w-[175px]">
           <div className="flex items-center justify-between gap-1.5 border-b border-slate-100 pb-1">
             <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">
@@ -686,12 +691,12 @@ export default function CadViewer3D({
             </span>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* ---------------------------------------------------------------------
           LEWY BOCZNY DOK: PŁYWAJĄCE MENU WYBORU KOLORÓW (BEZPIECZNY OBRYS)
           --------------------------------------------------------------------- */}
-      <div className="absolute top-24 sm:top-28 left-3 z-20 pointer-events-auto">
+      {!studio && <div className="absolute top-24 sm:top-28 left-3 z-20 pointer-events-auto">
         <div className="bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl p-1.5 shadow-sm flex flex-col items-center gap-1.5 max-h-[260px] overflow-y-auto scrollbar-none">
           <span className="text-[8px] font-extrabold uppercase tracking-wider text-slate-400 px-0.5">
             Kolor
@@ -734,12 +739,12 @@ export default function CadViewer3D({
             })}
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* ---------------------------------------------------------------------
           PRAWY GÓRNY PANEL: ANALIZA GEOMETRII (DFM CHECKLIST - KOMPAKTOWY)
           --------------------------------------------------------------------- */}
-      <div className="absolute top-3 right-3 z-20 pointer-events-auto max-w-[210px] sm:max-w-[230px]">
+      {!studio && <div className="absolute top-3 right-3 z-20 pointer-events-auto max-w-[210px] sm:max-w-[230px]">
         <div className="bg-white/80 backdrop-blur-md border border-slate-200/80 rounded-2xl p-2.5 shadow-sm">
           <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
             <div className="flex items-center gap-1.5">
@@ -834,12 +839,12 @@ export default function CadViewer3D({
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* ---------------------------------------------------------------------
           DOLNY PŁYWAJĄCY PASEK NARZĘDZI (FLOATING CAD DOCK)
           --------------------------------------------------------------------- */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+      {!studio && <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
         <div className="bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-2xl px-2.5 py-1.5 shadow-2xl flex items-center gap-1 sm:gap-2">
           
           {/* Przycisk: Centrum (Reset widoku) */}
@@ -925,7 +930,7 @@ export default function CadViewer3D({
           </button>
 
         </div>
-      </div>
+      </div>}
 
     </div>
   );

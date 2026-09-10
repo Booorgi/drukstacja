@@ -65,40 +65,27 @@ export default function Navbar({
   const isSklepActive = activePage === "sklep" || router.pathname.startsWith("/sklep");
   const isKontaktActive = activePage === "kontakt" || router.pathname.startsWith("/kontakt");
 
+  const navLink = (active) =>
+    `px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+      active ? "text-white" : "text-white/55 hover:text-white"
+    }`;
+
   return (
-    <header className="w-full bg-white border-b border-slate-200 sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 h-16 sm:h-20 flex items-center justify-between gap-2 sm:gap-4">
+    <header className="w-full bg-[#111111] sticky top-0 z-50">
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 h-16 sm:h-[72px] flex items-center justify-between gap-3">
         
-        {/* LEWA STRONA: LOGO & GŁÓWNA NAWIGACJA PILLS */}
-        <div className="flex items-center gap-3 sm:gap-6 lg:gap-8 shrink-0 min-w-0">
-          {/* LOGO */}
-          <Link href="/" className="flex items-center gap-3 group shrink-0">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#EF4444] to-[#DC2626] flex items-center justify-center shadow-md shadow-red-500/25 group-hover:scale-105 transition-transform">
-              <span className="font-extrabold text-xl text-white tracking-wider">D</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-lg sm:text-xl font-black tracking-tight text-slate-900 leading-none">
-                DRUK<span className="text-[#EF4444]">STACJA</span>
-              </span>
-              <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mt-0.5 hidden sm:block">
-                Additive Manufacturing
-              </span>
-            </div>
+        <div className="flex items-center gap-6 lg:gap-10 shrink-0 min-w-0">
+          <Link href="/" className="flex items-center shrink-0 group">
+            <img
+              src="/logo-drukstacja.png"
+              alt="drukstacja"
+              className="h-8 sm:h-9 w-auto group-hover:opacity-90 transition-opacity"
+            />
           </Link>
 
-          {/* DESKTOP PILLS NAVIGATION */}
-          <nav className="hidden lg:flex items-center gap-2 bg-slate-100/70 p-1.5 rounded-full border border-slate-200/60 shadow-inner">
-            {/* 1. Wycena druku 3D */}
-            <Link
-              href="/"
-              className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                isWycenaActive
-                  ? "bg-white text-[#EF4444] shadow-sm border border-red-200/80"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-              }`}
-            >
-              <span className="text-sm">⚡</span>
-              <span>Wycena druku 3D</span>
+          <nav className="hidden lg:flex items-center gap-1">
+            <Link href="/" className={navLink(isWycenaActive)}>
+              Wycena
             </Link>
 
             {/* 2. Generatory Dropdown */}
@@ -107,17 +94,12 @@ export default function Navbar({
                 type="button"
                 onClick={() => setIsGeneratorsOpen((prev) => !prev)}
                 onMouseEnter={() => setIsGeneratorsOpen(true)}
-                className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  isGeneratoryActive
-                    ? "bg-white text-[#EF4444] shadow-sm border border-red-200/80"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-                }`}
+                className={`${navLink(isGeneratoryActive)} flex items-center gap-1 cursor-pointer bg-transparent border-0`}
               >
-                <span className="text-sm">✨</span>
                 <span>Generatory</span>
                 <svg
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                    isGeneratorsOpen ? "rotate-180 text-[#EF4444]" : "text-slate-400"
+                  className={`w-3 h-3 transition-transform duration-200 ${
+                    isGeneratorsOpen ? "rotate-180 text-white" : "text-white/40"
                   }`}
                   fill="none"
                   stroke="currentColor"
@@ -209,51 +191,23 @@ export default function Navbar({
               )}
             </div>
 
-            {/* 3. Sklep */}
-            <Link
-              href="/sklep"
-              className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                isSklepActive
-                  ? "bg-white text-[#EF4444] shadow-sm border border-red-200/80"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-              }`}
-            >
-              <span>🛒</span>
-              <span>Sklep</span>
+            <Link href="/sklep" className={navLink(isSklepActive)}>
+              Sklep
             </Link>
-
-            {/* 4. Kontakt */}
-            <Link
-              href="/kontakt"
-              className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                isKontaktActive
-                  ? "bg-white text-[#EF4444] shadow-sm border border-red-200/80"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-              }`}
-            >
-              <span>💬</span>
-              <span>Kontakt</span>
+            <Link href="/kontakt" className={navLink(isKontaktActive)}>
+              Kontakt
             </Link>
-
-            {/* 5. Materiały (scroll do karty materiałów lub podstrony) */}
-            <Link
-              href="/#materialy"
-              onClick={handleMaterialsClick}
-              className="px-4 py-2 rounded-full text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-white/60 transition-all flex items-center gap-1.5"
-            >
-              <span>🧪</span>
-              <span>Materiały</span>
+            <Link href="/#materialy" onClick={handleMaterialsClick} className={navLink(false)}>
+              Materiały
             </Link>
           </nav>
         </div>
 
-        {/* PRAWA STRONA: KOSZYK & PROFIL UŻYTKOWNIKA */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* PRZYCISK KOSZYKA */}
           <button
             type="button"
             onClick={onOpenCart}
-            className="p-2.5 rounded-full bg-white border border-slate-200 hover:border-slate-400 text-slate-700 shadow-sm transition hover:scale-105 active:scale-95 relative cursor-pointer"
+            className="p-2 rounded-full text-white/80 hover:text-white hover:bg-white/10 transition relative cursor-pointer"
             title="Otwórz koszyk"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -272,13 +226,13 @@ export default function Navbar({
               <button
                 type="button"
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3.5 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm text-xs font-bold text-slate-800 hover:border-slate-400 transition cursor-pointer"
+                className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-full bg-white/10 text-xs font-semibold text-white hover:bg-white/15 transition cursor-pointer"
               >
                 <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-100 shrink-0" />
                 <span className="truncate max-w-[120px] hidden sm:inline">{user.email.split("@")[0]}</span>
                 <svg
-                  className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
-                    isUserMenuOpen ? "rotate-180 text-slate-700" : ""
+                  className={`w-3.5 h-3.5 text-white/50 transition-transform ${
+                    isUserMenuOpen ? "rotate-180 text-white" : ""
                   }`}
                   fill="none"
                   stroke="currentColor"
@@ -320,7 +274,7 @@ export default function Navbar({
           ) : (
             <button
               onClick={onOpenAuth}
-              className="text-xs font-bold px-4.5 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white shadow-sm transition hover:shadow cursor-pointer"
+              className="text-[11px] font-semibold uppercase tracking-[0.14em] px-4 py-2 rounded-full bg-white text-neutral-900 hover:bg-neutral-100 transition cursor-pointer"
             >
               Zaloguj
             </button>
@@ -330,7 +284,7 @@ export default function Navbar({
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="lg:hidden p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+            className="lg:hidden p-2 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition cursor-pointer"
             aria-label="Menu mobilne"
           >
             {isMobileMenuOpen ? (
@@ -348,15 +302,15 @@ export default function Navbar({
 
       {/* MOBILE DRAWER / MENU */}
       {isMobileMenuOpen && (
-        <div className="lg:hidden border-t border-slate-200 bg-white px-4 py-4 space-y-3 animate-in slide-in-from-top duration-200 shadow-xl">
+        <div className="lg:hidden border-t border-white/10 bg-[#111111] px-4 py-4 space-y-3">
           <div className="space-y-1">
             <Link
               href="/"
               onClick={() => setIsMobileMenuOpen(false)}
               className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                 isWycenaActive
-                  ? "bg-red-50 text-[#EF4444] border border-red-200/80"
-                  : "text-slate-700 hover:bg-slate-50"
+                  ? "bg-white/10 text-white"
+                  : "text-white/70 hover:bg-white/5 hover:text-white"
               }`}
             >
               <span>⚡</span>
@@ -365,7 +319,7 @@ export default function Navbar({
 
             {/* Generatory section */}
             <div className="pt-2">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-3.5 block mb-1">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40 px-3.5 block mb-1">
                 Generatory 3D
               </span>
               <Link
@@ -373,8 +327,8 @@ export default function Navbar({
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                   isGeneratoryActive
-                    ? "bg-red-50 text-[#EF4444] border border-red-200/80"
-                    : "text-slate-700 hover:bg-slate-50"
+                    ? "bg-white/10 text-white"
+                    : "text-white/70 hover:bg-white/5 hover:text-white"
                 }`}
               >
                 <div className="flex items-center gap-2.5">
@@ -408,14 +362,14 @@ export default function Navbar({
             </div>
 
             {/* Pozostałe linki */}
-            <div className="pt-2 border-t border-slate-100 space-y-1">
+            <div className="pt-2 border-t border-white/10 space-y-1">
               <Link
                 href="/sklep"
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                   isSklepActive
-                    ? "bg-red-50 text-[#EF4444] border border-red-200/80"
-                    : "text-slate-700 hover:bg-slate-50"
+                    ? "bg-white/10 text-white"
+                    : "text-white/70 hover:bg-white/5 hover:text-white"
                 }`}
               >
                 <span>🛒</span>
@@ -427,8 +381,8 @@ export default function Navbar({
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                   isKontaktActive
-                    ? "bg-red-50 text-[#EF4444] border border-red-200/80"
-                    : "text-slate-700 hover:bg-slate-50"
+                    ? "bg-white/10 text-white"
+                    : "text-white/70 hover:bg-white/5 hover:text-white"
                 }`}
               >
                 <span>💬</span>
@@ -441,7 +395,7 @@ export default function Navbar({
                   setIsMobileMenuOpen(false);
                   handleMaterialsClick(e);
                 }}
-                className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-white/70 hover:bg-white/5 hover:text-white transition"
               >
                 <span>🧪</span>
                 <span>Baza Materiałów & DFM</span>
@@ -450,12 +404,12 @@ export default function Navbar({
           </div>
 
           {/* Panel logowania w menu mobilnym */}
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+          <div className="pt-3 border-t border-white/10 flex items-center justify-between">
             {user ? (
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span className="text-xs font-bold text-slate-800">{user.email}</span>
+                  <span className="text-xs font-bold text-white/80">{user.email}</span>
                 </div>
                 <button
                   type="button"
