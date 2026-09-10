@@ -214,6 +214,7 @@ def estimate_filament_from_geometry(
     filament_type: str = "PLA",
     support_needed: bool = False,
     color_count: int = 1,
+    painted_ratio: float = 0.0,
 ) -> dict:
     """
     Szacunek zużycia filamentu z geometrii, bez pełnego G-code.
@@ -235,6 +236,10 @@ def estimate_filament_from_geometry(
     layer_height = max(0.05, float(layer_height or 0.20))
     nozzle_size = max(0.1, float(nozzle_size or 0.4))
     color_count = max(1, int(color_count or 1))
+    painted_ratio = min(1.0, max(0.0, float(painted_ratio or 0.0)))
+    # Malowany 3MF przy błędnie podanym 1 kolorze i tak musi doliczyć AMS.
+    if painted_ratio >= 0.05:
+        color_count = max(color_count, 2)
 
     dims = [float(v) for v in (dimensions_mm or [])]
     while len(dims) < 3:
@@ -272,17 +277,20 @@ def estimate_filament_from_geometry(
 
     support_cm3 = 0.0
     if support_needed:
-        support_cm3 = model_cm3 * 0.03
+        # Bambu na Jaguarze: 10.3 g podpor przy ~338 g modelu ≈ 3% masy modelu.
+        support_cm3 = model_cm3 * 0.038
 
     flush_cm3 = 0.0
     tower_cm3 = 0.0
     num_layers = max(1, int(height_mm / layer_height))
     if color_count >= 2:
-        # Bambu Jaguar: 414 zmian / 387 warstw ≈ 1 zmiana na warstwę przy cętach.
-        painted_complexity = min(1.25, 0.35 * (color_count - 1))
+        # Bambu Jaguar: 414 zmian / 387 warstw. Im gęstsze malowanie, tym więcej zmian.
+        base = 0.35 * (color_count - 1)
+        painted = painted_ratio * (color_count - 1) * 0.55
+        painted_complexity = min(float(color_count - 1), max(base, painted, 0.9))
         toolchanges = num_layers * painted_complexity
         flush_cm3 = (toolchanges * 0.32) / max(density, 0.01)  # ~0.32 g na zmianę
-        tower_cm3 = (num_layers * 0.10) / max(density, 0.01)   # ~0.10 g na warstwę wieży
+        tower_cm3 = (num_layers * 0.105) / max(density, 0.01)  # ~0.10 g na warstwę wieży
 
     effective_cm3 = model_cm3 + support_cm3 + flush_cm3 + tower_cm3
     filament_weight_g = round(effective_cm3 * density, 1)
@@ -320,6 +328,7 @@ def simulate_slicing_fallback(
     nozzle_size: float = 0.4,
     color_count: int = 1,
     support_needed: bool | None = None,
+    painted_ratio: float = 0.0,
 ) -> dict:
     """
     Fallback, gdy na hoście nie ma PrusaSlicera. Liczy zużycie z geometrii siatki
@@ -387,6 +396,7 @@ def simulate_slicing_fallback(
         filament_type=filament_type,
         support_needed=bool(support_needed),
         color_count=color_count,
+        painted_ratio=painted_ratio,
     )
 
     return {
@@ -403,6 +413,10 @@ def simulate_slicing_fallback(
         "filament_type": filament_type,
         "has_supports": est["has_supports"],
         "support_lines": [],
+        "model_cm3": est.get("model_cm3"),
+        "support_cm3": est.get("support_cm3"),
+        "flush_cm3": est.get("flush_cm3"),
+        "color_count": color_count,
     }
 
 
@@ -415,6 +429,7 @@ def run_slicer(
     nozzle_size: float = 0.4,
     color_count: int = 1,
     support_needed: bool | None = None,
+    painted_ratio: float = 0.0,
 ) -> dict:
     """
     Uruchamia natywny proces slicera (PrusaSlicer CLI) na pliku STL,
@@ -433,6 +448,7 @@ def run_slicer(
             nozzle_size=nozzle_size,
             color_count=color_count,
             support_needed=support_needed,
+            painted_ratio=painted_ratio,
         )
 
     with tempfile.NamedTemporaryFile(suffix=".gcode", delete=False) as tmp_gcode:
@@ -487,6 +503,9 @@ def run_slicer(
                 layer_height=layer_height,
                 filament_type=filament_type,
                 nozzle_size=nozzle_size,
+                color_count=color_count,
+                support_needed=support_needed,
+                painted_ratio=painted_ratio,
             )
 
         # PARSOWANIE G-CODE
@@ -576,6 +595,7 @@ def run_slicer(
             nozzle_size=nozzle_size,
             color_count=color_count,
             support_needed=support_needed,
+            painted_ratio=painted_ratio,
         )
 
     finally:

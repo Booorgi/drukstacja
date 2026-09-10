@@ -82,6 +82,7 @@ class ResliceRequest(BaseModel):
     quantity: int = 1
     color_count: int = 1
     support_needed: bool = True
+    painted_ratio: float = 0.0
 
 
 class Generate3MFRequest(BaseModel):
@@ -558,11 +559,20 @@ async def analyze_model_endpoint(
                             result["has_file_colors"] = True
                         except Exception as glb_err:
                             print(f"[WARN] Nie udało się wyeksportować kolorowego podglądu GLB: {glb_err}")
-                    # Bez podgladu GLB nie ma czym pomalowac modelu, wiec nie
-                    # pokazujemy tez probek AMS - klient wybiera kolor materialu.
-                    result["has_file_colors"] = bool(result.get("preview_glb_url"))
-                    if not result["has_file_colors"]:
-                        result["filament_colours"] = []
+                    # Liczba slotow AMS i gestosc malowania - NIE zalezna od tego,
+                    # czy GLB wrocil (to tylko podglad). Wycena musi doliczyc plykanie.
+                    color_count = int(
+                        result.get("color_count")
+                        or len(result.get("filament_colours") or [])
+                        or 1
+                    )
+                    painted_ratio = float(result.get("painted_ratio") or 0.0)
+                    result["color_count"] = color_count
+                    result["painted_ratio"] = painted_ratio
+
+                    result["has_file_colors"] = bool(
+                        result.get("has_file_colors") or result.get("preview_glb_url")
+                    )
 
                     # Slicing z parametrami przesłanymi z frontu
                     try:
@@ -572,8 +582,9 @@ async def analyze_model_endpoint(
                             layer_height=float(layer_height),
                             nozzle_size=float(nozzle_size),
                             filament_type=filament_type,
-                            color_count=len(result.get("filament_colours") or []),
+                            color_count=color_count,
                             support_needed=True,
+                            painted_ratio=painted_ratio,
                         )
                         result["slicer_engine"] = slice_data.get("engine")
                         result["print_time_hours"] = slice_data.get("print_time_hours")
@@ -587,6 +598,8 @@ async def analyze_model_endpoint(
                         result["filament_type"] = filament_type
                         result["has_supports"] = slice_data.get("has_supports", False)
                         result["support_lines"] = slice_data.get("support_lines", [])
+                        result["flush_cm3"] = slice_data.get("flush_cm3") or 0
+                        result["support_cm3"] = slice_data.get("support_cm3") or 0
 
                         # Wycena na podstawie metadanych ze slicera
                         price_info = calculate_price_from_slicer(
@@ -703,6 +716,7 @@ def reslice_model_endpoint(req: ResliceRequest):
         filament_type=req.filament_type,
         color_count=int(req.color_count or 1),
         support_needed=bool(req.support_needed),
+        painted_ratio=float(req.painted_ratio or 0.0),
     )
 
     price_info = calculate_price_from_slicer(
@@ -728,6 +742,8 @@ def reslice_model_endpoint(req: ResliceRequest):
         "filament_type": req.filament_type,
         "has_supports": slice_data.get("has_supports", False),
         "support_lines": slice_data.get("support_lines", []),
+        "flush_cm3": slice_data.get("flush_cm3") or 0,
+        "support_cm3": slice_data.get("support_cm3") or 0,
         "price_breakdown": price_info,
         "unit_price": price_info["unit_price_pln"],
         "total_price": price_info["total_price_pln"],

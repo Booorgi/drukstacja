@@ -97,6 +97,7 @@ def test_load_3mf_bundle_paints_ams_parts():
     assert bundle["part_count"] == 4
     assert bundle["has_file_colors"] is True
     assert bundle["filament_colours"] == ["#080504", "#854A22", "#C4864F", "#DFDFDE"]
+    assert bundle["color_count"] == 4
     colored = bundle["colored_mesh"]
     assert colored is not None
     assert len(colored.faces) == len(bundle["mesh"].faces)
@@ -112,6 +113,8 @@ def test_brush_painted_object_gets_colors():
     bundle = load_3mf_bundle(path)
     assert bundle["has_file_colors"] is True
     assert bundle["filament_colours"] == ["#FF0000", "#00FF00"]
+    assert bundle["color_count"] == 2
+    assert bundle["painted_ratio"] >= 0.4
 
     colors = bundle["colored_mesh"].visual.face_colors
     assert {tuple(c[:3]) for c in colors} == {(255, 0, 0), (0, 255, 0)}

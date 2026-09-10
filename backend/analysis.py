@@ -355,6 +355,17 @@ def load_3mf_bundle(file_input) -> dict:
     used_hex = {h.upper() for h in slot_hex.values()}
     has_file_colors = len(used_hex) >= 2
 
+    painted_faces = 0
+    total_faces = 0
+    for obj in objects:
+        slots = obj.get("face_slots")
+        n = len(obj["mesh"].faces)
+        total_faces += n
+        if slots is not None and len(slots) == n:
+            painted_faces += int(np.count_nonzero(slots > 0))
+    painted_ratio = (painted_faces / total_faces) if total_faces else 0.0
+    color_count = max(len(slot_hex), len(used_hex), 1)
+
     colored_mesh = None
     if has_file_colors:
         painted = []
@@ -381,6 +392,8 @@ def load_3mf_bundle(file_input) -> dict:
         "filament_colours": [slot_hex[s] for s in used_slots] if has_file_colors else [],
         "part_count": len(objects),
         "has_file_colors": has_file_colors,
+        "color_count": int(color_count),
+        "painted_ratio": round(float(painted_ratio), 4),
     }
 
 
@@ -494,6 +507,8 @@ def analyze_mesh_file(path: str, ext: str) -> dict:
         geom["filament_colours"] = bundle.get("filament_colours") or []
         geom["part_count"] = bundle.get("part_count") or 1
         geom["has_file_colors"] = bool(bundle.get("has_file_colors"))
+        geom["color_count"] = int(bundle.get("color_count") or len(geom["filament_colours"]) or 1)
+        geom["painted_ratio"] = float(bundle.get("painted_ratio") or 0.0)
         return geom
 
     loaded = trimesh.load(path)

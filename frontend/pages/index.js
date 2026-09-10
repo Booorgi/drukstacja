@@ -394,8 +394,13 @@ export default function Home() {
             infill: parseInt(infill),
             filament_type: matConfig?.slicerType || matConfig?.name?.split(" ")[0] || "PLA",
             quantity: quantity,
-            color_count: (analysisData.filament_colours || []).length,
-            support_needed: Boolean(analysisData.has_supports || analysisData.support_needed || true),
+            color_count: Math.max(
+              Number(analysisData.color_count) || 0,
+              (analysisData.filament_colours || []).length,
+              1
+            ),
+            painted_ratio: Number(analysisData.painted_ratio) || 0,
+            support_needed: true,
           }),
         });
 
@@ -408,6 +413,8 @@ export default function Home() {
             filament_weight_g: resliceData.filament_weight_g,
             filament_length_m: resliceData.filament_length_m,
             filament_volume_cm3: resliceData.filament_volume_cm3,
+            flush_cm3: resliceData.flush_cm3,
+            support_cm3: resliceData.support_cm3,
             layer_height: resliceData.layer_height,
             nozzle_size: resliceData.nozzle_size,
             infill: resliceData.infill,
@@ -425,7 +432,7 @@ export default function Home() {
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [layerHeight, nozzleSize, infill, selectedMaterial]);
+  }, [layerHeight, nozzleSize, infill, selectedMaterial, analysisData?.preview_stl_key, analysisData?.color_count, analysisData?.painted_ratio]);
 
   const volume = analysisData?.volume_cm3 || 32.5;
   const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
@@ -784,6 +791,11 @@ export default function Home() {
                       <span className="font-extrabold text-slate-800">
                         {analysisData.filament_weight_g ? `${analysisData.filament_weight_g} g` : `${Math.round(volume * 1.24 * (0.35 + (infill/100)*0.65))} g`}
                       </span>
+                      {Number(analysisData.flush_cm3) > 0 && (
+                        <span className="text-[8px] font-bold text-slate-400 block">
+                          w tym AMS (płukanie + wieża)
+                        </span>
+                      )}
                     </div>
                   </div>
 

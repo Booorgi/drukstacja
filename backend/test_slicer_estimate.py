@@ -18,6 +18,7 @@ def test_jaguar_matches_bambu_ballpark():
         filament_type="PLA",
         support_needed=True,
         color_count=4,
+        painted_ratio=0.66,
     )
     # Bambu 518 g - dopuszczamy +/- 15%
     assert 440 <= est["filament_weight_g"] <= 600, est
@@ -44,6 +45,24 @@ def test_jaguar_single_color_is_model_plus_supports():
     # Bambu model+podpory = 348 g (bez AMS)
     assert 300 <= est["filament_weight_g"] <= 400, est
     assert est["flush_cm3"] == 0
+
+
+def test_painted_file_adds_ams_even_if_color_count_missing():
+    """Gdy frontend/backend zgubi color_count, gestosc malowania i tak dolicza AMS."""
+    est = estimate_filament_from_geometry(
+        volume_cm3=842.10,
+        surface_area_cm2=838.1,
+        dimensions_mm=[187.49, 203.71, 77.46],
+        infill=20,
+        layer_height=0.20,
+        nozzle_size=0.4,
+        filament_type="PLA",
+        support_needed=True,
+        color_count=1,
+        painted_ratio=0.66,
+    )
+    assert est["flush_cm3"] > 50, est
+    assert est["filament_weight_g"] > 400, est
 
 
 def test_small_watch_case_stays_in_single_digits():
@@ -73,6 +92,7 @@ def test_old_formula_no_longer_used_for_large_solids():
         filament_type="PLA",
         support_needed=True,
         color_count=4,
+        painted_ratio=0.66,
     )
     old_effective = 842.10 * (0.72 + 0.20 * 0.28)
     old_weight = round(old_effective * 1.24 * 1.42, 1)
