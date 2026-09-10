@@ -77,9 +77,9 @@ export default function Navbar({
         <div className="flex items-center gap-6 lg:gap-10 shrink-0 min-w-0">
           <Link href="/" className="flex items-center shrink-0 group">
             <img
-              src="/logo-drukstacja.png"
+              src="/logo-drukstacja.png?v=2"
               alt="drukstacja"
-              className="h-8 sm:h-9 w-auto group-hover:opacity-90 transition-opacity"
+              className="h-8 sm:h-10 w-auto group-hover:opacity-90 transition-opacity"
             />
           </Link>
 
