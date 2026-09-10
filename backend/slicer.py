@@ -8,6 +8,8 @@ from pathlib import Path
 import trimesh
 import numpy as np
 
+from orientation import SUPPORT_THRESHOLD_ANGLE_DEG
+
 try:
     import cadquery as cq
 except Exception:
@@ -365,6 +367,7 @@ def run_slicer(
                 "--support-material",
                 "--support-material-auto",
                 "--support-material-style=organic",
+                f"--support-material-threshold={int(SUPPORT_THRESHOLD_ANGLE_DEG)}",
             ])
 
         env = os.environ.copy()

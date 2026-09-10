@@ -556,7 +556,11 @@ async def analyze_model_endpoint(
                             result["has_file_colors"] = True
                         except Exception as glb_err:
                             print(f"[WARN] Nie udało się wyeksportować kolorowego podglądu GLB: {glb_err}")
+                    # Bez podgladu GLB nie ma czym pomalowac modelu, wiec nie
+                    # pokazujemy tez probek AMS - klient wybiera kolor materialu.
                     result["has_file_colors"] = bool(result.get("preview_glb_url"))
+                    if not result["has_file_colors"]:
+                        result["filament_colours"] = []
 
                     # Slicing z parametrami przesłanymi z frontu
                     try:

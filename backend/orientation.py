@@ -16,8 +16,8 @@ Algorytm (uproszczona wersja podejscia znanego z projektu "Tweaker"):
    podstawami, ktore hull moze pominac przy duzej liczbie trojkatow).
 2. Dla kazdej kandydatki obroc siatke tak, aby dana sciana laodowala sie
    plasko na stole (Z = min).
-3. Policz "koszt podpor": sume powierzchni trojkatow, ktorych normalna
-   wskazuje w dol pod katem wiekszym niz prog (domyslnie 45 stopni) - to sa
+3. Policz "koszt podpor": sume powierzchni trojkatow nachylonych wzgledem
+   stolu ponizej progu (domyslnie 30 stopni, jak w Bambu Studio) - to sa
    dokladnie te powierzchnie, pod ktore slicer wstawi podpory.
 4. Wybierz orientacje z najnizszym kosztem (tie-break: nizsza bryla = krotszy
    czas druku, wieksza podstawa = lepsza przyczepnosc do stolu).
@@ -25,7 +25,10 @@ Algorytm (uproszczona wersja podejscia znanego z projektu "Tweaker"):
 import numpy as np
 import trimesh
 
-OVERHANG_ANGLE_DEG = 45.0  # standardowy prog nawisu uzywany przez wiekszosc slicerow
+# Prog podpor taki jak w Bambu Studio / OrcaSlicer ("Threshold angle" = 30):
+# podpory powstaja dla nawisow, ktorych kat nachylenia wzgledem stolu jest
+# PONIZEJ progu (90 stopni = pionowa scianka, 0 stopni = plaski sufit).
+SUPPORT_THRESHOLD_ANGLE_DEG = 30.0
 DENSE_MESH_FACES = 20000
 SAMPLE_FACES = 8000
 AXIS_NORMALS = np.array(
@@ -85,8 +88,8 @@ def _rotation_to_place_face_down(normal: np.ndarray) -> np.ndarray:
 
 def _support_score(mesh: trimesh.Trimesh) -> float:
     """
-    Suma powierzchni trojkatow wymagajacych podpor (normalna skierowana w dol
-    ponizej progu OVERHANG_ANGLE_DEG), wazona sila nawisu.
+    Suma powierzchni trojkatow wymagajacych podpor (nachylenie wzgledem stolu
+    ponizej SUPPORT_THRESHOLD_ANGLE_DEG), wazona sila nawisu.
     Nizszy wynik = mniej materialu na podpory.
 
     WAZNE: trojkaty stykajace sie ze stolem (na samym dole modelu) sa
@@ -111,7 +114,9 @@ def _support_score(mesh: trimesh.Trimesh) -> float:
     face_top_z = verts[faces][:, :, 2].max(axis=1)
     touches_bed = face_top_z <= (z_min + bed_epsilon)
 
-    cos_threshold = np.cos(np.radians(90 - OVERHANG_ANGLE_DEG))
+    # downward = cos(kata nachylenia scianki wzgledem stolu), wiec warunek
+    # "nachylenie < prog" to po prostu downward > cos(prog).
+    cos_threshold = np.cos(np.radians(SUPPORT_THRESHOLD_ANGLE_DEG))
     downward = -normals[:, 2]  # ile normalna "patrzy w dol"; 1.0 = prosto w dol
 
     needs_support = (downward > cos_threshold) & (~touches_bed)

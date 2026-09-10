@@ -4,6 +4,11 @@ import { OrbitControls, Bounds, GizmoHelper, GizmoViewcube, Html } from "@react-
 import { STLLoader, GLTFLoader } from "three-stdlib";
 import * as THREE from "three";
 
+// Prog podpor jak w Bambu Studio: podpory dla scianek nachylonych do stolu
+// ponizej 30 stopni (90 stopni = pionowa sciana, 0 = plaski sufit).
+const SUPPORT_THRESHOLD_ANGLE_DEG = 30;
+const SUPPORT_NORMAL_Y = -Math.cos((SUPPORT_THRESHOLD_ANGLE_DEG * Math.PI) / 180);
+
 // -----------------------------------------------------------------------------
 // KONTROLER KAMERY (RESET & ZRZUT EKRANU)
 // -----------------------------------------------------------------------------
@@ -239,12 +244,25 @@ function CadModelGeometry({
     };
   }, [url, skipAutoOrient, onGeometryLoaded]);
 
-  // Wyliczanie powierzchni podpór (kąt nawisu > 45°)
+  // Wyliczanie powierzchni podpór (nachylenie do stołu poniżej progu Bambu)
   const supportMeshGeometry = useMemo(() => {
-    if (!geometry || !showSupports) return null;
+    if (!showSupports) return null;
 
-    const pos = geometry.attributes.position;
-    if (!pos) return null;
+    // Podgląd bywa pojedynczą siatką STL albo sceną GLB z kolorami AMS -
+    // nawisy liczymy z obu, po indeksie, żeby nie kopiować gęstych siatek.
+    const sources = [];
+    if (geometry) {
+      sources.push({ geo: geometry, matrix: null });
+    }
+    if (gltfRoot) {
+      gltfRoot.updateMatrixWorld(true);
+      gltfRoot.traverse((ch) => {
+        if (ch.isMesh && ch.geometry) {
+          sources.push({ geo: ch.geometry, matrix: ch.matrixWorld });
+        }
+      });
+    }
+    if (sources.length === 0) return null;
 
     const supportTriangles = [];
     const pA = new THREE.Vector3(),
@@ -254,24 +272,41 @@ function CadModelGeometry({
       ac = new THREE.Vector3(),
       fn = new THREE.Vector3();
 
-    for (let i = 0; i < pos.count; i += 3) {
-      pA.fromBufferAttribute(pos, i);
-      pB.fromBufferAttribute(pos, i + 1);
-      pC.fromBufferAttribute(pos, i + 2);
+    sources.forEach(({ geo, matrix }) => {
+      const pos = geo.attributes.position;
+      if (!pos) return;
+      const index = geo.index;
+      const count = index ? index.count : pos.count;
 
-      ab.subVectors(pB, pA);
-      ac.subVectors(pC, pA);
-      fn.crossVectors(ab, ac).normalize();
+      for (let i = 0; i < count; i += 3) {
+        const i0 = index ? index.getX(i) : i;
+        const i1 = index ? index.getX(i + 1) : i + 1;
+        const i2 = index ? index.getX(i + 2) : i + 2;
 
-      const isBedLayer = pA.y < 0.2 && pB.y < 0.2 && pC.y < 0.2;
-      if (fn.y < -0.707 && !isBedLayer) {
-        supportTriangles.push(
-          pA.x, pA.y, pA.z,
-          pB.x, pB.y, pB.z,
-          pC.x, pC.y, pC.z
-        );
+        pA.fromBufferAttribute(pos, i0);
+        pB.fromBufferAttribute(pos, i1);
+        pC.fromBufferAttribute(pos, i2);
+
+        if (matrix) {
+          pA.applyMatrix4(matrix);
+          pB.applyMatrix4(matrix);
+          pC.applyMatrix4(matrix);
+        }
+
+        ab.subVectors(pB, pA);
+        ac.subVectors(pC, pA);
+        fn.crossVectors(ab, ac).normalize();
+
+        const isBedLayer = pA.y < 0.2 && pB.y < 0.2 && pC.y < 0.2;
+        if (fn.y < SUPPORT_NORMAL_Y && !isBedLayer) {
+          supportTriangles.push(
+            pA.x, pA.y, pA.z,
+            pB.x, pB.y, pB.z,
+            pC.x, pC.y, pC.z
+          );
+        }
       }
-    }
+    });
 
     if (supportTriangles.length === 0) return null;
 
@@ -279,7 +314,7 @@ function CadModelGeometry({
     sGeo.setAttribute("position", new THREE.Float32BufferAttribute(supportTriangles, 3));
     sGeo.computeVertexNormals();
     return sGeo;
-  }, [geometry, showSupports]);
+  }, [geometry, gltfRoot, showSupports]);
 
   // Obliczenie wymiarów Bounding Box
   const bboxData = useMemo(() => {
@@ -767,7 +802,9 @@ export default function CadViewer3D({
                     Nawisy & podpory
                   </span>
                   <span className="text-[9px] text-slate-500 block">
-                    {hasOverhangs ? "Wykryto zwisy > 45°" : "Brak trudnych zwisów"}
+                    {hasOverhangs
+                      ? `Nachylenie < ${SUPPORT_THRESHOLD_ANGLE_DEG}° (próg Bambu)`
+                      : `Brak nawisów < ${SUPPORT_THRESHOLD_ANGLE_DEG}°`}
                   </span>
                 </div>
               </div>

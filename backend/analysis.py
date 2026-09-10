@@ -86,6 +86,44 @@ def _hex_to_rgba(hex_color: str) -> np.ndarray:
     return np.array([r, g, b, a], dtype=np.uint8)
 
 
+# Kody malowania wielokolorowego: Bambu Studio / OrcaSlicer zapisuja je w atrybucie
+# paint_color trojkata, PrusaSlicer w slic3rpe:mmu_segmentation (ten sam format).
+# Pozycja na liscie + 1 = numer slotu AMS, czyli indeks w filament_colour + 1.
+PAINT_SLOT_CODES = [
+    "4", "8", "0C", "1C", "2C", "3C", "4C", "5C",
+    "6C", "7C", "8C", "9C", "AC", "BC", "CC", "DC",
+]
+
+# Awaryjna paleta, gdy plik ma malowanie, ale nie niesie listy filament_colour.
+DEFAULT_AMS_PALETTE = ["#1A1A1A", "#F5F5F5", "#D32F2F", "#1976D2"]
+
+
+def decode_paint_slot(code: str) -> int:
+    """
+    Zwraca dominujacy slot AMS (1-based) zakodowany w paint_color; 0 = brak malowania.
+
+    Trojkat pomalowany w calosci ma dokladnie jeden kod (np. "4"). Trojkat
+    przeciety pedzlem niesie dluzszy ciag z wieloma kodami - dla podgladu bierzemy
+    kolor o najwiekszej liczbie wystapien, wiec granica biegnie po krawedziach siatki.
+    Kody dwuznakowe zdejmujemy przed jednoznakowymi, inaczej "8" zjadloby "8C".
+    """
+    rest = (code or "").strip().upper()
+    if not rest:
+        return 0
+
+    counts: Dict[int, int] = {}
+    for slot in range(len(PAINT_SLOT_CODES), 0, -1):
+        token = PAINT_SLOT_CODES[slot - 1]
+        occurrences = rest.count(token)
+        if occurrences:
+            counts[slot] = occurrences
+            rest = rest.replace(token, "")
+
+    if not counts:
+        return 0
+    return max(counts.items(), key=lambda kv: (kv[1], -kv[0]))[0]
+
+
 def _read_file_bytes(file_input) -> bytes:
     if isinstance(file_input, (str, Path)):
         with open(file_input, "rb") as f:
@@ -97,9 +135,23 @@ def _read_file_bytes(file_input) -> bytes:
     return bytes(file_input)
 
 
-def _mesh_from_mesh_elem(mesh_elem) -> Optional[trimesh.Trimesh]:
+def _triangle_paint_code(attrib: Dict[str, str]) -> str:
+    code = attrib.get("paint_color")
+    if code:
+        return code
+    for key, value in attrib.items():
+        if _local_tag(key) == "mmu_segmentation" and value:
+            return value
+    return ""
+
+
+def _mesh_from_mesh_elem(mesh_elem) -> Optional[Tuple[trimesh.Trimesh, np.ndarray]]:
+    """Siatka pojedynczego <mesh> wraz z numerem slotu AMS dla kazdego trojkata."""
     verts = []
     faces = []
+    slots = []
+    decoded_cache: Dict[str, int] = {}
+
     for child in mesh_elem:
         tag = _local_tag(child.tag)
         if tag == "vertices":
@@ -115,24 +167,38 @@ def _mesh_from_mesh_elem(mesh_elem) -> Optional[trimesh.Trimesh]:
         elif tag == "triangles":
             for t in child:
                 try:
-                    faces.append([
+                    face = [
                         int(t.attrib.get("v1", 0)),
                         int(t.attrib.get("v2", 0)),
                         int(t.attrib.get("v3", 0)),
-                    ])
+                    ]
                 except Exception:
-                    pass
+                    continue
+                faces.append(face)
+
+                code = _triangle_paint_code(t.attrib)
+                if not code:
+                    slots.append(0)
+                    continue
+                slot = decoded_cache.get(code)
+                if slot is None:
+                    slot = decode_paint_slot(code)
+                    decoded_cache[code] = slot
+                slots.append(slot)
+
     if not verts or not faces:
         return None
-    return trimesh.Trimesh(
+
+    mesh = trimesh.Trimesh(
         vertices=np.array(verts, dtype=float),
         faces=np.array(faces, dtype=int),
         process=False,
     )
+    return mesh, np.array(slots, dtype=int)
 
 
 def parse_model_xml_objects(xml_bytes: bytes) -> List[dict]:
-    """Zwraca listę {'id', 'mesh'} dla każdego <object> z siatką w pliku .model."""
+    """Zwraca listę {'id', 'mesh', 'face_slots'} dla każdego <object> z siatką."""
     try:
         root = ET.fromstring(xml_bytes)
     except Exception:
@@ -150,10 +216,17 @@ def parse_model_xml_objects(xml_bytes: bytes) -> List[dict]:
                 break
         if mesh_elem is None:
             continue
-        mesh = _mesh_from_mesh_elem(mesh_elem)
-        if mesh is None or len(mesh.faces) == 0:
+        parsed = _mesh_from_mesh_elem(mesh_elem)
+        if parsed is None:
             continue
-        objects.append({"id": str(obj_id) if obj_id is not None else "", "mesh": mesh})
+        mesh, face_slots = parsed
+        if len(mesh.faces) == 0:
+            continue
+        objects.append({
+            "id": str(obj_id) if obj_id is not None else "",
+            "mesh": mesh,
+            "face_slots": face_slots,
+        })
     return objects
 
 
@@ -172,7 +245,7 @@ def parse_model_xml_content(xml_bytes: bytes) -> Optional[trimesh.Trimesh]:
 
 
 def _extract_3mf_color_metadata(zf: zipfile.ZipFile) -> Tuple[List[str], Dict[str, int]]:
-    """Kolory AMS (filament_colour) oraz mapa part id -> numer ekstrudera (1-based)."""
+    """Kolory AMS (filament_colour) oraz mapa id obiektu/części -> ekstruder (1-based)."""
     names = zf.namelist()
     colours: List[str] = []
     extruders: Dict[str, int] = {}
@@ -203,8 +276,10 @@ def _extract_3mf_color_metadata(zf: zipfile.ZipFile) -> Tuple[List[str], Dict[st
     if ms_name:
         try:
             root = ET.fromstring(zf.read(ms_name))
+            # <object> niesie ekstruder bazowy calej bryly, <part> nadpisuje go
+            # dla pojedynczej czesci - oba trafiaja do tej samej mapy po id.
             for el in root.iter():
-                if _local_tag(el.tag) != "part":
+                if _local_tag(el.tag) not in ("object", "part"):
                     continue
                 pid = el.attrib.get("id")
                 if not pid:
@@ -259,29 +334,53 @@ def load_3mf_bundle(file_input) -> dict:
     meshes = [o["mesh"] for o in objects]
     mesh = meshes[0] if len(meshes) == 1 else trimesh.util.concatenate(meshes)
 
+    # Slot AMS dla każdej ścianki: malowanie pędzlem ma pierwszeństwo,
+    # a ścianki niepomalowane dziedziczą ekstruder swojej części/obiektu.
+    face_slots_per_object = []
+    for obj in objects:
+        base = part_extruder.get(str(obj["id"]), 1)
+        base = base if isinstance(base, int) and base >= 1 else 1
+        painted_slots = obj.get("face_slots")
+        n_faces = len(obj["mesh"].faces)
+        if painted_slots is None or len(painted_slots) != n_faces:
+            painted_slots = np.zeros(n_faces, dtype=int)
+        face_slots_per_object.append(np.where(painted_slots > 0, painted_slots, base))
+
+    palette = filament_colours or DEFAULT_AMS_PALETTE
+    used_slots = sorted({int(s) for s in np.unique(np.concatenate(face_slots_per_object))})
+    slot_hex = {s: palette[(s - 1) % len(palette)] for s in used_slots if s >= 1}
+
+    # Jednokolorowy plik nie ma czego pokazywać - wtedy zostawiamy klientowi
+    # swobodny wybór barwy filamentu zamiast blokować podgląd na kolorze z pliku.
+    used_hex = {h.upper() for h in slot_hex.values()}
+    has_file_colors = len(used_hex) >= 2
+
     colored_mesh = None
-    has_file_colors = bool(filament_colours) and bool(part_extruder)
     if has_file_colors:
         painted = []
-        fallback = _hex_to_rgba(filament_colours[0] if filament_colours else "#888888")
-        for obj in objects:
-            ext = part_extruder.get(str(obj["id"]), 1)
-            if 1 <= ext <= len(filament_colours):
-                rgba = _hex_to_rgba(filament_colours[ext - 1])
-            else:
-                rgba = fallback
+        for obj, slots in zip(objects, face_slots_per_object):
             part = obj["mesh"].copy()
-            n_faces = max(len(part.faces), 1)
-            part.visual.face_colors = np.broadcast_to(rgba, (n_faces, 4)).copy()
+            face_colors = np.zeros((len(part.faces), 4), dtype=np.uint8)
+            for slot in np.unique(slots):
+                face_colors[slots == slot] = _hex_to_rgba(slot_hex.get(int(slot), palette[0]))
+            part.visual.face_colors = face_colors
             painted.append(part)
         colored_mesh = painted[0] if len(painted) == 1 else trimesh.util.concatenate(painted)
+
+        # Odpowiednik fix_inversion, ktory dostaje siatka do slicera: plik zapisany
+        # "na lewa strone" renderowalby sie w podgladzie jako wydmuszka.
+        try:
+            if colored_mesh.volume < 0:
+                colored_mesh.invert()
+        except Exception:
+            pass
 
     return {
         "mesh": mesh,
         "colored_mesh": colored_mesh,
-        "filament_colours": filament_colours,
+        "filament_colours": [slot_hex[s] for s in used_slots] if has_file_colors else [],
         "part_count": len(objects),
-        "has_file_colors": bool(colored_mesh is not None),
+        "has_file_colors": has_file_colors,
     }
 
 

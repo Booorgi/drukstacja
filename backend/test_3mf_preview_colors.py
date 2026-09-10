@@ -1,11 +1,20 @@
-"""Kolorowy podgląd 3MF: części AMS -> face colors -> GLB z COLOR_0."""
+"""Kolorowy podglad 3MF (czesci AMS + malowanie pedzlem) i prog podpor Bambu."""
 import json
+import math
 import os
 import struct
 import tempfile
+import zipfile
 
-from analysis import load_3mf_bundle
-from orientation import auto_orient_mesh
+import numpy as np
+import trimesh
+
+from analysis import (
+    DEFAULT_AMS_PALETTE,
+    decode_paint_slot,
+    load_3mf_bundle,
+)
+from orientation import SUPPORT_THRESHOLD_ANGLE_DEG, _support_score, auto_orient_mesh
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SAMPLE = os.path.join(HERE, "test_generated_bambu.3mf")
@@ -20,6 +29,69 @@ def _glb_json(path: str) -> dict:
         return json.loads(f.read(chunk_len))
 
 
+def _build_3mf(paint_codes, filament_colours, object_extruder=1) -> str:
+    """Minimalny .3mf z jedna bryla; paint_codes to kod paint_color per trojkat."""
+    box = trimesh.creation.box(extents=[10, 10, 10])
+    verts = "".join(
+        f'<vertex x="{v[0]}" y="{v[1]}" z="{v[2]}"/>' for v in box.vertices
+    )
+    tris = []
+    for face, code in zip(box.faces, paint_codes):
+        paint = f' paint_color="{code}"' if code else ""
+        tris.append(f'<triangle v1="{face[0]}" v2="{face[1]}" v3="{face[2]}"{paint}/>')
+
+    model_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
+        '<resources><object id="1" type="model"><mesh>'
+        f"<vertices>{verts}</vertices><triangles>{''.join(tris)}</triangles>"
+        "</mesh></object></resources>"
+        '<build><item objectid="1"/></build></model>'
+    )
+    settings_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<config><object id="1"><metadata key="extruder" value="{object_extruder}"/>'
+        "</object></config>"
+    )
+
+    path = os.path.join(tempfile.mkdtemp(), "painted.3mf")
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("3D/3dmodel.model", model_xml)
+        zf.writestr("Metadata/model_settings.config", settings_xml)
+        zf.writestr(
+            "Metadata/project_settings.config",
+            json.dumps({"filament_colour": filament_colours}),
+        )
+    return path
+
+
+def _tilted_panel(slope_deg: float) -> trimesh.Trimesh:
+    """Plaski panel nachylony do stolu o zadany kat, uniesiony nad stolem."""
+    rise = 10.0 * math.tan(math.radians(slope_deg))
+    verts = np.array(
+        [[0, 0, 5.0], [10, 0, 5.0 + rise], [10, 10, 5.0 + rise], [0, 10, 5.0]]
+    )
+    faces = np.array([[0, 1, 2], [0, 2, 3]])
+    panel = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+    if panel.face_normals[0][2] > 0:
+        panel = trimesh.Trimesh(vertices=verts, faces=faces[:, ::-1], process=False)
+    return panel
+
+
+def test_decode_paint_slot():
+    assert decode_paint_slot("4") == 1
+    assert decode_paint_slot("8") == 2
+    assert decode_paint_slot("0C") == 3
+    assert decode_paint_slot("1C") == 4
+    assert decode_paint_slot("") == 0
+    assert decode_paint_slot(None) == 0
+    # Od slotu 3 kod to nibble (slot - 3) + "C", wiec 8C to slot 11.
+    # Kody dwuznakowe musza byc zdejmowane przed jednoznakowym "8".
+    assert decode_paint_slot("8C") == 11
+    # Trojkat przeciety pedzlem: wygrywa kolor o najwiekszej liczbie wystapien.
+    assert decode_paint_slot("8884") == 2
+
+
 def test_load_3mf_bundle_paints_ams_parts():
     bundle = load_3mf_bundle(SAMPLE)
     assert bundle["part_count"] == 4
@@ -30,6 +102,44 @@ def test_load_3mf_bundle_paints_ams_parts():
     assert len(colored.faces) == len(bundle["mesh"].faces)
     unique = {tuple(c) for c in colored.visual.face_colors}
     assert len(unique) >= 2
+
+
+def test_brush_painted_object_gets_colors():
+    """Jedna bryla pomalowana pedzlem tez musi dostac kolory w podgladzie."""
+    codes = ["8"] * 6 + [""] * 6  # polowa scianek na slot 2, reszta bazowa
+    path = _build_3mf(codes, ["#FF0000", "#00FF00"], object_extruder=1)
+
+    bundle = load_3mf_bundle(path)
+    assert bundle["has_file_colors"] is True
+    assert bundle["filament_colours"] == ["#FF0000", "#00FF00"]
+
+    colors = bundle["colored_mesh"].visual.face_colors
+    assert {tuple(c[:3]) for c in colors} == {(255, 0, 0), (0, 255, 0)}
+    assert sum(1 for c in colors if tuple(c[:3]) == (0, 255, 0)) == 6
+
+
+def test_paint_without_project_settings_falls_back_to_palette():
+    path = _build_3mf(["4"] * 6 + ["8"] * 6, [])
+    bundle = load_3mf_bundle(path)
+    assert bundle["has_file_colors"] is True
+    assert bundle["filament_colours"] == DEFAULT_AMS_PALETTE[:2]
+
+
+def test_single_colour_file_leaves_palette_to_user():
+    """Plik z jednym filamentem nie moze blokowac wyboru koloru przez klienta."""
+    path = _build_3mf([""] * 12, ["#FFFFFF"])
+    bundle = load_3mf_bundle(path)
+    assert bundle["has_file_colors"] is False
+    assert bundle["colored_mesh"] is None
+    assert bundle["filament_colours"] == []
+    assert len(bundle["mesh"].faces) == 12
+
+
+def test_support_threshold_matches_bambu():
+    assert SUPPORT_THRESHOLD_ANGLE_DEG == 30.0
+    # 40 stopni nachylenia bylo podpierane przy starym progu 45, Bambu juz nie podpiera.
+    assert _support_score(_tilted_panel(40.0)) == 0.0
+    assert _support_score(_tilted_panel(20.0)) > 0.0
 
 
 def test_oriented_glb_keeps_vertex_colors():
@@ -48,6 +158,8 @@ def test_oriented_glb_keeps_vertex_colors():
 
 
 if __name__ == "__main__":
-    test_load_3mf_bundle_paints_ams_parts()
-    test_oriented_glb_keeps_vertex_colors()
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            fn()
+            print(f"{name}: OK")
     print("ok")
