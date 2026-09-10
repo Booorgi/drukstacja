@@ -305,8 +305,8 @@ export default function Home() {
       }
       setAnalysisData(data);
 
-      if (data.instant_pricing && data.preview_stl_url) {
-        setModelPreviewUrl(data.preview_stl_url);
+      if (data.instant_pricing && (data.preview_glb_url || data.preview_stl_url)) {
+        setModelPreviewUrl(data.preview_glb_url || data.preview_stl_url);
       } else if (!data.instant_pricing) {
         setModelPreviewUrl(null);
       }

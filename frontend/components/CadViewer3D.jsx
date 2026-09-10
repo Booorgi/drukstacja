@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Bounds, GizmoHelper, GizmoViewcube, Html } from "@react-three/drei";
-import { STLLoader } from "three-stdlib";
+import { STLLoader, GLTFLoader } from "three-stdlib";
 import * as THREE from "three";
 
 // -----------------------------------------------------------------------------
@@ -69,6 +69,84 @@ function CameraAndActions({ resetTrigger, onScreenshotReady, setControlsRef }) {
 // -----------------------------------------------------------------------------
 // MODEL 3D Z AUTO-ORIENTACJĄ, MATERIAŁEM CAD I PODPORAMI
 // -----------------------------------------------------------------------------
+function isGlbUrl(url) {
+  if (!url) return false;
+  return /\.glb(\?|#|$)/i.test(url) || /_preview\.glb/i.test(url);
+}
+
+function centerOnBed(geo) {
+  geo.computeBoundingBox();
+  const box = geo.boundingBox;
+  const centerX = (box.min.x + box.max.x) / 2;
+  const centerZ = (box.min.z + box.max.z) / 2;
+  geo.translate(-centerX, -box.min.y, -centerZ);
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+}
+
+function autoOrientFlattestFace(geo) {
+  const pos = geo.attributes.position;
+  if (!pos || pos.count === 0) return;
+
+  const faceData = [];
+  const pA = new THREE.Vector3();
+  const pB = new THREE.Vector3();
+  const pC = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  const fn = new THREE.Vector3();
+
+  for (let i = 0; i < pos.count; i += 3) {
+    pA.fromBufferAttribute(pos, i);
+    pB.fromBufferAttribute(pos, i + 1);
+    pC.fromBufferAttribute(pos, i + 2);
+
+    ab.subVectors(pB, pA);
+    ac.subVectors(pC, pA);
+    fn.crossVectors(ab, ac);
+    const area = fn.length() * 0.5;
+    fn.normalize();
+
+    if (area > 0.01) {
+      faceData.push({ normal: fn.clone(), area });
+    }
+  }
+
+  const clusters = [];
+  faceData.forEach((f) => {
+    let found = false;
+    for (let c of clusters) {
+      if (c.normal.dot(f.normal) > 0.98) {
+        c.totalArea += f.area;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      clusters.push({ normal: f.normal.clone(), totalArea: f.area });
+    }
+  });
+
+  if (clusters.length > 0) {
+    clusters.sort((a, b) => b.totalArea - a.totalArea);
+    const bestNormal = clusters[0].normal;
+    const targetDown = new THREE.Vector3(0, -1, 0);
+    const q = new THREE.Quaternion().setFromUnitVectors(bestNormal, targetDown);
+    geo.applyQuaternion(q);
+  }
+}
+
+function placeObjectOnBed(object3d) {
+  object3d.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object3d);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  object3d.position.x -= center.x;
+  object3d.position.z -= center.z;
+  object3d.position.y -= box.min.y;
+  object3d.updateMatrixWorld(true);
+}
+
 function CadModelGeometry({
   url,
   color,
@@ -77,95 +155,89 @@ function CadModelGeometry({
   showSupports,
   showBBox,
   onGeometryLoaded,
+  skipAutoOrient = false,
+  useFileColors = false,
 }) {
   const [geometry, setGeometry] = useState(null);
+  const [gltfRoot, setGltfRoot] = useState(null);
 
   useEffect(() => {
     if (!url) return;
+    let cancelled = false;
+
+    const reportLoaded = (box3, triangleCount) => {
+      if (!onGeometryLoaded || !box3) return;
+      const sz = new THREE.Vector3();
+      box3.getSize(sz);
+      onGeometryLoaded({
+        box: box3,
+        size: [sz.x, sz.y, sz.z],
+        triangleCount,
+      });
+    };
+
+    if (isGlbUrl(url)) {
+      const loader = new GLTFLoader();
+      loader.load(
+        url,
+        (gltf) => {
+          if (cancelled) return;
+          const root = gltf.scene;
+          root.rotation.x = -Math.PI / 2;
+          placeObjectOnBed(root);
+
+          let triCount = 0;
+          root.traverse((ch) => {
+            if (!ch.isMesh) return;
+            ch.castShadow = true;
+            ch.receiveShadow = true;
+            const pos = ch.geometry?.attributes?.position;
+            if (pos) {
+              const indexed = ch.geometry.index ? ch.geometry.index.count / 3 : pos.count / 3;
+              triCount += indexed;
+            }
+          });
+
+          setGeometry(null);
+          setGltfRoot(root);
+          reportLoaded(new THREE.Box3().setFromObject(root), triCount);
+        },
+        undefined,
+        (err) => console.error("Błąd ładowania GLB w CadViewer3D:", err)
+      );
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const loader = new STLLoader();
     loader.load(
       url,
       (geo) => {
+        if (cancelled) return;
         geo.computeVertexNormals();
 
-        // 1. Auto-orientacja: ułożenie na najbardziej płaskiej ściance (flattest face)
+        if (skipAutoOrient) {
+          geo.rotateX(-Math.PI / 2);
+        } else {
+          autoOrientFlattestFace(geo);
+        }
+
+        centerOnBed(geo);
+
         const pos = geo.attributes.position;
-        if (pos && pos.count > 0) {
-          const faceData = [];
-          const pA = new THREE.Vector3(),
-            pB = new THREE.Vector3(),
-            pC = new THREE.Vector3();
-          const ab = new THREE.Vector3(),
-            ac = new THREE.Vector3(),
-            fn = new THREE.Vector3();
-
-          for (let i = 0; i < pos.count; i += 3) {
-            pA.fromBufferAttribute(pos, i);
-            pB.fromBufferAttribute(pos, i + 1);
-            pC.fromBufferAttribute(pos, i + 2);
-
-            ab.subVectors(pB, pA);
-            ac.subVectors(pC, pA);
-            fn.crossVectors(ab, ac);
-            const area = fn.length() * 0.5;
-            fn.normalize();
-
-            if (area > 0.01) {
-              faceData.push({ normal: fn.clone(), area });
-            }
-          }
-
-          const clusters = [];
-          faceData.forEach((f) => {
-            let found = false;
-            for (let c of clusters) {
-              if (c.normal.dot(f.normal) > 0.98) {
-                c.totalArea += f.area;
-                found = true;
-                break;
-              }
-            }
-            if (!found) {
-              clusters.push({ normal: f.normal.clone(), totalArea: f.area });
-            }
-          });
-
-          if (clusters.length > 0) {
-            clusters.sort((a, b) => b.totalArea - a.totalArea);
-            const bestNormal = clusters[0].normal;
-            const targetDown = new THREE.Vector3(0, -1, 0);
-            const q = new THREE.Quaternion().setFromUnitVectors(bestNormal, targetDown);
-            geo.applyQuaternion(q);
-          }
-        }
-
-        // 2. Centrowanie modelu na stole (Y = 0)
-        geo.computeBoundingBox();
-        const box = geo.boundingBox;
-        const centerX = (box.min.x + box.max.x) / 2;
-        const centerZ = (box.min.z + box.max.z) / 2;
-        const minY = box.min.y;
-
-        geo.translate(-centerX, -minY, -centerZ);
-        geo.computeVertexNormals();
-
+        setGltfRoot(null);
         setGeometry(geo);
-        if (onGeometryLoaded) {
-          geo.computeBoundingBox();
-          const b = geo.boundingBox;
-          const sz = new THREE.Vector3();
-          b.getSize(sz);
-          onGeometryLoaded({
-            box: b,
-            size: [sz.x, sz.y, sz.z],
-            triangleCount: pos.count / 3,
-          });
-        }
+        reportLoaded(geo.boundingBox, pos ? pos.count / 3 : 0);
       },
       undefined,
       (err) => console.error("Błąd ładowania STL w CadViewer3D:", err)
     );
-  }, [url, onGeometryLoaded]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [url, skipAutoOrient, onGeometryLoaded]);
 
   // Wyliczanie powierzchni podpór (kąt nawisu > 45°)
   const supportMeshGeometry = useMemo(() => {
@@ -211,15 +283,25 @@ function CadModelGeometry({
 
   // Obliczenie wymiarów Bounding Box
   const bboxData = useMemo(() => {
-    if (!geometry) return null;
-    geometry.computeBoundingBox();
-    const b = geometry.boundingBox;
-    const size = new THREE.Vector3();
-    b.getSize(size);
-    const center = new THREE.Vector3();
-    b.getCenter(center);
-    return { size, center };
-  }, [geometry]);
+    if (geometry) {
+      geometry.computeBoundingBox();
+      const b = geometry.boundingBox;
+      const size = new THREE.Vector3();
+      b.getSize(size);
+      const center = new THREE.Vector3();
+      b.getCenter(center);
+      return { size, center };
+    }
+    if (gltfRoot) {
+      const b = new THREE.Box3().setFromObject(gltfRoot);
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      b.getSize(size);
+      b.getCenter(center);
+      return { size, center };
+    }
+    return null;
+  }, [geometry, gltfRoot]);
 
   // Dobór parametrów shadera pod kątem wybranego materiału
   const materialProps = useMemo(() => {
@@ -263,21 +345,43 @@ function CadModelGeometry({
     };
   }, [materialConfig]);
 
-  if (!geometry) return null;
+  useEffect(() => {
+    if (!gltfRoot) return undefined;
+    gltfRoot.traverse((ch) => {
+      if (!ch.isMesh) return;
+      const prev = ch.material;
+      const next = new THREE.MeshPhysicalMaterial({
+        color: useFileColors ? "#ffffff" : color,
+        vertexColors: Boolean(useFileColors && ch.geometry?.attributes?.color),
+        roughness: materialProps.roughness,
+        metalness: materialProps.metalness,
+        clearcoat: materialProps.clearcoat,
+        clearcoatRoughness: materialProps.clearcoatRoughness || 0.1,
+        wireframe: isWireframe,
+        map: prev && prev.map ? prev.map : null,
+      });
+      ch.material = next;
+    });
+  }, [gltfRoot, color, useFileColors, materialProps, isWireframe]);
+
+  if (!geometry && !gltfRoot) return null;
 
   return (
     <group>
-      {/* Główny model CAD */}
-      <mesh geometry={geometry} castShadow receiveShadow>
-        <meshPhysicalMaterial
-          color={color}
-          roughness={materialProps.roughness}
-          metalness={materialProps.metalness}
-          clearcoat={materialProps.clearcoat}
-          clearcoatRoughness={materialProps.clearcoatRoughness || 0.1}
-          wireframe={isWireframe}
-        />
-      </mesh>
+      {geometry && (
+        <mesh geometry={geometry} castShadow receiveShadow>
+          <meshPhysicalMaterial
+            color={useFileColors ? "#ffffff" : color}
+            vertexColors={Boolean(useFileColors && geometry.attributes.color)}
+            roughness={materialProps.roughness}
+            metalness={materialProps.metalness}
+            clearcoat={materialProps.clearcoat}
+            clearcoatRoughness={materialProps.clearcoatRoughness || 0.1}
+            wireframe={isWireframe}
+          />
+        </mesh>
+      )}
+      {gltfRoot && <primitive object={gltfRoot} />}
 
       {/* Podświetlenie nawisów / podpór */}
       {supportMeshGeometry && !isWireframe && (
@@ -348,8 +452,13 @@ export default function CadViewer3D({
   const [volumeUnit, setVolumeUnit] = useState("cm3"); // "cm3" | "mm3"
   const [isDfmOpen, setIsDfmOpen] = useState(true);
   const [loadedDimensions, setLoadedDimensions] = useState(null);
+  const [recolorToMaterial, setRecolorToMaterial] = useState(false);
 
   const screenshotHandlerRef = useRef(null);
+
+  useEffect(() => {
+    setRecolorToMaterial(false);
+  }, [modelUrl]);
 
   // Wymiary i objętość (z analysisData lub wczytanej geometrii)
   const volumeCm3 = analysisData?.volume_cm3 ?? 10.0;
@@ -371,25 +480,47 @@ export default function CadViewer3D({
     return [0, 0, 0];
   }, [analysisData, loadedDimensions]);
 
+  const hasFileColors = Boolean(
+    analysisData?.has_file_colors || analysisData?.preview_glb_url
+  );
+  const useFileColors = hasFileColors && !recolorToMaterial;
+  const skipAutoOrient = Boolean(analysisData?.orientation);
+
   // Lista kolorów do wyświetlenia w lewym doku próbek
   const colorSwatches = useMemo(() => {
+    const fileSwatches = (analysisData?.filament_colours || [])
+      .filter((hex) => typeof hex === "string" && hex.startsWith("#"))
+      .map((hex, i) => ({
+        id: `ams_${i}`,
+        name: `Kolor AMS ${i + 1}`,
+        hex,
+      }));
+
+    let materialSwatches = [];
     if (materialConfig?.colors && materialConfig.colors.length > 0) {
-      return materialConfig.colors;
+      materialSwatches = materialConfig.colors;
+    } else if (availableColors && availableColors.length > 0) {
+      materialSwatches = availableColors;
+    } else {
+      materialSwatches = [
+        { id: "c_black", name: "Głęboka Czerń", hex: "#1A1A1A" },
+        { id: "c_white", name: "Czysta Biel", hex: "#F5F5F5" },
+        { id: "c_grey", name: "Szary Techniczny", hex: "#63666A" },
+        { id: "c_red", name: "Ognista Czerwień", hex: "#D32F2F" },
+        { id: "c_blue", name: "Kobalt Błękit", hex: "#1976D2" },
+        { id: "c_orange", name: "Pomarańcz", hex: "#F57C00" },
+        { id: "c_green", name: "Zieleń", hex: "#388E3C" },
+        { id: "c_gold", name: "Złoty Silk", hex: "#D4AF37" },
+      ];
     }
-    if (availableColors && availableColors.length > 0) {
-      return availableColors;
-    }
+
+    if (fileSwatches.length === 0) return materialSwatches;
+    const fileHex = new Set(fileSwatches.map((c) => c.hex.toLowerCase()));
     return [
-      { id: "c_black", name: "Głęboka Czerń", hex: "#1A1A1A" },
-      { id: "c_white", name: "Czysta Biel", hex: "#F5F5F5" },
-      { id: "c_grey", name: "Szary Techniczny", hex: "#63666A" },
-      { id: "c_red", name: "Ognista Czerwień", hex: "#D32F2F" },
-      { id: "c_blue", name: "Kobalt Błękit", hex: "#1976D2" },
-      { id: "c_orange", name: "Pomarańcz", hex: "#F57C00" },
-      { id: "c_green", name: "Zieleń", hex: "#388E3C" },
-      { id: "c_gold", name: "Złoty Silk", hex: "#D4AF37" },
+      ...fileSwatches,
+      ...materialSwatches.filter((c) => !fileHex.has((c.hex || "").toLowerCase())),
     ];
-  }, [materialConfig, availableColors]);
+  }, [materialConfig, availableColors, analysisData]);
 
   // Punkty walidacji DFM
   const isWatertight = analysisData?.watertight ?? true;
@@ -429,7 +560,7 @@ export default function CadViewer3D({
         <directionalLight position={[0, -40, 0]} intensity={0.25} />
 
         {/* Model 3D */}
-        <Bounds fit clip observe margin={1.2}>
+        <Bounds fit observe margin={1.85}>
           <CadModelGeometry
             url={modelUrl}
             color={selectedColor}
@@ -438,6 +569,8 @@ export default function CadViewer3D({
             showSupports={showSupports}
             showBBox={showBBox}
             onGeometryLoaded={setLoadedDimensions}
+            skipAutoOrient={skipAutoOrient}
+            useFileColors={useFileColors}
           />
         </Bounds>
 
@@ -530,12 +663,18 @@ export default function CadViewer3D({
           </span>
           <div className="flex flex-col gap-1 py-0.5 px-0.5">
             {colorSwatches.map((c) => {
-              const isSelected = selectedColor?.toLowerCase() === c.hex?.toLowerCase();
+              const isSelected =
+                !useFileColors &&
+                selectedColor?.toLowerCase() === c.hex?.toLowerCase();
               return (
                 <button
                   key={c.id || c.hex}
                   type="button"
-                  onClick={() => onColorChange && onColorChange(c.hex, c.id)}
+                  onClick={() => {
+                    if (String(c.id || "").startsWith("ams_")) return;
+                    setRecolorToMaterial(true);
+                    if (onColorChange) onColorChange(c.hex, c.id);
+                  }}
                   title={c.name}
                   className={`w-6 h-6 rounded-full p-0.5 border-2 transition-all flex items-center justify-center flex-shrink-0 cursor-pointer ${
                     isSelected

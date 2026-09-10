@@ -9,10 +9,11 @@ Obsługuje:
 """
 import os
 import io
+import json
 import zipfile
 import tarfile
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional
 import xml.etree.ElementTree as ET
 
 import trimesh
@@ -64,52 +65,224 @@ class UnsupportedFileType(Exception):
 # POMOCNICZE: ANALIZA SIATKI TRIMESH
 # --------------------------------------------------------------------------
 
+def _local_tag(tag: str) -> str:
+    if not tag:
+        return ""
+    if tag[0] == "{":
+        return tag.split("}", 1)[-1]
+    return tag
+
+
+def _hex_to_rgba(hex_color: str) -> np.ndarray:
+    raw = (hex_color or "#888888").strip()
+    if raw.startswith("#"):
+        raw = raw[1:]
+    if len(raw) == 8:
+        r, g, b, a = int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16), int(raw[6:8], 16)
+    elif len(raw) == 6:
+        r, g, b, a = int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16), 255
+    else:
+        r, g, b, a = 136, 136, 136, 255
+    return np.array([r, g, b, a], dtype=np.uint8)
+
+
+def _read_file_bytes(file_input) -> bytes:
+    if isinstance(file_input, (str, Path)):
+        with open(file_input, "rb") as f:
+            return f.read()
+    if isinstance(file_input, io.BytesIO):
+        return file_input.getvalue()
+    if isinstance(file_input, bytes):
+        return file_input
+    return bytes(file_input)
+
+
+def _mesh_from_mesh_elem(mesh_elem) -> Optional[trimesh.Trimesh]:
+    verts = []
+    faces = []
+    for child in mesh_elem:
+        tag = _local_tag(child.tag)
+        if tag == "vertices":
+            for v in child:
+                try:
+                    verts.append([
+                        float(v.attrib.get("x", 0.0)),
+                        float(v.attrib.get("y", 0.0)),
+                        float(v.attrib.get("z", 0.0)),
+                    ])
+                except Exception:
+                    pass
+        elif tag == "triangles":
+            for t in child:
+                try:
+                    faces.append([
+                        int(t.attrib.get("v1", 0)),
+                        int(t.attrib.get("v2", 0)),
+                        int(t.attrib.get("v3", 0)),
+                    ])
+                except Exception:
+                    pass
+    if not verts or not faces:
+        return None
+    return trimesh.Trimesh(
+        vertices=np.array(verts, dtype=float),
+        faces=np.array(faces, dtype=int),
+        process=False,
+    )
+
+
+def parse_model_xml_objects(xml_bytes: bytes) -> List[dict]:
+    """Zwraca listę {'id', 'mesh'} dla każdego <object> z siatką w pliku .model."""
+    try:
+        root = ET.fromstring(xml_bytes)
+    except Exception:
+        return []
+
+    objects = []
+    for elem in root.iter():
+        if _local_tag(elem.tag) != "object":
+            continue
+        obj_id = elem.attrib.get("id")
+        mesh_elem = None
+        for child in list(elem):
+            if _local_tag(child.tag) == "mesh":
+                mesh_elem = child
+                break
+        if mesh_elem is None:
+            continue
+        mesh = _mesh_from_mesh_elem(mesh_elem)
+        if mesh is None or len(mesh.faces) == 0:
+            continue
+        objects.append({"id": str(obj_id) if obj_id is not None else "", "mesh": mesh})
+    return objects
+
+
 def parse_model_xml_content(xml_bytes: bytes) -> Optional[trimesh.Trimesh]:
     """
     Błyskawiczny parser XML dla pojedynczego pliku .model (np. 3D/Objects/object_*.model).
     Wyciąga bezpośrednio wierzchołki i trójkąty bez narzutu biblioteki trimesh i resolverów sceny.
     """
-    try:
-        root = ET.fromstring(xml_bytes)
-    except Exception:
+    objects = parse_model_xml_objects(xml_bytes)
+    if not objects:
         return None
+    meshes = [o["mesh"] for o in objects]
+    if len(meshes) == 1:
+        return meshes[0]
+    return trimesh.util.concatenate(meshes)
 
-    all_v = []
-    all_f = []
-    v_offset = 0
 
-    for mesh_elem in root.iter():
-        if mesh_elem.tag.endswith("mesh"):
-            for child in mesh_elem:
-                if child.tag.endswith("vertices"):
-                    for v in child:
-                        try:
-                            all_v.append([
-                                float(v.attrib.get("x", 0.0)),
-                                float(v.attrib.get("y", 0.0)),
-                                float(v.attrib.get("z", 0.0)),
-                            ])
-                        except Exception:
-                            pass
-                elif child.tag.endswith("triangles"):
-                    for t in child:
-                        try:
-                            all_f.append([
-                                int(t.attrib.get("v1", 0)) + v_offset,
-                                int(t.attrib.get("v2", 0)) + v_offset,
-                                int(t.attrib.get("v3", 0)) + v_offset,
-                            ])
-                        except Exception:
-                            pass
-            v_offset = len(all_v)
+def _extract_3mf_color_metadata(zf: zipfile.ZipFile) -> Tuple[List[str], Dict[str, int]]:
+    """Kolory AMS (filament_colour) oraz mapa part id -> numer ekstrudera (1-based)."""
+    names = zf.namelist()
+    colours: List[str] = []
+    extruders: Dict[str, int] = {}
 
-    if all_v and all_f:
-        return trimesh.Trimesh(
-            vertices=np.array(all_v, dtype=float),
-            faces=np.array(all_f, dtype=int),
-            process=False,
-        )
-    return None
+    ps_name = next(
+        (n for n in names if n.replace("\\", "/").endswith("Metadata/project_settings.config")),
+        None,
+    )
+    if ps_name:
+        try:
+            ps = json.loads(zf.read(ps_name).decode("utf-8", errors="replace"))
+            raw = ps.get("filament_colour") or []
+            if isinstance(raw, list):
+                for c in raw:
+                    s = str(c).strip()
+                    if not s:
+                        continue
+                    if not s.startswith("#"):
+                        s = f"#{s}"
+                    colours.append(s.upper() if len(s) in (7, 9) else s)
+        except Exception as err:
+            print(f"[WARN] Nie udało się odczytać filament_colour: {err}")
+
+    ms_name = next(
+        (n for n in names if n.replace("\\", "/").endswith("Metadata/model_settings.config")),
+        None,
+    )
+    if ms_name:
+        try:
+            root = ET.fromstring(zf.read(ms_name))
+            for el in root.iter():
+                if _local_tag(el.tag) != "part":
+                    continue
+                pid = el.attrib.get("id")
+                if not pid:
+                    continue
+                for child in el:
+                    if _local_tag(child.tag) != "metadata":
+                        continue
+                    if child.attrib.get("key") != "extruder":
+                        continue
+                    val = child.attrib.get("value") or child.text
+                    try:
+                        extruders[str(pid)] = int(val)
+                    except Exception:
+                        pass
+        except Exception as err:
+            print(f"[WARN] Nie udało się odczytać model_settings extruder: {err}")
+
+    return colours, extruders
+
+
+def load_3mf_bundle(file_input) -> dict:
+    """
+    Wczytuje .3MF: geometrię do slicera oraz opcjonalną siatkę z kolorami AMS (podgląd GLB).
+    """
+    file_bytes = _read_file_bytes(file_input)
+    objects: List[dict] = []
+    filament_colours: List[str] = []
+    part_extruder: Dict[str, int] = {}
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as z:
+            names = z.namelist()
+            object_models = [
+                f for f in names if "3d/objects/" in f.lower() and f.lower().endswith(".model")
+            ]
+            all_models = [f for f in names if f.lower().endswith(".model")]
+            target_models = object_models if object_models else all_models
+
+            for mf in target_models:
+                try:
+                    objects.extend(parse_model_xml_objects(z.read(mf)))
+                except Exception as parse_err:
+                    print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
+
+            filament_colours, part_extruder = _extract_3mf_color_metadata(z)
+    except Exception as zip_err:
+        print(f"[WARN] Błąd inspekcji kontenera ZIP .3MF: {zip_err}")
+
+    if not objects:
+        raise ValueError("Nie udało się odczytać geometrii 3D z pliku .3MF.")
+
+    meshes = [o["mesh"] for o in objects]
+    mesh = meshes[0] if len(meshes) == 1 else trimesh.util.concatenate(meshes)
+
+    colored_mesh = None
+    has_file_colors = bool(filament_colours) and bool(part_extruder)
+    if has_file_colors:
+        painted = []
+        fallback = _hex_to_rgba(filament_colours[0] if filament_colours else "#888888")
+        for obj in objects:
+            ext = part_extruder.get(str(obj["id"]), 1)
+            if 1 <= ext <= len(filament_colours):
+                rgba = _hex_to_rgba(filament_colours[ext - 1])
+            else:
+                rgba = fallback
+            part = obj["mesh"].copy()
+            n_faces = max(len(part.faces), 1)
+            part.visual.face_colors = np.broadcast_to(rgba, (n_faces, 4)).copy()
+            painted.append(part)
+        colored_mesh = painted[0] if len(painted) == 1 else trimesh.util.concatenate(painted)
+
+    return {
+        "mesh": mesh,
+        "colored_mesh": colored_mesh,
+        "filament_colours": filament_colours,
+        "part_count": len(objects),
+        "has_file_colors": bool(colored_mesh is not None),
+    }
 
 
 def parse_3mf_safely(file_input) -> trimesh.Trimesh:
@@ -118,49 +291,7 @@ def parse_3mf_safely(file_input) -> trimesh.Trimesh:
     Bambu Studio / OrcaSlicer w 3D/Objects/*.model).
     Chroni serwer przed timeoutami, pętlami resolvera 'world' oraz nadmiernym zużyciem RAM.
     """
-    if isinstance(file_input, (str, Path)):
-        with open(file_input, "rb") as f:
-            file_bytes = f.read()
-    elif isinstance(file_input, io.BytesIO):
-        file_bytes = file_input.getvalue()
-    elif isinstance(file_input, bytes):
-        file_bytes = file_input
-    else:
-        file_bytes = bytes(file_input)
-
-    # 1. Sprawdzamy archiwum ZIP i szukamy plików .model (w tym 3D/Objects/*.model)
-    try:
-        with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as z:
-            names = z.namelist()
-            object_models = [f for f in names if "3d/objects/" in f.lower() and f.lower().endswith(".model")]
-            all_models = [f for f in names if f.lower().endswith(".model")]
-
-            # Jeśli w archiwum są klastry 3D/Objects/ (specyfika Bambu Studio),
-            # parsujemy je bezpośrednio bez dotykania wadliwego resolvera sceny!
-            target_models = object_models if object_models else all_models
-
-            if target_models:
-                meshes = []
-                for mf in target_models:
-                    try:
-                        content = z.read(mf)
-                        m = parse_model_xml_content(content)
-                        if m and len(m.faces) > 0:
-                            meshes.append(m)
-                    except Exception as parse_err:
-                        print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
-
-                if meshes:
-                    if len(meshes) == 1:
-                        return meshes[0]
-                    return trimesh.util.concatenate(meshes)
-    except Exception as zip_err:
-        print(f"[WARN] Błąd inspekcji kontenera ZIP .3MF: {zip_err}")
-
-    # trimesh.load() na projektach Bambu (assembly + p:path, mesh w 3D/Objects/)
-    # potrafi zablokować worker na minuty. Nie używamy go jako fallback.
-
-    raise ValueError("Nie udało się odczytać geometrii 3D z pliku .3MF.")
+    return load_3mf_bundle(file_input)["mesh"]
 
 
 def load_3mf_mesh(file_path: str) -> trimesh.Trimesh:
@@ -258,10 +389,15 @@ def analyze_mesh_file(path: str, ext: str) -> dict:
     """Wczytuje siatkę 3D (.stl, .obj, .3mf, .ply, .glb, .gltf, .off) przez trimesh lub wyspecjalizowany parser."""
     file_type = ext.lstrip(".").lower()
     if file_type == "3mf":
-        loaded = load_3mf_mesh(path)
-    else:
-        loaded = trimesh.load(path)
+        bundle = load_3mf_bundle(path)
+        geom = analyze_trimesh_geometry(bundle["mesh"])
+        geom["colored_mesh"] = bundle.get("colored_mesh")
+        geom["filament_colours"] = bundle.get("filament_colours") or []
+        geom["part_count"] = bundle.get("part_count") or 1
+        geom["has_file_colors"] = bool(bundle.get("has_file_colors"))
+        return geom
 
+    loaded = trimesh.load(path)
     return analyze_trimesh_geometry(loaded)
 
 

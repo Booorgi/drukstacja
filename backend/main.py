@@ -499,6 +499,8 @@ async def analyze_model_endpoint(
                         result["category"] = "Bryła CAD (B-Rep)"
                         result["message"] = f"Złożona bryła CAD ({source_ext.upper()}) wymaga manualnego przygotowania siatki przez inżyniera. Oferta w 24h."
 
+            colored_mesh = result.pop("colored_mesh", None)
+
             if raw_mesh is not None and result.get("instant_pricing") is True:
                 try:
                     oriented_mesh, orientation_info = auto_orient_mesh(raw_mesh)
@@ -523,6 +525,38 @@ async def analyze_model_endpoint(
                     result["preview_stl_key"] = preview_stl_key
                     result["preview_stl_url"] = preview_stl_url
                     result["orientation"] = orientation_info
+                    result["preview_glb_url"] = None
+                    result["preview_glb_key"] = None
+
+                    # Podgląd GLB z kolorami AMS (STL nie przenosi barw filamentu)
+                    if colored_mesh is not None:
+                        try:
+                            matrix = orientation_info.get("matrix")
+                            preview_colored = colored_mesh.copy()
+                            if matrix:
+                                preview_colored.apply_transform(np.array(matrix, dtype=float))
+                            glb_path = os.path.join(tmp_dir, f"{unique_id}_preview.glb")
+                            preview_colored.export(glb_path, file_type="glb")
+                            try:
+                                shutil.copyfile(
+                                    glb_path,
+                                    os.path.join(MODELS_CACHE_DIR, f"{unique_id}_preview.glb"),
+                                )
+                            except Exception:
+                                pass
+                            preview_glb_key = f"models/{unique_id}_preview.glb"
+                            with open(glb_path, "rb") as f_glb:
+                                upload_file_to_r2(
+                                    file_obj=f_glb,
+                                    object_name=preview_glb_key,
+                                    content_type="model/gltf-binary",
+                                )
+                            result["preview_glb_key"] = preview_glb_key
+                            result["preview_glb_url"] = get_file_url(preview_glb_key)
+                            result["has_file_colors"] = True
+                        except Exception as glb_err:
+                            print(f"[WARN] Nie udało się wyeksportować kolorowego podglądu GLB: {glb_err}")
+                    result["has_file_colors"] = bool(result.get("preview_glb_url"))
 
                     # Slicing z parametrami przesłanymi z frontu
                     try:
@@ -570,7 +604,10 @@ async def analyze_model_endpoint(
                     print(f"[WARN] Błąd orientacji/cięcia siatki: {mesh_proc_err}")
                     result["preview_stl_key"] = None
                     result["preview_stl_url"] = None
+                    result["preview_glb_key"] = None
+                    result["preview_glb_url"] = None
                     result["orientation"] = None
+                    result.pop("colored_mesh", None)
 
         # 4. Przypadek B: Dokument RFQ (Rysunek 2D, PCB Gerber, CAD BIM itp.)
         if result.get("instant_pricing") is not True:
@@ -578,6 +615,8 @@ async def analyze_model_endpoint(
             result["type"] = "rfq_document"
             result["preview_stl_key"] = None
             result["preview_stl_url"] = None
+            result["preview_glb_key"] = None
+            result["preview_glb_url"] = None
             result["orientation"] = None
             result["print_time_exact"] = None
             result["filament_weight_g_exact"] = None
@@ -585,6 +624,7 @@ async def analyze_model_endpoint(
             result["support_lines"] = []
 
         result.pop("mesh_object", None)
+        result.pop("colored_mesh", None)
         result.pop("mesh_source_path", None)
         result["file_key"] = r2_key
         result["original_filename"] = file.filename

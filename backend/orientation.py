@@ -172,14 +172,27 @@ def auto_orient_mesh(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, dict]:
             continue
 
     if best_transform is None:
-        return mesh, {"rotated": False, "reason": "no_valid_candidate"}
+        placed = mesh.copy()
+        zmin = float(placed.bounds[0][2]) if placed.bounds is not None else 0.0
+        T = np.eye(4)
+        T[2, 3] = -zmin
+        placed.apply_transform(T)
+        return placed, {
+            "rotated": False,
+            "reason": "no_valid_candidate",
+            "matrix": T.tolist(),
+        }
 
     oriented = mesh.copy()
     oriented.apply_transform(best_transform)
 
     # Postaw model dokladnie na stole (Z min = 0) - PrusaSlicer i tak by to
     # zrobil, ale robimy to jawnie, zeby podglad w przegladarce tez byl poprawny
-    oriented.apply_translation([0, 0, -oriented.bounds[0][2]])
+    zmin = float(oriented.bounds[0][2])
+    bed_T = np.eye(4)
+    bed_T[2, 3] = -zmin
+    oriented.apply_transform(bed_T)
+    combined = bed_T @ best_transform
 
     if dense:
         baseline_score = float(best_score)
@@ -198,4 +211,5 @@ def auto_orient_mesh(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, dict]:
         "candidates_tested": len(candidates),
         "mode": mode,
         "triangle_count": n_faces,
+        "matrix": combined.tolist(),
     }
