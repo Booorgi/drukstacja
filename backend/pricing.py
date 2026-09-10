@@ -1,9 +1,9 @@
 """
 Drukstacja - Skalibrowany silnik wyceny druku 3D (Standard rynkowy / JLCPCB / Craftcloud)
-Model wyceny bazuje na zużyciu tworzywa ze zintegrowanymi kosztami operacyjnymi i energii,
-progresywnych rabatach ilościowych oraz minimalnej wartości zamówienia (MOQ).
 """
 import math
+
+from slicer import estimate_filament_from_geometry
 
 # Stawki rynkowe brutto za gram tworzywa (materiał + prąd + amortyzacja drukarki)
 # Dla PLA: 0.27 PLN/g -> detal ~9.8g (np. Watch case 1.stl) wycenia się na dokładnie ~2.65 PLN brutto
@@ -167,21 +167,19 @@ def calculate_price(
     nozzle_size: float = 0.4,
 ) -> dict:
     """Kalkulator fallback dla zapytań bez pełnego G-Code (np. /quote)."""
-    mat = MATERIALS.get(material, MATERIALS["PLA"])
-    density = mat["density_g_cm3"]
-
-    perimeter_ratio = 0.72
-    infill_ratio = (infill_percent / 100.0) * (1.0 - perimeter_ratio)
-    effective_vol_cm3 = volume_cm3 * (perimeter_ratio + infill_ratio)
-    estimated_weight_g = round(effective_vol_cm3 * density * 1.42, 1)
-
-    print_time_h = estimate_print_time_hours(
-        volume_cm3,
-        infill_percent,
-        bbox_mm,
+    est = estimate_filament_from_geometry(
+        volume_cm3=volume_cm3,
+        surface_area_cm2=0.0,
+        dimensions_mm=bbox_mm,
+        infill=infill_percent,
         layer_height=layer_height,
         nozzle_size=nozzle_size,
+        filament_type=material,
+        support_needed=True,
+        color_count=1,
     )
+    estimated_weight_g = est["filament_weight_g"]
+    print_time_h = est["print_time_hours"]
 
     return calculate_price_from_slicer(
         print_time_hours=print_time_h,

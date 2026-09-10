@@ -8,7 +8,7 @@ from pathlib import Path
 import trimesh
 import numpy as np
 
-from orientation import SUPPORT_THRESHOLD_ANGLE_DEG
+from orientation import SUPPORT_THRESHOLD_ANGLE_DEG, _support_score
 
 try:
     import cadquery as cq
@@ -204,21 +204,131 @@ def extract_support_segments(gcode_path: str, bed_center: tuple[float, float]) -
     return formatted
 
 
+def estimate_filament_from_geometry(
+    volume_cm3: float,
+    surface_area_cm2: float,
+    dimensions_mm,
+    infill: int = 20,
+    layer_height: float = 0.20,
+    nozzle_size: float = 0.4,
+    filament_type: str = "PLA",
+    support_needed: bool = False,
+    color_count: int = 1,
+) -> dict:
+    """
+    Szacunek zużycia filamentu z geometrii, bez pełnego G-code.
+
+    Stary wzór (72% objętości jako ścianki × 1.42) był skalibrowany pod małe
+    obudowy i na rzeźbach typu Jaguar (842 cm³) dawał ~1150 g / 55 h, podczas
+    gdy Bambu Studio na tym samym pliku liczy ~518 g / 28 h (model + podpory
+    + spłukiwanie AMS).
+
+    Tutaj:
+    - ścianki z powierzchni * grubość (3 obrysy),
+    - góra/dół z przekroju * liczba warstw,
+    - infill tylko na pozostałe wnętrze,
+    - przy wielu kolorach AMS: spłukiwanie i wieża (zgodnie z Bambu).
+    """
+    density = get_filament_density(filament_type)
+    volume_cm3 = max(0.01, float(volume_cm3))
+    infill = max(0, min(100, int(infill)))
+    layer_height = max(0.05, float(layer_height or 0.20))
+    nozzle_size = max(0.1, float(nozzle_size or 0.4))
+    color_count = max(1, int(color_count or 1))
+
+    dims = [float(v) for v in (dimensions_mm or [])]
+    while len(dims) < 3:
+        dims.append(40.0)
+    height_mm = max(dims[2], layer_height)
+
+    wall_width_mm = nozzle_size * 1.1
+    wall_loops = 3
+    shell_thickness_mm = wall_loops * wall_width_mm
+    surface_mm2 = max(0.0, float(surface_area_cm2 or 0.0)) * 100.0
+    if surface_mm2 <= 0.0:
+        # Brak siatki: przybliż powierzchnię ze skali bryły w prostopadłościanie.
+        bbox_vol = max(dims[0] * dims[1] * dims[2], 1.0)
+        fill = min(1.0, (volume_cm3 * 1000.0) / bbox_vol)
+        box_sa = 2.0 * (dims[0] * dims[1] + dims[0] * dims[2] + dims[1] * dims[2])
+        surface_mm2 = box_sa * (fill ** (2.0 / 3.0))
+
+    shell_cm3 = (surface_mm2 * shell_thickness_mm) / 1000.0
+    shell_cm3 = min(shell_cm3, volume_cm3 * 0.90)
+
+    avg_cross_mm2 = (volume_cm3 * 1000.0) / height_mm
+    bbox_xy = dims[0] * dims[1]
+    proj_mm2 = min(avg_cross_mm2, bbox_xy * 0.65) if bbox_xy > 0 else avg_cross_mm2
+    top_bottom_mm = (5 + 4) * layer_height
+    tb_cm3 = (proj_mm2 * top_bottom_mm) / 1000.0
+    remaining_after_shell = max(0.0, volume_cm3 - shell_cm3)
+    tb_cm3 = min(tb_cm3, remaining_after_shell * 0.80)
+
+    interior_cm3 = max(0.0, volume_cm3 - shell_cm3 - tb_cm3)
+    infill_cm3 = interior_cm3 * (infill / 100.0)
+    model_cm3 = shell_cm3 + tb_cm3 + infill_cm3
+
+    # Linia startowa / priming - stała, nie procent od całej bryły.
+    model_cm3 += 0.70
+
+    support_cm3 = 0.0
+    if support_needed:
+        support_cm3 = model_cm3 * 0.03
+
+    flush_cm3 = 0.0
+    tower_cm3 = 0.0
+    num_layers = max(1, int(height_mm / layer_height))
+    if color_count >= 2:
+        # Bambu Jaguar: 414 zmian / 387 warstw ≈ 1 zmiana na warstwę przy cętach.
+        painted_complexity = min(1.25, 0.35 * (color_count - 1))
+        toolchanges = num_layers * painted_complexity
+        flush_cm3 = (toolchanges * 0.32) / max(density, 0.01)  # ~0.32 g na zmianę
+        tower_cm3 = (num_layers * 0.10) / max(density, 0.01)   # ~0.10 g na warstwę wieży
+
+    effective_cm3 = model_cm3 + support_cm3 + flush_cm3 + tower_cm3
+    filament_weight_g = round(effective_cm3 * density, 1)
+    filament_length_m = round(
+        (effective_cm3 * 1000.0) / (math.pi * (1.75 / 2.0) ** 2 * 1000.0),
+        2,
+    )
+
+    # Bambu A1 / 0.4 mm / 0.20 mm na tym modelu: ~15–16 cm³/h łącznie ze spłukiwaniem.
+    is_nozzle_02 = abs(nozzle_size - 0.2) < 0.05
+    mm3_per_hour = 6500.0 if is_nozzle_02 else 16000.0
+    extrusion_hours = (effective_cm3 * 1000.0) / mm3_per_hour
+    layer_overhead_hours = num_layers * (0.0018 if is_nozzle_02 else 0.0012)
+    total_hours = round(extrusion_hours + layer_overhead_hours, 2)
+    hours_float, print_time_formatted = parse_time_to_hours(str(int(total_hours * 3600)))
+
+    return {
+        "filament_weight_g": filament_weight_g,
+        "filament_length_m": filament_length_m,
+        "filament_volume_cm3": round(effective_cm3, 2),
+        "print_time_hours": hours_float,
+        "print_time_formatted": print_time_formatted,
+        "has_supports": bool(support_needed),
+        "model_cm3": round(model_cm3, 2),
+        "support_cm3": round(support_cm3, 2),
+        "flush_cm3": round(flush_cm3 + tower_cm3, 2),
+    }
+
+
 def simulate_slicing_fallback(
     stl_path: str,
     infill: int = 20,
     layer_height: float = 0.20,
     filament_type: str = "PLA",
     nozzle_size: float = 0.4,
+    color_count: int = 1,
+    support_needed: bool | None = None,
 ) -> dict:
     """
-    Precyzyjny fallback inżynieryjny na wypadek braku binarnego slicera w systemie hosta.
-    Oblicza trajektorię, obrysy (perimeters), wypełnienie oraz czas druku na podstawie
-    fizycznej geometrii bryły 3D i parametrów dyszy.
+    Fallback, gdy na hoście nie ma PrusaSlicera. Liczy zużycie z geometrii siatki
+    (ścianki z powierzchni, infill z wnętrza, AMS jeśli plik ma kilka kolorów).
     """
-    density = get_filament_density(filament_type)
     volume_cm3 = 30.0
-    height_z_mm = 40.0
+    surface_area_cm2 = 0.0
+    dimensions_mm = [40.0, 40.0, 40.0]
+    inferred_supports = False
 
     try:
         ext = Path(stl_path).suffix.lower()
@@ -247,68 +357,51 @@ def simulate_slicing_fallback(
         if not isinstance(mesh, trimesh.Trimesh):
             mesh = trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces)
 
-        try:
-            if hasattr(mesh, "process"):
-                mesh.process(validate=True)
-            if hasattr(mesh, "remove_unreferenced_vertices"):
-                mesh.remove_unreferenced_vertices()
-            trimesh.repair.fix_normals(mesh)
-            trimesh.repair.fix_winding(mesh)
-            trimesh.repair.fix_inversion(mesh)
-            trimesh.repair.fill_holes(mesh)
-        except Exception:
-            pass
-
         bbox = mesh.bounding_box.extents
         bbox_volume = float(np.prod(bbox)) if len(bbox) == 3 else 1e9
-
         if mesh.volume and not np.isnan(mesh.volume) and abs(mesh.volume) > 0:
             if abs(mesh.volume) <= bbox_volume * 1.05:
                 volume_cm3 = abs(float(mesh.volume)) / 1000.0
-        bounds = mesh.extents
-        height_z_mm = float(bounds[2]) if len(bounds) == 3 else 40.0
+        if hasattr(mesh, "area") and mesh.area:
+            surface_area_cm2 = float(mesh.area) / 100.0
+        dimensions_mm = [round(float(v), 2) for v in bbox]
+
+        if support_needed is None:
+            try:
+                inferred_supports = _support_score(mesh) > 5.0
+            except Exception:
+                inferred_supports = False
     except Exception as e:
         print(f"[WARN] Fallback mesh load error: {e}")
 
-    # Udział litych ścian zewnętrznych (obrysy perymetrów + dół/góra) oraz wypełnienia wewnętrznego
-    # W detalach technicznych (jak obudowy, koperty) ze ściankami 2-3 mm, perymetry stanowią ~72% przekroju
-    perimeter_ratio = 0.72
-    infill_ratio = (infill / 100.0) * (1.0 - perimeter_ratio)
-    effective_volume_cm3 = volume_cm3 * (perimeter_ratio + infill_ratio)
+    if support_needed is None:
+        support_needed = inferred_supports
 
-    # Precyzyjna waga tworzywa z uwzględnieniem linii startowych/ekstruzji (7.16 cm3 PLA -> 9.8g)
-    filament_weight_g = round(effective_volume_cm3 * density * 1.42, 1)
-
-    # Przekrój filamentu 1.75mm: Pole = PI * (1.75 / 2)^2 ~= 2.405 mm2
-    filament_length_m = round((effective_volume_cm3 * 1000.0) / (math.pi * (1.75 / 2.0) ** 2 * 1000.0), 2)
-
-    # Wpływ średnicy dyszy na czas druku:
-    # Dysza 0.2 mm ma szerokość ścieżki ok. 0.22 mm (zamiast 0.45 mm przy 0.4 mm)
-    # oraz wymaga znacznie wolniejszych posuwów w obrysach (30-45 mm/s vs 80-120 mm/s).
-    # Czas druku wzrasta typowo 2.4x - 2.8x.
-    is_nozzle_02 = abs(nozzle_size - 0.2) < 0.05
-    speed_factor = 2.5 if is_nozzle_02 else 1.0
-
-    num_layers = max(1, int(height_z_mm / max(0.05, layer_height)))
-    extrusion_hours = ((effective_volume_cm3 * 1000.0) / 12000.0) * speed_factor
-    layer_overhead_hours = num_layers * (0.0018 if is_nozzle_02 else 0.0012)
-    
-    total_hours = round(extrusion_hours + layer_overhead_hours, 2)
-    _, print_time_formatted = parse_time_to_hours(str(int(total_hours * 3600)))
+    est = estimate_filament_from_geometry(
+        volume_cm3=volume_cm3,
+        surface_area_cm2=surface_area_cm2,
+        dimensions_mm=dimensions_mm,
+        infill=infill,
+        layer_height=layer_height,
+        nozzle_size=nozzle_size,
+        filament_type=filament_type,
+        support_needed=bool(support_needed),
+        color_count=color_count,
+    )
 
     return {
         "success": True,
-        "engine": "high-precision-simulation",
-        "print_time_hours": total_hours,
-        "print_time_formatted": print_time_formatted,
-        "filament_weight_g": filament_weight_g,
-        "filament_length_m": filament_length_m,
-        "filament_volume_cm3": round(effective_volume_cm3, 2),
+        "engine": "geometry-estimate",
+        "print_time_hours": est["print_time_hours"],
+        "print_time_formatted": est["print_time_formatted"],
+        "filament_weight_g": est["filament_weight_g"],
+        "filament_length_m": est["filament_length_m"],
+        "filament_volume_cm3": est["filament_volume_cm3"],
         "layer_height": layer_height,
         "nozzle_size": nozzle_size,
         "infill": infill,
         "filament_type": filament_type,
-        "has_supports": False,
+        "has_supports": est["has_supports"],
         "support_lines": [],
     }
 
@@ -320,6 +413,8 @@ def run_slicer(
     filament_type: str = "PLA",
     support_material: bool = True,
     nozzle_size: float = 0.4,
+    color_count: int = 1,
+    support_needed: bool | None = None,
 ) -> dict:
     """
     Uruchamia natywny proces slicera (PrusaSlicer CLI) na pliku STL,
@@ -336,6 +431,8 @@ def run_slicer(
             layer_height=layer_height,
             filament_type=filament_type,
             nozzle_size=nozzle_size,
+            color_count=color_count,
+            support_needed=support_needed,
         )
 
     with tempfile.NamedTemporaryFile(suffix=".gcode", delete=False) as tmp_gcode:
@@ -477,6 +574,8 @@ def run_slicer(
             layer_height=layer_height,
             filament_type=filament_type,
             nozzle_size=nozzle_size,
+            color_count=color_count,
+            support_needed=support_needed,
         )
 
     finally:

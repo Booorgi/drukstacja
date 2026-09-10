@@ -80,6 +80,8 @@ class ResliceRequest(BaseModel):
     infill: int = 20
     filament_type: str = "PLA"
     quantity: int = 1
+    color_count: int = 1
+    support_needed: bool = True
 
 
 class Generate3MFRequest(BaseModel):
@@ -570,6 +572,8 @@ async def analyze_model_endpoint(
                             layer_height=float(layer_height),
                             nozzle_size=float(nozzle_size),
                             filament_type=filament_type,
+                            color_count=len(result.get("filament_colours") or []),
+                            support_needed=True,
                         )
                         result["slicer_engine"] = slice_data.get("engine")
                         result["print_time_hours"] = slice_data.get("print_time_hours")
@@ -697,6 +701,8 @@ def reslice_model_endpoint(req: ResliceRequest):
         layer_height=float(req.layer_height),
         nozzle_size=float(req.nozzle_size),
         filament_type=req.filament_type,
+        color_count=int(req.color_count or 1),
+        support_needed=bool(req.support_needed),
     )
 
     price_info = calculate_price_from_slicer(

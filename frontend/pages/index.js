@@ -394,6 +394,8 @@ export default function Home() {
             infill: parseInt(infill),
             filament_type: matConfig?.slicerType || matConfig?.name?.split(" ")[0] || "PLA",
             quantity: quantity,
+            color_count: (analysisData.filament_colours || []).length,
+            support_needed: Boolean(analysisData.has_supports || analysisData.support_needed || true),
           }),
         });
 
