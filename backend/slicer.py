@@ -19,7 +19,7 @@ except Exception:
 FILAMENT_DENSITIES = {
     "PLA": 1.24,
     "PLA Silk": 1.24,
-    "PLA Matte": 1.22,
+    "PLA Matte": 1.24,
     "PETG": 1.27,
     "PETG FR": 1.29,
     "PETG_FR": 1.29,
@@ -232,7 +232,8 @@ def estimate_filament_from_geometry(
     - ścianki z powierzchni * grubość (3 obrysy),
     - góra/dół z przekroju * liczba warstw,
     - infill tylko na pozostałe wnętrze,
-    - przy wielu kolorach AMS: spłukiwanie i wieża (zgodnie z Bambu).
+    - przy wielu kolorach AMS: grubsza skorupa (Ensure vertical shell thickness)
+      oraz spłukiwanie i wieża jak w Bambu.
     """
     density = get_filament_density(filament_type)
     volume_cm3 = max(0.01, float(volume_cm3))
@@ -262,6 +263,10 @@ def estimate_filament_from_geometry(
         surface_mm2 = box_sa * (fill ** (2.0 / 3.0))
 
     shell_cm3 = (surface_mm2 * shell_thickness_mm) / 1000.0
+    # Bambu na malowanych rzeźbach dogęszcza pionowe ścianki (Jaguar przy 5%
+    # infill i tak ma ~338 g modelu, nie ~200 g z samych 3 obrysów).
+    if color_count >= 2:
+        shell_cm3 *= 1.96
     shell_cm3 = min(shell_cm3, volume_cm3 * 0.90)
 
     avg_cross_mm2 = (volume_cm3 * 1000.0) / height_mm
@@ -306,6 +311,8 @@ def estimate_filament_from_geometry(
     # Bambu A1 / 0.4 mm / 0.20 mm na tym modelu: ~15–16 cm³/h łącznie ze spłukiwaniem.
     is_nozzle_02 = abs(nozzle_size - 0.2) < 0.05
     mm3_per_hour = 6500.0 if is_nozzle_02 else 16000.0
+    if color_count >= 2:
+        mm3_per_hour *= 0.96  # postoje na zmiany AMS
     extrusion_hours = (effective_cm3 * 1000.0) / mm3_per_hour
     layer_overhead_hours = num_layers * (0.0018 if is_nozzle_02 else 0.0012)
     total_hours = round(extrusion_hours + layer_overhead_hours, 2)

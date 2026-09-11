@@ -365,8 +365,6 @@ def _extract_3mf_print_profile(ps: dict) -> dict:
     layer = _as_float(ps.get("layer_height"), None)
     infill = _typical_percent(ps.get("sparse_infill_density"))
     process = _first_str(ps.get("print_settings_id"))
-    if infill is not None and infill < 10 and "standard" in process.lower():
-        infill = 15
 
     return {
         "filament_colours": colours,

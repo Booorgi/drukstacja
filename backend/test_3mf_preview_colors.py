@@ -127,7 +127,7 @@ def test_3mf_reads_bambu_slice_info():
     assert stats["color_count"] == 4
 
 
-def test_standard_profile_uses_15_percent_not_stray_5():
+def test_standard_profile_keeps_file_infill():
     from analysis import _extract_3mf_print_profile
 
     profile = _extract_3mf_print_profile(
@@ -141,7 +141,7 @@ def test_standard_profile_uses_15_percent_not_stray_5():
             ],
         }
     )
-    assert profile["infill"] == 15
+    assert profile["infill"] == 5
     assert profile["filament_types"] == ["PLA Matte", "PLA Basic"]
 
 

@@ -9,15 +9,14 @@ from slicer import estimate_filament_from_geometry, run_slicer, slice_result_fro
 
 def test_jaguar_matches_bambu_ballpark():
     """
-    Jaguar+v2+Bambu.3mf w Bambu Studio:
+    Jaguar+v2+Bambu.3mf w Bambu Studio (5% infill, AMS):
     model+podpory 348 g, flush+wieza 170 g, razem 518 g / 163 m / 1d 3h 41m.
-    Strona ze starym wzorem dawala 1150.6 g / 271.68 m / 54h 55m.
     """
     est = estimate_filament_from_geometry(
         volume_cm3=842.10,
         surface_area_cm2=838.1,
         dimensions_mm=[187.49, 203.71, 77.46],
-        infill=20,
+        infill=5,
         layer_height=0.20,
         nozzle_size=0.4,
         filament_type="PLA",
@@ -25,11 +24,11 @@ def test_jaguar_matches_bambu_ballpark():
         color_count=4,
         painted_ratio=0.66,
     )
-    # Bambu 518 g - dopuszczamy +/- 15%
-    assert 440 <= est["filament_weight_g"] <= 600, est
-    assert 140 <= est["filament_length_m"] <= 190, est
+    # Bambu 518 g / 1d 3h 40m - dopuszczamy +/- 10%
+    assert 470 <= est["filament_weight_g"] <= 570, est
+    assert 150 <= est["filament_length_m"] <= 190, est
     hours = est["print_time_hours"]
-    assert 22 <= hours <= 34, est
+    assert 25 <= hours <= 31, est
     # Zdecydowanie mniej niz stary wzor 1150 g / 55 h
     assert est["filament_weight_g"] < 800
     assert hours < 40
@@ -58,7 +57,7 @@ def test_painted_file_adds_ams_even_if_color_count_missing():
         volume_cm3=842.10,
         surface_area_cm2=838.1,
         dimensions_mm=[187.49, 203.71, 77.46],
-        infill=20,
+        infill=5,
         layer_height=0.20,
         nozzle_size=0.4,
         filament_type="PLA",
@@ -91,7 +90,7 @@ def test_old_formula_no_longer_used_for_large_solids():
         volume_cm3=842.10,
         surface_area_cm2=838.1,
         dimensions_mm=[187.49, 203.71, 77.46],
-        infill=20,
+        infill=5,
         layer_height=0.20,
         nozzle_size=0.4,
         filament_type="PLA",
