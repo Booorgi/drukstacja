@@ -590,7 +590,7 @@ export default function CadViewer3D({
         gl={{ preserveDrawingBuffer: true, antialias: true }}
         className="w-full h-full cursor-grab active:cursor-grabbing"
       >
-        <color attach="background" args={[studio ? "#9A9A9A" : "#F8FAFC"]} />
+        <color attach="background" args={[studio ? "#E2E2E2" : "#F8FAFC"]} />
 
         {/* Zrównoważone oświetlenie studyjne */}
         <ambientLight intensity={0.9} />
@@ -615,7 +615,7 @@ export default function CadViewer3D({
 
         {/* Siatka pomiarowa stołu roboczego (260x260 mm) */}
         <gridHelper
-          args={studio ? [400, 20, "#8A8A8A", "#A0A0A0"] : [260, 26, "#94A3B8", "#E2E8F0"]}
+          args={studio ? [400, 20, "#C8C8C8", "#D6D6D6"] : [260, 26, "#94A3B8", "#E2E8F0"]}
           position={[0, 0, 0]}
         />
 
@@ -931,6 +931,41 @@ export default function CadViewer3D({
 
         </div>
       </div>}
+
+      {studio && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+          <div className="bg-[#111111]/85 backdrop-blur-xl border border-white/10 rounded-full px-2 py-1 shadow-lg flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setResetTrigger((prev) => prev + 1)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white/80 hover:text-white hover:bg-white/10 text-sm font-medium transition"
+              title="Wycentruj model"
+            >
+              Centrum
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsWireframe(!isWireframe)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition ${
+                isWireframe ? "bg-white text-neutral-900" : "text-white/80 hover:text-white hover:bg-white/10"
+              }`}
+              title="Widok siatki CAD"
+            >
+              CAD
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSupports(!showSupports)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition ${
+                showSupports ? "bg-[#EF4444] text-white" : "text-white/80 hover:text-white hover:bg-white/10"
+              }`}
+              title="Podświetl nawisy wymagające podpór"
+            >
+              Podpory
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );

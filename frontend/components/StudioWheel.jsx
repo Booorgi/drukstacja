@@ -31,7 +31,13 @@ export default function StudioWheel({
   const r = 48;
   const inner = 16;
   const step = 360 / n;
-  const selected = items.find((it) => String(it.id) === String(value) || String(it.value) === String(value));
+  const selected = items.find(
+    (it) =>
+      String(it.id) === String(value) ||
+      String(it.value) === String(value) ||
+      String(it.hex || "").toLowerCase() === String(value || "").toLowerCase() ||
+      (it.value != null && value != null && Number(it.value) === Number(value))
+  );
 
   return (
     <div className={`flex flex-col items-center gap-2 ${className}`}>
@@ -46,7 +52,8 @@ export default function StudioWheel({
             const isOn =
               String(item.id) === String(value) ||
               String(item.value) === String(value) ||
-              String(item.hex || "").toLowerCase() === String(value || "").toLowerCase();
+              String(item.hex || "").toLowerCase() === String(value || "").toLowerCase() ||
+              (item.value != null && value != null && Number(item.value) === Number(value));
             const fill = item.hex || item.color || "#d4d4d4";
             const isLight = ["#ffffff", "#f5f5f5", "#f8f9fa", "#fff", "#eeeeee"].includes(
               String(fill).toLowerCase()
@@ -74,9 +81,16 @@ export default function StudioWheel({
         </svg>
       </div>
       {label ? (
-        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-neutral-700/80">
-          {label}
-        </span>
+        <div className="text-center max-w-[108px]">
+          <span className="text-[13px] font-semibold text-neutral-900 block leading-tight">
+            {label}
+          </span>
+          {selected?.name ? (
+            <span className="text-[11px] text-neutral-600 block mt-0.5 leading-tight">
+              {selected.name}
+            </span>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

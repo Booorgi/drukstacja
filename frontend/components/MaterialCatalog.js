@@ -270,13 +270,13 @@ export default function MaterialCatalog({ onSelectMaterial }) {
   return (
     <section className="w-full pt-6 pb-6 space-y-8">
       <div className="space-y-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">
+        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-neutral-500">
           Materiały
         </p>
         <h2 className="text-3xl md:text-4xl font-semibold text-neutral-900 tracking-tight">
           Czym drukujemy?
         </h2>
-        <p className="text-sm md:text-base text-neutral-600 max-w-3xl leading-relaxed">
+        <p className="text-base md:text-lg text-neutral-600 max-w-3xl leading-relaxed">
           Oferujemy szeroki wybór materiałów FDM — od taniego PLA po specjalistyczne kompozyty z włóknem
           węglowym i materiały samogasnące. Filtruj według zastosowania i znajdź idealny materiał dla swojego
           projektu.
@@ -301,7 +301,7 @@ export default function MaterialCatalog({ onSelectMaterial }) {
               key={cat.id}
               type="button"
               onClick={() => setActiveCategory(cat.id)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
                 isActive
                   ? "bg-[#111111] text-white"
                   : "bg-black/5 text-neutral-600 hover:bg-black/10 hover:text-neutral-900"
@@ -349,46 +349,46 @@ export default function MaterialCatalog({ onSelectMaterial }) {
                 </div>
 
                 {/* Zwięzły opis inżynieryjny */}
-                <p className="text-xs text-neutral-600 leading-relaxed min-h-[48px]">
+                <p className="text-sm text-neutral-600 leading-relaxed min-h-[64px]">
                   {mat.desc}
                 </p>
 
-                <div className="bg-black/[0.04] p-3 rounded-2xl grid grid-cols-2 gap-2.5 my-4">
+                <div className="bg-black/[0.04] p-4 rounded-2xl grid grid-cols-2 gap-3 my-4">
                   <div className="space-y-0.5">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
                       Temp. HDT
                     </div>
-                    <div className="text-xs font-semibold text-neutral-800 flex items-center gap-1">
+                    <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1">
                       <span>🔥</span>
                       <span>{mat.specs.hdt}</span>
                     </div>
                   </div>
 
                   <div className="space-y-0.5">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
                       Odporność UV
                     </div>
-                    <div className="text-xs font-semibold text-neutral-800 flex items-center gap-1">
+                    <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1">
                       <span>☀️</span>
                       <span>{mat.specs.uv}</span>
                     </div>
                   </div>
 
                   <div className="space-y-0.5">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
                       Wytrzymałość
                     </div>
-                    <div className="text-xs font-semibold text-neutral-800 flex items-center gap-1 truncate">
+                    <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1 truncate">
                       <span>💪</span>
                       <span className="truncate">{mat.specs.strength}</span>
                     </div>
                   </div>
 
                   <div className="space-y-0.5">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
                       Koszt
                     </div>
-                    <div className="text-xs font-semibold text-neutral-800 flex items-center gap-1">
+                    <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1">
                       <span>💰</span>
                       <span>{mat.specs.cost}</span>
                     </div>
@@ -400,7 +400,7 @@ export default function MaterialCatalog({ onSelectMaterial }) {
                   {mat.tags.map((tag, idx) => (
                     <span
                       key={idx}
-                      className="px-2.5 py-0.5 rounded-full bg-black/5 text-neutral-600 text-[11px] font-medium"
+                      className="px-2.5 py-1 rounded-full bg-black/5 text-neutral-600 text-xs font-medium"
                     >
                       {tag}
                     </span>
@@ -414,7 +414,7 @@ export default function MaterialCatalog({ onSelectMaterial }) {
                   <button
                     type="button"
                     onClick={() => handleChooseMaterial(mat)}
-                    className="w-full py-2.5 px-4 rounded-full text-xs font-semibold uppercase tracking-[0.12em] transition-all flex items-center justify-center gap-2 bg-[#111111] text-white hover:bg-black cursor-pointer"
+                    className="w-full py-3 px-4 rounded-full text-sm font-semibold transition-all flex items-center justify-center gap-2 bg-[#111111] text-white hover:bg-black cursor-pointer"
                   >
                     <span>Wybierz do wyceny</span>
                     <svg
@@ -435,7 +435,7 @@ export default function MaterialCatalog({ onSelectMaterial }) {
                   <button
                     type="button"
                     onClick={() => handleInquireMaterial(mat)}
-                    className="w-full py-2.5 px-4 rounded-full text-xs font-semibold uppercase tracking-[0.12em] transition-all flex items-center justify-center gap-2 bg-black/5 text-neutral-700 hover:bg-black/10 cursor-pointer"
+                    className="w-full py-3 px-4 rounded-full text-sm font-semibold transition-all flex items-center justify-center gap-2 bg-black/5 text-neutral-700 hover:bg-black/10 cursor-pointer"
                   >
                     <span>Zapytaj o wycenę (RFQ)</span>
                     <svg

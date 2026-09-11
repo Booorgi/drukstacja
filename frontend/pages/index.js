@@ -597,6 +597,27 @@ export default function Home() {
     hex: c.hex,
     name: c.name,
   }));
+  const materialWheelItems = filteredMaterials.map((m) => ({
+    id: m.id,
+    hex: m.colors?.[0]?.hex || "#888888",
+    name: m.name,
+  }));
+  const nozzleWheelItems = [
+    { id: "0.4", value: 0.4, hex: "#333333", name: "0.4 mm" },
+    ...(isPlaMaterial ? [{ id: "0.2", value: 0.2, hex: "#D4D4D4", name: "0.2 mm" }] : []),
+  ];
+  const layerWheelItems = layerHeightOptions.map((opt, i) => ({
+    id: String(opt.val),
+    value: opt.val,
+    hex: ["#1A1A1A", "#E11D2A", "#E5E5E5"][i] || "#888888",
+    name: opt.label,
+  }));
+  const infillWheelItems = [10, 20, 40, 60, 100].map((pct, i) => ({
+    id: String(pct),
+    value: pct,
+    hex: ["#F3F3F3", "#D4D4D4", "#9A9A9A", "#5A5A5A", "#1A1A1A"][i],
+    name: `${pct}%`,
+  }));
 
   return (
     <div className="min-h-screen flex flex-col bg-[#EBE6DC] text-[#111111] font-sans">
@@ -620,24 +641,24 @@ export default function Home() {
         onChange={handleFileUpload}
       />
 
-      <section id="configurator" className="relative scroll-mt-20 overflow-hidden bg-gradient-to-b from-[#7E7E7E] via-[#9A9A9A] to-[#B3B3B3]">
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/10 to-transparent pointer-events-none" />
+      <section id="configurator" className="relative scroll-mt-20 overflow-hidden bg-gradient-to-b from-[#D8D8D8] via-[#E4E4E4] to-[#EFEFEF]">
+        <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/[0.06] to-transparent pointer-events-none" />
 
         <div className="relative max-w-[1400px] mx-auto px-4 sm:px-8 pt-6 sm:pt-8">
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-800/70">
+            <div className="rounded-2xl bg-white/70 backdrop-blur-sm px-5 py-3.5 shadow-sm">
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-neutral-700">
                 {analysisData && analysisData.instant_pricing === false
                   ? "Wycena inżynierska"
                   : "Konfigurator druku"}
               </p>
-              <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-neutral-900 mt-1">
+              <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-neutral-900 mt-1">
                 {selectedFile ? selectedFile.name : "Wgraj model do wyceny"}
               </h1>
               {hasModel && analysisData?.instant_pricing !== false && (
-                <p className="text-sm text-neutral-800/80 mt-1">
+                <p className="text-base text-neutral-800 mt-1">
                   {totalPrice} PLN
-                  {isReslicing ? <span className="ml-2 text-xs">przeliczam…</span> : null}
+                  {isReslicing ? <span className="ml-2 text-sm">przeliczam…</span> : null}
                 </p>
               )}
             </div>
@@ -645,7 +666,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={handleResetFile}
-                className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-800/70 hover:text-neutral-900"
+                className="rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-white"
               >
                 Zmień plik
               </button>
@@ -654,16 +675,45 @@ export default function Home() {
         </div>
 
         <div className="relative w-full">
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="hidden md:flex absolute left-6 top-8 z-20 w-14 h-14 rounded-full bg-[#111111] text-white items-center justify-center shadow-lg hover:bg-neutral-800 transition"
-            title="Wgraj lub zmień plik"
-          >
-            <span className="text-2xl leading-none">+</span>
-          </button>
+          <aside className="relative z-20 flex flex-row flex-wrap justify-center gap-4 px-4 pt-4 md:absolute md:left-4 md:top-4 md:flex-col md:items-center md:px-0 md:pt-0">
+            <StudioWheel
+              items={materialWheelItems}
+              value={selectedMaterial}
+              onChange={(item) => handleSelectMaterial(item.id)}
+              size={92}
+              label="Materiał"
+            />
+            <StudioWheel
+              items={colorWheelItems}
+              value={selectedColor}
+              onChange={(item) => setSelectedColor(item.hex)}
+              size={84}
+              label="Kolor"
+            />
+            <StudioWheel
+              items={nozzleWheelItems}
+              value={String(nozzleSize)}
+              onChange={(item) => setNozzleSize(item.value)}
+              size={76}
+              label="Dysza"
+            />
+            <StudioWheel
+              items={layerWheelItems}
+              value={String(layerHeight)}
+              onChange={(item) => setLayerHeight(item.value)}
+              size={76}
+              label="Warstwa"
+            />
+            <StudioWheel
+              items={infillWheelItems}
+              value={String(infill)}
+              onChange={(item) => setInfill(item.value)}
+              size={76}
+              label="Wypełnienie"
+            />
+          </aside>
 
-          <div className="relative w-full flex items-center justify-center min-h-[560px] lg:min-h-[680px] lg:pr-[360px]">
+          <div className="relative w-full flex items-center justify-center min-h-[560px] lg:min-h-[700px] md:pl-[150px] lg:pr-[380px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
@@ -746,7 +796,6 @@ export default function Home() {
                   </div>
                 </div>
               ) : modelPreviewUrl ? (
-                <>
                 <CadViewer3D
                   studio
                   modelUrl={modelPreviewUrl}
@@ -758,48 +807,33 @@ export default function Home() {
                   availableColors={matConfig?.colors || []}
                   showSupportsDefault={showSupports}
                 />
-                {analysisData?.instant_pricing !== false && (
-                  <div className="hidden md:block pointer-events-none">
-                    <div className="pointer-events-auto absolute left-[8%] top-[28%] z-20">
-                      <StudioWheel
-                        items={colorWheelItems}
-                        value={selectedColor}
-                        onChange={(item) => setSelectedColor(item.hex)}
-                        size={88}
-                        label="Kolor"
-                      />
-                    </div>
-                  </div>
-                )}
-                </>
               ) : (
                 /* DROPZONE PRZED UPLOADEM */
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full max-w-md mx-auto rounded-full aspect-square max-h-[340px] border border-white/30 bg-white/10 hover:bg-white/20 flex flex-col items-center justify-center gap-3 p-8 cursor-pointer transition text-center"
+                  className="w-full max-w-lg mx-auto rounded-[2.5rem] bg-white/55 hover:bg-white/75 border border-white/70 shadow-sm flex flex-col items-center justify-center gap-4 p-10 cursor-pointer transition text-center"
                 >
-                  <div className="w-14 h-14 rounded-full bg-[#111111] text-white flex items-center justify-center font-light text-3xl">
+                  <div className="w-16 h-16 rounded-full bg-[#111111] text-white flex items-center justify-center font-light text-4xl">
                     +
                   </div>
                   <div>
-                    <span className="font-bold text-slate-900 text-sm block">
+                    <span className="font-semibold text-neutral-900 text-xl sm:text-2xl block">
                       Kliknij lub przeciągnij plik produkcyjny
                     </span>
-                    <span className="text-xs text-slate-400 block mt-0.5">
+                    <span className="text-base text-neutral-700 block mt-2 leading-relaxed">
                       Modele 3D, pliki CAD, płytki PCB, rysunki techniczne lub archiwa ZIP (do 100 MB)
                     </span>
                   </div>
 
-                  {/* Kafelki formatów */}
-                  <div className="flex flex-wrap items-center justify-center gap-1.5 pt-2">
-                    <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200/80 text-slate-700 text-[10px] font-bold shadow-xs">
-                      ⚡ 3D CAD (.step, .stl, .obj, .3mf)
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                    <span className="px-3.5 py-2 rounded-2xl bg-white text-neutral-800 text-sm font-medium shadow-sm">
+                      3D CAD (.step, .stl, .obj, .3mf)
                     </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200/80 text-slate-700 text-[10px] font-bold shadow-xs">
-                      📟 PCB & Gerber (.zip, .gbr, .kicad)
+                    <span className="px-3.5 py-2 rounded-2xl bg-white text-neutral-800 text-sm font-medium shadow-sm">
+                      PCB & Gerber
                     </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200/80 text-slate-700 text-[10px] font-bold shadow-xs">
-                      📐 Rysunki 2D (.dxf, .dwg, .pdf)
+                    <span className="px-3.5 py-2 rounded-2xl bg-white text-neutral-800 text-sm font-medium shadow-sm">
+                      Rysunki 2D
                     </span>
                   </div>
                 </div>
@@ -809,24 +843,9 @@ export default function Home() {
             <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-6 lg:top-10 lg:bottom-24 lg:w-[340px] lg:px-0 lg:pb-0 lg:overflow-y-auto">
               <StudioPrintSettings
                 isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
-                selectedMaterialGroup={selectedMaterialGroup}
-                onSelectGroup={handleSelectGroup}
-                filteredMaterials={filteredMaterials}
-                currentIndex={currentIndex}
                 matConfig={matConfig}
-                selectedColor={selectedColor}
-                onSelectColor={setSelectedColor}
-                onPrevMaterial={handlePrevMaterial}
-                onNextMaterial={handleNextMaterial}
-                onSelectMaterial={handleSelectMaterial}
-                nozzleSize={nozzleSize}
-                onNozzleSize={setNozzleSize}
-                isPlaMaterial={isPlaMaterial}
-                layerHeight={layerHeight}
-                onLayerHeight={setLayerHeight}
-                layerHeightOptions={layerHeightOptions}
-                infill={infill}
-                onInfill={setInfill}
+                recommendedApps={recommendedApps}
+                chemicalResistance={chemicalResistance}
                 rfqSubmitted={rfqSubmitted}
                 rfqSubmitting={rfqSubmitting}
                 rfqName={rfqName}
@@ -847,13 +866,13 @@ export default function Home() {
             </aside>
 
             {analysisData && analysisData.instant_pricing !== false && (
-              <div className="hidden lg:flex absolute left-4 bottom-28 z-10 py-2 px-3 rounded-2xl bg-white/70 backdrop-blur-md border border-white/40 flex-wrap items-center justify-between gap-3 text-xs max-w-md">
+              <div className="hidden lg:flex absolute left-4 bottom-28 z-10 py-3 px-4 rounded-2xl bg-white/80 backdrop-blur-md border border-white/60 shadow-sm flex-wrap items-center justify-between gap-3 text-sm max-w-lg">
                 <div className="flex items-center gap-4">
                   {/* Czas druku */}
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm">⏱️</span>
                     <div>
-                      <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Czas druku</span>
+                      <span className="text-xs uppercase font-semibold text-slate-500 block leading-tight">Czas druku</span>
                       <span className="font-extrabold text-slate-800">
                         {analysisData.print_time_formatted || (analysisData.print_time_hours ? `${analysisData.print_time_hours}h` : "~2h 15m")}
                       </span>
@@ -864,7 +883,7 @@ export default function Home() {
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm">⚖️</span>
                     <div>
-                      <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Waga materiału</span>
+                      <span className="text-xs uppercase font-semibold text-slate-500 block leading-tight">Waga materiału</span>
                       <span className="font-extrabold text-slate-800">
                         {analysisData.filament_weight_g ? `${analysisData.filament_weight_g} g` : `${Math.round(volume * 1.24 * (0.35 + (infill/100)*0.65))} g`}
                       </span>
@@ -881,7 +900,7 @@ export default function Home() {
                     <div className="hidden sm:flex items-center gap-1.5">
                       <span className="text-sm">📏</span>
                       <div>
-                        <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Długość</span>
+                        <span className="text-xs uppercase font-semibold text-slate-500 block leading-tight">Długość</span>
                         <span className="font-extrabold text-slate-800">
                           {analysisData.filament_length_m} m
                         </span>
@@ -921,11 +940,11 @@ export default function Home() {
               ) : (
                 <>
                   <div>
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-800/70 block">
+                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">
                       Razem
                     </span>
                     <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-3xl font-semibold text-neutral-900 tracking-tight">
+                      <span className="text-4xl font-semibold text-neutral-900 tracking-tight">
                         {hasModel ? totalPrice : "—"}
                       </span>
                       <span className="text-sm font-medium text-neutral-700">PLN</span>
@@ -958,7 +977,7 @@ export default function Home() {
                     <button
                       disabled={!hasModel || addingToCart || isAnalyzing}
                       onClick={handleAddToCart}
-                      className={`px-6 py-3 rounded-full text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
+                      className={`px-6 py-3 rounded-full text-sm font-semibold transition ${
                         !hasModel || addingToCart || isAnalyzing
                           ? "bg-neutral-400 text-white/70 cursor-not-allowed"
                           : "bg-[#111111] hover:bg-black text-white cursor-pointer"
@@ -974,160 +993,7 @@ export default function Home() {
       </section>
 
       <main className="max-w-7xl mx-auto px-4 py-10 space-y-8 w-full">
-        {/* ================================================================= */}
-        {/* SEKCJA: SPECYFIKACJA TECHNICZNA WYBRANEGO MATERIAŁU               */}
-        {/* ================================================================= */}
-        {/* ================================================================= */}
-        {/* DOLNY RZĄD: PEŁNA SZEROKOŚĆ (KARTA MATERIAŁOWA & DFM)             */}
-        {/* ================================================================= */}
-        <div id="materialy" className="w-full space-y-8">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 pb-6 border-b border-black/10">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500 mb-1">
-                Materiał
-              </p>
-              <h2 className="text-2xl md:text-3xl font-semibold text-neutral-900 tracking-tight">
-                {matConfig.name}
-              </h2>
-            </div>
-            <div className="flex flex-wrap items-center gap-4 text-sm text-neutral-600">
-              <span>{matConfig.pricePerCm3.toFixed(2)} zł/cm³</span>
-              <span>{matConfig.density || 1.24} g/cm³</span>
-            </div>
-          </div>
-
-          {/* 3 KOLUMNY WEWNĄTRZ NA PEŁNĄ SZEROKOŚĆ */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            {/* Kolumna 1: Opis i charakterystyka */}
-            <div className="space-y-3.5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
-                Charakterystyka
-              </h3>
-              <p className="text-sm text-neutral-700 leading-relaxed">
-                {matConfig.desc}
-              </p>
-              <div className="pt-2 flex flex-wrap gap-1.5">
-                <span className="text-[11px] px-2.5 py-1 rounded-full bg-black/5 text-neutral-600">
-                  {matConfig.group === "tech" ? "Techniczny" : matConfig.group === "composite" ? "Kompozyt" : matConfig.group === "flex" ? "Elastyczny" : "Standard"}
-                </span>
-                <span className="text-[11px] px-2.5 py-1 rounded-full bg-black/5 text-neutral-600">
-                  FDM
-                </span>
-              </div>
-            </div>
-
-            {/* Kolumna 2: Paski i wskaźniki właściwości fizykochemicznych */}
-            <div className="rounded-2xl p-4 md:p-5 bg-black/[0.04] space-y-3.5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
-                Właściwości
-              </h3>
-
-              {/* HDT */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs font-bold">
-                  <span className="text-neutral-600">Odporność termiczna (HDT)</span>
-                  <span className="text-neutral-900 font-semibold">{matConfig.hdt || "55°C"}</span>
-                </div>
-                <div className="w-full bg-black/10 h-1 rounded-full overflow-hidden">
-                  <div
-                    className="bg-neutral-900 h-full rounded-full transition-all duration-300"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        (parseInt(matConfig.hdt || "55") / 125) * 100
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Odporność UV */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs font-bold">
-                  <span className="text-neutral-600">Odporność UV</span>
-                  <span className="text-neutral-900 font-semibold">{matConfig.uvResistance || "Średnia"}</span>
-                </div>
-                <div className="w-full bg-black/10 h-1 rounded-full overflow-hidden">
-                  <div
-                    className="bg-neutral-900 h-full rounded-full transition-all duration-300"
-                    style={{
-                      width:
-                        matConfig.uvResistance?.includes("Maksymalna")
-                          ? "100%"
-                          : matConfig.uvResistance?.includes("Dobra")
-                          ? "75%"
-                          : "45%",
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Sztywność / Udarność */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs font-bold">
-                  <span className="text-neutral-600">Sztywność i udarność</span>
-                  <span className="text-neutral-900 font-semibold">{matConfig.tensileStrength || "Wysoka"}</span>
-                </div>
-                <div className="w-full bg-black/10 h-1 rounded-full overflow-hidden">
-                  <div
-                    className="bg-neutral-900 h-full rounded-full transition-all duration-300"
-                    style={{
-                      width:
-                        matConfig.tensileStrength?.includes("Ekstremalna")
-                          ? "100%"
-                          : matConfig.tensileStrength?.includes("Bardzo wysoka")
-                          ? "85%"
-                          : "65%",
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Odporność chemiczna */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs font-bold">
-                  <span className="text-neutral-600">Odporność chemiczna</span>
-                  <span className="text-neutral-900 font-semibold truncate max-w-[130px]">{chemicalResistance}</span>
-                </div>
-                <div className="w-full bg-black/10 h-1 rounded-full overflow-hidden">
-                  <div
-                    className="bg-neutral-900 h-full rounded-full transition-all duration-300"
-                    style={{
-                      width:
-                        chemicalResistance?.includes("Ekstremalna")
-                          ? "100%"
-                          : chemicalResistance?.includes("Wysoka")
-                          ? "80%"
-                          : "50%",
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Kolumna 3: Rekomendowane zastosowania */}
-            <div className="space-y-3">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
-                Zastosowania
-              </h3>
-              <div className="flex flex-col gap-2">
-                {recommendedApps.map((app, idx) => (
-                  <div
-                    key={idx}
-                    className="px-3 py-2 rounded-xl bg-black/[0.04] text-xs font-medium text-neutral-700"
-                  >
-                    {app}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        {/* DOLNA SEKCJA: KATALOG MATERIAŁÓW (Pełna szerokość) */}
-        <div className="w-full">
+        <div id="materialy" className="w-full">
           <MaterialCatalog onSelectMaterial={handleSelectMaterial} />
         </div>
 
