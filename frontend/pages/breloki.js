@@ -1237,8 +1237,6 @@ const KeychainViewer3D = dynamic(
       const CHAIN_LENGTH = CHAIN_LINKS * CHAIN_SPACING;
       const CHAIN_TO_USZKO = 3.2;
       const MAX_TILT = Math.PI / 4;
-      const BUILDPLATE_Y = -52;
-      const KEY_STEEL = { color: 0xb0b5b9, metalness: 0.95, roughness: 0.35 };
 
       function KeychainChain() {
         return (
@@ -1256,33 +1254,6 @@ const KeychainViewer3D = dynamic(
             ))}
           </group>
         );
-      }
-
-      let peiTextureCache = null;
-      function getPeiTexture() {
-        if (peiTextureCache) return peiTextureCache;
-        const size = 256;
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#1E1E1E";
-        ctx.fillRect(0, 0, size, size);
-        ctx.fillStyle = "rgba(255,255,255,0.04)";
-        for (let y = 3; y < size; y += 7) {
-          for (let x = 3; x < size; x += 7) {
-            ctx.beginPath();
-            ctx.arc(x, y, 0.85, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
-        texture.repeat.set(6, 6);
-        texture.anisotropy = 8;
-        peiTextureCache = texture;
-        return texture;
       }
 
       let coinLabelCache = null;
@@ -1318,31 +1289,6 @@ const KeychainViewer3D = dynamic(
             ? Math.max(props.baseWidth || 65, props.baseHeight || 50) / 2
             : (props.baseDiameter || 60) / 2;
         return { centerY, rightX: half + 15 + 12 };
-      }
-
-      function BuildPlateContext() {
-        const peiMap = React.useMemo(() => getPeiTexture(), []);
-        return (
-          <group name="BuildPlateContext">
-            <mesh
-              rotation={[-Math.PI / 2, 0, 0]}
-              position={[0, BUILDPLATE_Y, 0]}
-              receiveShadow
-            >
-              <planeGeometry args={[220, 220]} />
-              <meshStandardMaterial
-                color="#1E1E1E"
-                map={peiMap}
-                roughness={0.85}
-                metalness={0.1}
-              />
-            </mesh>
-            <gridHelper
-              args={[180, 18, 0x6b7280, 0x3f3f46]}
-              position={[0, BUILDPLATE_Y + 0.12, 0]}
-            />
-          </group>
-        );
       }
 
       function FiveZlotyCoin({ targetPosition }) {
@@ -1381,111 +1327,13 @@ const KeychainViewer3D = dynamic(
         );
       }
 
-      function createHouseKeyGeometry() {
-        const shape = new THREE.Shape();
-        const hw = 12.5;
-        const headTop = 7;
-        const headBottom = -16;
-        const shaftHalf = 4;
-        const tip = -58;
-        shape.moveTo(-hw, headBottom);
-        shape.lineTo(-hw, headTop - 7);
-        shape.quadraticCurveTo(-hw, headTop, -hw + 7, headTop);
-        shape.lineTo(hw - 7, headTop);
-        shape.quadraticCurveTo(hw, headTop, hw, headTop - 7);
-        shape.lineTo(hw, headBottom);
-        shape.lineTo(shaftHalf, headBottom);
-        shape.lineTo(shaftHalf, tip + 22);
-        shape.lineTo(shaftHalf + 3.2, tip + 18);
-        shape.lineTo(shaftHalf, tip + 14);
-        shape.lineTo(shaftHalf + 4.2, tip + 9);
-        shape.lineTo(shaftHalf, tip + 5);
-        shape.lineTo(shaftHalf + 2.4, tip);
-        shape.lineTo(-shaftHalf, tip);
-        shape.lineTo(-shaftHalf, headBottom);
-        shape.closePath();
-        const hole = new THREE.Path();
-        hole.absarc(0, -1.5, 3.7, 0, Math.PI * 2, true);
-        shape.holes.push(hole);
-        const geometry = new THREE.ExtrudeGeometry(shape, {
-          depth: 2.2,
-          bevelEnabled: false,
-        });
-        geometry.translate(0, 1.5, -1.1);
-        return geometry;
-      }
-
-      function createCarKeyGeometry() {
-        const shape = new THREE.Shape();
-        const hw = 11;
-        const headTop = 8;
-        const headBottom = -20;
-        const shaftHalf = 3.4;
-        const tip = -52;
-        shape.moveTo(-hw, headBottom);
-        shape.lineTo(-hw, headTop - 4);
-        shape.quadraticCurveTo(-hw, headTop, -hw + 4, headTop);
-        shape.lineTo(hw - 4, headTop);
-        shape.quadraticCurveTo(hw, headTop, hw, headTop - 4);
-        shape.lineTo(hw, headBottom + 4);
-        shape.quadraticCurveTo(hw, headBottom, hw - 4, headBottom);
-        shape.lineTo(shaftHalf, headBottom);
-        shape.lineTo(shaftHalf, tip);
-        shape.lineTo(-shaftHalf, tip);
-        shape.lineTo(-shaftHalf, headBottom);
-        shape.closePath();
-        const hole = new THREE.Path();
-        hole.absarc(0, -1.2, 3.5, 0, Math.PI * 2, true);
-        shape.holes.push(hole);
-        const geometry = new THREE.ExtrudeGeometry(shape, {
-          depth: 2.2,
-          bevelEnabled: false,
-        });
-        geometry.translate(0, 1.2, -1.1);
-        return geometry;
-      }
-
-      function KeysOnRing() {
-        const houseGeo = React.useMemo(() => createHouseKeyGeometry(), []);
-        const carGeo = React.useMemo(() => createCarKeyGeometry(), []);
-        React.useEffect(
-          () => () => {
-            houseGeo.dispose();
-            carGeo.dispose();
-          },
-          [houseGeo, carGeo]
-        );
-        return (
-          <group name="KeysOnRing" position={[0, ANCHOR_Y, 0]}>
-            <mesh
-              geometry={houseGeo}
-              position={[7.5, 3.5, 1.4]}
-              rotation={[0, 0.12, 0.52]}
-              castShadow
-            >
-              <meshStandardMaterial {...KEY_STEEL} />
-            </mesh>
-            <mesh
-              geometry={carGeo}
-              position={[-6.8, 2.8, -1.3]}
-              rotation={[0, -0.1, -0.62]}
-              castShadow
-            >
-              <meshStandardMaterial {...KEY_STEEL} />
-            </mesh>
-          </group>
-        );
-      }
-
       function ScaleContextGroup({ scaleContext, viewerProps }) {
         const placement = getKeychainContextPlacement(viewerProps);
         return (
           <group name="ContextGroup">
-            {scaleContext === "buildplate" ? <BuildPlateContext /> : null}
             {scaleContext === "coin" ? (
               <FiveZlotyCoin targetPosition={[placement.rightX, placement.centerY, 0]} />
             ) : null}
-            {scaleContext === "keys" ? <KeysOnRing /> : null}
           </group>
         );
       }
@@ -1495,14 +1343,12 @@ const KeychainViewer3D = dynamic(
         const untilRef = React.useRef(0);
         const lookRef = React.useRef(new THREE.Vector3(0, 8, 0));
         const posGoal = React.useMemo(() => {
-          if (scaleContext === "buildplate") return new THREE.Vector3(0, 48, 168);
           if (scaleContext === "coin") return new THREE.Vector3(22, 8, 118);
-          return new THREE.Vector3(0, 16, 138);
+          return new THREE.Vector3(0, 8, 125);
         }, [scaleContext]);
         const lookGoal = React.useMemo(() => {
-          if (scaleContext === "buildplate") return new THREE.Vector3(0, -6, 0);
           if (scaleContext === "coin") return new THREE.Vector3(10, 2, 0);
-          return new THREE.Vector3(0, 18, 0);
+          return new THREE.Vector3(0, 8, 0);
         }, [scaleContext]);
 
         React.useEffect(() => {
@@ -1910,7 +1756,7 @@ const KeychainViewer3D = dynamic(
         return null;
       }
 
-      return React.forwardRef(function Viewer({ onExportReady, scaleContext = "buildplate", ...props }, ref) {
+      return React.forwardRef(function Viewer({ onExportReady, scaleContext = "off", ...props }, ref) {
         const exportFnRef = React.useRef(null);
         const keychainGroupRef = React.useRef(null);
         const pendulumPivotRef = React.useRef(null);
@@ -1942,7 +1788,7 @@ const KeychainViewer3D = dynamic(
         return (
           <Canvas
             gl={{ localClippingEnabled: true, antialias: true }}
-            camera={{ position: [0, 48, 168], fov: 40 }}
+            camera={{ position: [0, 8, 125], fov: 40 }}
           >
             <color attach="background" args={["#F3F1EC"]} />
             <ambientLight intensity={1.15} />
@@ -1988,9 +1834,9 @@ const KeychainViewer3D = dynamic(
               makeDefault
               enablePan={false}
               minDistance={50}
-              maxDistance={280}
-              minPolarAngle={Math.PI * 0.18}
-              maxPolarAngle={Math.PI * 0.78}
+              maxDistance={220}
+              minPolarAngle={Math.PI * 0.28}
+              maxPolarAngle={Math.PI * 0.72}
             />
           </Canvas>
         );
@@ -2232,7 +2078,7 @@ export default function KeychainGenerator() {
   // --- NOWE: Layer View ---
   const [layerViewEnabled, setLayerViewEnabled] = useState(false);
   const [layerSeparation, setLayerSeparation] = useState(0);
-  const [scaleContext, setScaleContext] = useState("buildplate");
+  const [scaleContext, setScaleContext] = useState("off");
 
   // --- NOWE: Eksport STL & 3MF Bambu ---
   const viewerRef = useRef(null);
@@ -2871,21 +2717,10 @@ export default function KeychainGenerator() {
                 outlineMargin={outlineMargin}
               />
 
-              <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-2xl border border-slate-200/80 bg-white/90 px-2 py-1.5 shadow-lg shadow-slate-900/5 backdrop-blur-md">
+              <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center rounded-2xl border border-slate-200/80 bg-white/90 px-2 py-1.5 shadow-lg shadow-slate-900/5 backdrop-blur-md">
                 <button
                   type="button"
-                  onClick={() => setScaleContext("buildplate")}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
-                    scaleContext === "buildplate"
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                  }`}
-                >
-                  🖨️ Stół
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setScaleContext("coin")}
+                  onClick={() => setScaleContext((prev) => (prev === "coin" ? "off" : "coin"))}
                   className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
                     scaleContext === "coin"
                       ? "bg-amber-500 text-white shadow-sm"
@@ -2894,17 +2729,6 @@ export default function KeychainGenerator() {
                 >
                   <span className="inline-block h-3.5 w-3.5 rounded-full border border-amber-300 bg-amber-200" />
                   Porównaj z 5 zł
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setScaleContext("keys")}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
-                    scaleContext === "keys"
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                  }`}
-                >
-                  🔑 Z kluczami
                 </button>
               </div>
 
