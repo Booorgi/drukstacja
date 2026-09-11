@@ -733,7 +733,7 @@ export default function Home() {
               </div>
             ) : (
               <>
-                <div className="md:absolute md:top-[16%] md:left-[22%] md:pointer-events-auto">
+                <div className="md:absolute md:top-[8%] md:left-[22%] md:pointer-events-auto">
                   <StudioWheel
                     items={materialWheelItems}
                     value={selectedMaterial}
@@ -742,7 +742,7 @@ export default function Home() {
                     label="Materiał"
                   />
                 </div>
-                <div className="md:absolute md:top-[42%] md:left-[16%] md:pointer-events-auto">
+                <div className="md:absolute md:top-[28%] md:left-[16%] md:pointer-events-auto">
                   <StudioWheel
                     items={colorWheelItems}
                     value={selectedColor}
@@ -751,7 +751,7 @@ export default function Home() {
                     label="Kolor"
                   />
                 </div>
-                <div className="relative md:absolute md:top-[68%] md:left-[22%] md:pointer-events-auto" ref={printParamsRef}>
+                <div className="relative md:absolute md:top-[48%] md:left-[22%] md:pointer-events-auto" ref={printParamsRef}>
                   <StudioWheel
                     items={printParamWheelItems}
                     onOpen={() => setPrintParamsOpen((open) => !open)}
