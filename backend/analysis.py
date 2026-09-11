@@ -283,6 +283,43 @@ def _as_float(val, default=None):
         return default
 
 
+def _typical_percent(val):
+    """Bambu zapisuje wypełnienie jako listę per filament — bierzemy najczęstszą wartość."""
+    if val is None or val == "":
+        return None
+    items = val if isinstance(val, (list, tuple)) else [val]
+    cleaned = []
+    for item in items:
+        n = _as_float(item)
+        if n is None:
+            continue
+        if 0 < n <= 1.0:
+            n *= 100.0
+        n = int(round(n))
+        if 0 <= n <= 100:
+            cleaned.append(n)
+    if not cleaned:
+        return None
+    return max(set(cleaned), key=cleaned.count)
+
+
+def _first_str(val) -> str:
+    if val is None:
+        return ""
+    if isinstance(val, (list, tuple)):
+        return str(val[0]).strip() if val else ""
+    return str(val).strip()
+
+
+def _pretty_filament_preset(raw: str) -> str:
+    s = str(raw or "").strip()
+    if s.lower().startswith("bambu "):
+        s = s[6:]
+    if " @" in s:
+        s = s.split(" @", 1)[0]
+    return s.strip()
+
+
 def _extract_3mf_print_profile(ps: dict) -> dict:
     """Warstwa, wypełnienie, dysza i filamenty zapisane w projekcie Bambu/Orca."""
     colours = []
@@ -309,11 +346,27 @@ def _extract_3mf_print_profile(ps: dict) -> dict:
         seen.add(key)
         unique_types.append(s)
 
+    presets = ps.get("filament_settings_id") or []
+    if isinstance(presets, str):
+        presets = [presets]
+    pretty_presets = []
+    seen_p = set()
+    for p in presets:
+        name = _pretty_filament_preset(p)
+        key = name.upper()
+        if not name or key in seen_p:
+            continue
+        seen_p.add(key)
+        pretty_presets.append(name)
+    if pretty_presets:
+        unique_types = pretty_presets
+
     nozzle = _as_float(ps.get("nozzle_diameter"), None)
     layer = _as_float(ps.get("layer_height"), None)
-    infill = _as_float(ps.get("sparse_infill_density"), None)
-    if infill is not None:
-        infill = int(round(infill))
+    infill = _typical_percent(ps.get("sparse_infill_density"))
+    process = _first_str(ps.get("print_settings_id"))
+    if infill is not None and infill < 10 and "standard" in process.lower():
+        infill = 15
 
     return {
         "filament_colours": colours,
@@ -321,6 +374,63 @@ def _extract_3mf_print_profile(ps: dict) -> dict:
         "layer_height": layer,
         "infill": infill,
         "nozzle_size": nozzle,
+        "print_settings_id": process or None,
+    }
+
+
+def _extract_3mf_slice_info(zf: zipfile.ZipFile) -> dict:
+    """Czas i zużycie filamentu z ostatniego cięcia Bambu/Orca (slice_info.config)."""
+    names = zf.namelist()
+    si_name = next(
+        (n for n in names if n.replace("\\", "/").endswith("Metadata/slice_info.config")),
+        None,
+    )
+    if not si_name:
+        return {}
+    try:
+        root = _parse_xml(zf.read(si_name))
+    except Exception as err:
+        print(f"[WARN] Nie udało się odczytać slice_info: {err}")
+        return {}
+
+    prediction_s = None
+    weight_g = None
+    used_g = 0.0
+    used_m = 0.0
+    used_slots = 0
+
+    plates = [el for el in root.iter() if _local_tag(el.tag) == "plate"]
+    targets = plates or [root]
+    for plate in targets:
+        for child in plate:
+            tag = _local_tag(child.tag)
+            if tag == "metadata":
+                key = child.attrib.get("key")
+                val = child.attrib.get("value")
+                if key == "prediction":
+                    prediction_s = _as_float(val)
+                elif key == "weight":
+                    weight_g = _as_float(val)
+            elif tag == "filament":
+                g = _as_float(child.attrib.get("used_g"), 0.0) or 0.0
+                m = _as_float(child.attrib.get("used_m"), 0.0) or 0.0
+                if g > 0.05 or m > 0.05:
+                    used_g += g
+                    used_m += m
+                    used_slots += 1
+        if used_g > 0 or (weight_g and weight_g > 0) or prediction_s:
+            break
+
+    if used_g <= 0 and weight_g:
+        used_g = weight_g
+    if used_g <= 0 and not prediction_s:
+        return {}
+
+    return {
+        "filament_weight_g": round(float(used_g), 1),
+        "filament_length_m": round(float(used_m), 2),
+        "print_time_seconds": int(prediction_s or 0),
+        "color_count": max(used_slots, 1),
     }
 
 
@@ -377,6 +487,7 @@ def load_3mf_bundle(file_input) -> dict:
     part_extruder: Dict[str, int] = {}
     print_profile: dict = {}
     skipped_paint = False
+    slice_stats: dict = {}
 
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as z:
@@ -398,6 +509,7 @@ def load_3mf_bundle(file_input) -> dict:
                     print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
 
             filament_colours, part_extruder, print_profile = _extract_3mf_color_metadata(z)
+            slice_stats = _extract_3mf_slice_info(z)
     except Exception as zip_err:
         print(f"[WARN] Błąd inspekcji kontenera ZIP .3MF: {zip_err}")
 
@@ -474,7 +586,11 @@ def load_3mf_bundle(file_input) -> dict:
     if skipped_paint and len(profile_colours) >= 2:
         color_count = max(color_count, len(profile_colours))
         if painted_ratio < 0.05:
-            painted_ratio = 0.5
+            painted_ratio = 0.66
+    if slice_stats.get("color_count"):
+        color_count = max(color_count, int(slice_stats["color_count"]))
+    if slice_stats:
+        file_profile["slice_stats"] = slice_stats
 
     return {
         "mesh": mesh,

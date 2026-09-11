@@ -4,7 +4,7 @@ import tempfile
 
 import trimesh
 
-from slicer import estimate_filament_from_geometry, run_slicer
+from slicer import estimate_filament_from_geometry, run_slicer, slice_result_from_bambu_stats
 
 
 def test_jaguar_matches_bambu_ballpark():
@@ -126,6 +126,26 @@ def test_dense_mesh_skips_prusa_cli():
     )
     assert data["engine"] == "geometry-estimate"
     assert data["filament_weight_g"] > 0
+
+
+def test_bambu_slice_info_matches_studio_totals():
+    stats = slice_result_from_bambu_stats(
+        {
+            "filament_weight_g": 518.08,
+            "filament_length_m": 163.20,
+            "print_time_seconds": 99600,
+            "color_count": 4,
+        },
+        infill=15,
+        layer_height=0.20,
+        filament_type="PLA Matte",
+        nozzle_size=0.4,
+    )
+    assert stats["engine"] == "bambu-slice-info"
+    assert abs(stats["filament_weight_g"] - 518.1) < 0.2
+    assert abs(stats["filament_length_m"] - 163.2) < 0.05
+    assert stats["print_time_formatted"] == "1d 3h 40m"
+    assert 27.5 <= stats["print_time_hours"] <= 27.8
 
 
 if __name__ == "__main__":

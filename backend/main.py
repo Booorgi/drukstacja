@@ -35,7 +35,7 @@ from analysis import (
 )
 from pricing import calculate_price, calculate_price_from_slicer, MATERIALS
 from storage import upload_file_to_r2, get_file_url, download_file_from_r2, save_production_3mf_file
-from slicer import convert_step_to_stl, run_slicer
+from slicer import convert_step_to_stl, run_slicer, slice_result_from_bambu_stats
 from orientation import auto_orient_mesh
 from packager_3mf import generate_production_3mf, sanitize_filename
 
@@ -607,22 +607,32 @@ async def analyze_model_endpoint(
                     if file_profile.get("filament_types"):
                         filament_type = str(file_profile["filament_types"][0])
 
-                    # Slicing z parametrami przesłanymi z frontu
+                    # Slicing: 3MF z Bambu ma już wynik cięcia w slice_info.config
                     try:
-                        slice_data = run_slicer(
-                            oriented_stl_path,
-                            infill=int(infill),
-                            layer_height=float(layer_height),
-                            nozzle_size=float(nozzle_size),
-                            filament_type=filament_type,
-                            color_count=color_count,
-                            support_needed=True,
-                            painted_ratio=painted_ratio,
-                            triangle_count=result.get("triangle_count"),
-                            volume_cm3=result.get("volume_cm3"),
-                            surface_area_cm2=result.get("surface_area_cm2"),
-                            dimensions_mm=result.get("dimensions_mm"),
-                        )
+                        slice_stats = file_profile.get("slice_stats") or {}
+                        if slice_stats.get("filament_weight_g"):
+                            slice_data = slice_result_from_bambu_stats(
+                                slice_stats,
+                                infill=int(infill),
+                                layer_height=float(layer_height),
+                                filament_type=filament_type,
+                                nozzle_size=float(nozzle_size),
+                            )
+                        else:
+                            slice_data = run_slicer(
+                                oriented_stl_path,
+                                infill=int(infill),
+                                layer_height=float(layer_height),
+                                nozzle_size=float(nozzle_size),
+                                filament_type=filament_type,
+                                color_count=color_count,
+                                support_needed=True,
+                                painted_ratio=painted_ratio,
+                                triangle_count=result.get("triangle_count"),
+                                volume_cm3=result.get("volume_cm3"),
+                                surface_area_cm2=result.get("surface_area_cm2"),
+                                dimensions_mm=result.get("dimensions_mm"),
+                            )
                         result["slicer_engine"] = slice_data.get("engine")
                         result["print_time_hours"] = slice_data.get("print_time_hours")
                         result["print_time_formatted"] = slice_data.get("print_time_formatted")

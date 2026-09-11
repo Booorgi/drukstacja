@@ -130,8 +130,12 @@ def parse_time_to_hours(time_str: str) -> tuple[float, str]:
 
     hours_float = round(total_seconds / 3600.0, 2)
 
-    # Formatowanie czytelne
-    if total_seconds >= 3600:
+    if total_seconds >= 86400:
+        d_part = total_seconds // 86400
+        h_part = (total_seconds % 86400) // 3600
+        m_part = (total_seconds % 3600) // 60
+        formatted = f"{d_part}d {h_part}h {m_part}m"
+    elif total_seconds >= 3600:
         h_part = total_seconds // 3600
         m_part = (total_seconds % 3600) // 60
         formatted = f"{h_part}h {m_part}m"
@@ -422,6 +426,45 @@ def simulate_slicing_fallback(
 
 DENSE_SLICE_FACES = 80000
 DENSE_STL_BYTES = 18 * 1024 * 1024
+
+
+def slice_result_from_bambu_stats(
+    stats: dict,
+    infill: int = 20,
+    layer_height: float = 0.20,
+    filament_type: str = "PLA",
+    nozzle_size: float = 0.4,
+) -> dict:
+    """Wycena z Metadata/slice_info.config — to te same liczby co w Bambu Studio."""
+    weight = float(stats.get("filament_weight_g") or 0)
+    length = float(stats.get("filament_length_m") or 0)
+    seconds = int(stats.get("print_time_seconds") or 0)
+    density = get_filament_density(filament_type)
+    if length <= 0 and weight > 0:
+        volume_cm3 = weight / max(density, 0.01)
+        length = round((volume_cm3 * 1000.0) / (math.pi * (1.75 / 2.0) ** 2 * 1000.0), 2)
+    if seconds <= 0 and weight > 0:
+        seconds = int(round((weight / max(density, 0.01) * 1000.0) / 16000.0 * 3600))
+    hours_float, time_formatted = parse_time_to_hours(str(max(seconds, 0)))
+    volume_cm3 = round(weight / max(density, 0.01), 2) if weight else 0.0
+    return {
+        "success": True,
+        "engine": "bambu-slice-info",
+        "print_time_hours": hours_float,
+        "print_time_formatted": time_formatted,
+        "filament_weight_g": round(weight, 1),
+        "filament_length_m": round(length, 2),
+        "filament_volume_cm3": volume_cm3,
+        "layer_height": layer_height,
+        "nozzle_size": nozzle_size,
+        "infill": infill,
+        "filament_type": filament_type,
+        "has_supports": True,
+        "support_lines": [],
+        "flush_cm3": float(stats.get("flush_cm3") or 0),
+        "support_cm3": float(stats.get("support_cm3") or 0),
+        "color_count": int(stats.get("color_count") or 1),
+    }
 
 
 def is_dense_slice_job(stl_path: str, triangle_count=None) -> bool:

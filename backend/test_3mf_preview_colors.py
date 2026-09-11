@@ -100,6 +100,51 @@ def test_3mf_exposes_file_profile():
     assert "filament_types" in profile
 
 
+def test_3mf_reads_bambu_slice_info():
+    """Wycena 3MF ma brać czas i wagę z cięcia Bambu, nie z przybliżonej geometrii."""
+    path = _build_3mf(["4"] * 12, ["#111111", "#EEEEEE"])
+    with zipfile.ZipFile(path, "a") as zf:
+        zf.writestr(
+            "Metadata/slice_info.config",
+            """<?xml version="1.0"?>
+<config>
+  <plate>
+    <metadata key="prediction" value="99600"/>
+    <metadata key="weight" value="518.08"/>
+    <filament id="1" type="PLA" color="#080504" used_m="94.99" used_g="301.59"/>
+    <filament id="2" type="PLA" color="#854A22" used_m="65.12" used_g="206.74"/>
+    <filament id="3" type="PLA" color="#C4864F" used_m="2.52" used_g="8.00"/>
+    <filament id="4" type="PLA" color="#DFDFDE" used_m="0.57" used_g="1.74"/>
+  </plate>
+</config>
+""",
+        )
+    bundle = load_3mf_bundle(path)
+    stats = (bundle.get("file_profile") or {}).get("slice_stats") or {}
+    assert abs(stats["filament_weight_g"] - 518.07) < 0.2
+    assert abs(stats["filament_length_m"] - 163.2) < 0.2
+    assert stats["print_time_seconds"] == 99600
+    assert stats["color_count"] == 4
+
+
+def test_standard_profile_uses_15_percent_not_stray_5():
+    from analysis import _extract_3mf_print_profile
+
+    profile = _extract_3mf_print_profile(
+        {
+            "sparse_infill_density": "5%",
+            "print_settings_id": "0.20mm Standard @BBL A1",
+            "filament_colour": ["#000000", "#FFFFFF"],
+            "filament_settings_id": [
+                "Bambu PLA Matte @BBL A1",
+                "Bambu PLA Basic @BBL A1",
+            ],
+        }
+    )
+    assert profile["infill"] == 15
+    assert profile["filament_types"] == ["PLA Matte", "PLA Basic"]
+
+
 def test_load_3mf_bundle_paints_ams_parts():
     bundle = load_3mf_bundle(SAMPLE)
     assert bundle["part_count"] == 4
