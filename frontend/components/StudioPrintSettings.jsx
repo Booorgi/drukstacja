@@ -2,9 +2,9 @@ import React from "react";
 
 function SpecTile({ label, value }) {
   return (
-    <div className="rounded-xl bg-white/12 px-3.5 py-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/60">{label}</p>
-      <p className="text-base font-medium text-white mt-0.5 leading-snug">{value}</p>
+    <div className="rounded-xl bg-white/12 px-3 py-2">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">{label}</p>
+      <p className="text-sm font-medium text-white mt-0.5 leading-snug">{value}</p>
     </div>
   );
 }
@@ -33,7 +33,7 @@ export default function StudioPrintSettings({
 }) {
   if (isRfq) {
     return (
-      <div className="rounded-3xl bg-[#2A2A2A]/80 backdrop-blur-md text-white p-6 space-y-4 w-full">
+      <div className="rounded-3xl bg-[#2A2A2A] text-white p-5 space-y-4 w-full">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">
           Wycena inżynierska
         </p>
@@ -113,10 +113,10 @@ export default function StudioPrintSettings({
       : "Standard";
 
   return (
-    <div className="rounded-3xl bg-[#2A2A2A]/75 backdrop-blur-md text-white p-6 space-y-5 w-full">
+    <div className="rounded-3xl bg-[#2A2A2A] text-white p-5 space-y-4 w-full">
       <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-white/60">Wybrany materiał</p>
-        <h2 className="text-3xl font-semibold tracking-tight mt-1">{matConfig?.name}</h2>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Wybrany materiał</p>
+        <h2 className="text-2xl font-semibold tracking-tight mt-1">{matConfig?.name}</h2>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -126,13 +126,13 @@ export default function StudioPrintSettings({
         <SpecTile label="UV" value={matConfig?.uvResistance || "Średnia"} />
       </div>
 
-      <p className="text-lg text-white/90 leading-relaxed">{matConfig?.desc}</p>
+      <p className="text-sm text-white/85 leading-relaxed">{matConfig?.desc}</p>
 
       <div className="flex flex-wrap gap-2">
-        <span className="px-3.5 py-2 rounded-2xl bg-white/10 text-sm">{groupLabel}</span>
-        <span className="px-3.5 py-2 rounded-2xl bg-white/10 text-sm">FDM</span>
+        <span className="px-3 py-1.5 rounded-full bg-white/10 text-sm">{groupLabel}</span>
+        <span className="px-3 py-1.5 rounded-full bg-white/10 text-sm">FDM</span>
         {matConfig?.badge ? (
-          <span className="px-3.5 py-2 rounded-2xl bg-white text-neutral-900 text-sm font-medium">
+          <span className="px-3 py-1.5 rounded-full bg-white text-neutral-900 text-sm font-medium">
             {matConfig.badge}
           </span>
         ) : null}
@@ -144,10 +144,10 @@ export default function StudioPrintSettings({
       </div>
 
       <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-white/60 mb-2">Zastosowania</p>
-        <div className="flex flex-col gap-2">
-          {recommendedApps.slice(0, 4).map((app) => (
-            <div key={app} className="rounded-2xl bg-white/10 px-3.5 py-2.5 text-sm text-white/90">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60 mb-2">Zastosowania</p>
+        <div className="flex flex-wrap gap-2">
+          {recommendedApps.slice(0, 3).map((app) => (
+            <div key={app} className="rounded-full bg-white/10 px-3 py-1.5 text-sm text-white/90">
               {app}
             </div>
           ))}

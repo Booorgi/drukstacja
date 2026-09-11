@@ -157,6 +157,15 @@ def test_auto_orient_keeps_model_square_on_bed():
     assert oriented.bounds[0][2] >= -1e-6
 
 
+def test_auto_orient_lays_y_up_plate_flat():
+    """Plik z gruboscia w Y (Blender / Y-up) tez ma trafic plasko na stol."""
+    mesh = trimesh.creation.box(extents=[20.0, 2.0, 10.0])
+    oriented, info = auto_orient_mesh(mesh)
+    assert abs(float(oriented.extents[2]) - 2.0) < 1e-4
+    assert oriented.bounds[0][2] >= -1e-6
+    assert info["mode"] == "aabb_flat"
+
+
 def test_oriented_glb_keeps_vertex_colors():
     bundle = load_3mf_bundle(SAMPLE)
     oriented, info = auto_orient_mesh(bundle["mesh"])

@@ -12,7 +12,7 @@ const SUPPORT_NORMAL_Y = -Math.cos((SUPPORT_THRESHOLD_ANGLE_DEG * Math.PI) / 180
 // -----------------------------------------------------------------------------
 // KONTROLER KAMERY (RESET & ZRZUT EKRANU)
 // -----------------------------------------------------------------------------
-function CameraAndActions({ resetTrigger, onScreenshotReady, setControlsRef }) {
+function CameraAndActions({ resetTrigger, onScreenshotReady, setControlsRef, cameraPos = [95, 115, 145] }) {
   const { camera, gl, scene } = useThree();
   const controlsRef = useRef(null);
 
@@ -26,12 +26,12 @@ function CameraAndActions({ resetTrigger, onScreenshotReady, setControlsRef }) {
   useEffect(() => {
     if (resetTrigger > 0 && controlsRef.current) {
       controlsRef.current.reset();
-      camera.position.set(95, 115, 145);
+      camera.position.set(cameraPos[0], cameraPos[1], cameraPos[2]);
       camera.lookAt(0, 20, 0);
       controlsRef.current.target.set(0, 20, 0);
       controlsRef.current.update();
     }
-  }, [resetTrigger, camera]);
+  }, [resetTrigger, camera, cameraPos]);
 
   // Obsługa zrzutu ekranu Canvas do PNG
   useEffect(() => {
@@ -89,6 +89,44 @@ function centerOnBed(geo) {
   geo.computeBoundingBox();
 }
 
+function thinAxis(size) {
+  const dims = [size.x, size.y, size.z];
+  const thin = dims[0] <= dims[1] && dims[0] <= dims[2] ? 0 : dims[1] <= dims[2] ? 1 : 2;
+  const sorted = [...dims].sort((a, b) => a - b);
+  return { thin, clearlyFlat: sorted[1] > 1e-6 && sorted[0] < sorted[1] * 0.75 };
+}
+
+function layGeometryOnBed(geo) {
+  geo.computeBoundingBox();
+  const size = new THREE.Vector3();
+  geo.boundingBox.getSize(size);
+  const { thin, clearlyFlat } = thinAxis(size);
+
+  if (clearlyFlat) {
+    if (thin === 0) geo.rotateZ(Math.PI / 2);
+    else if (thin === 2) geo.rotateX(-Math.PI / 2);
+  } else {
+    geo.rotateX(-Math.PI / 2);
+  }
+  centerOnBed(geo);
+}
+
+function layObjectOnBed(object3d) {
+  object3d.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object3d);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const { thin, clearlyFlat } = thinAxis(size);
+
+  if (clearlyFlat) {
+    if (thin === 0) object3d.rotation.z += Math.PI / 2;
+    else if (thin === 2) object3d.rotation.x += -Math.PI / 2;
+  } else {
+    object3d.rotation.x += -Math.PI / 2;
+  }
+  placeObjectOnBed(object3d);
+}
+
 function placeObjectOnBed(object3d) {
   object3d.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object3d);
@@ -135,8 +173,7 @@ function CadModelGeometry({
         (gltf) => {
           if (cancelled) return;
           const root = gltf.scene;
-          root.rotation.x = -Math.PI / 2;
-          placeObjectOnBed(root);
+          layObjectOnBed(root);
 
           let triCount = 0;
           root.traverse((ch) => {
@@ -168,11 +205,7 @@ function CadModelGeometry({
       (geo) => {
         if (cancelled) return;
         geo.computeVertexNormals();
-
-        // Plik z backendu (i CAD) jest Z-up. Three.js jest Y-up.
-        // Nie szukamy "najplaszszej sciany" - przy pierscieniach to kładzie model na rant.
-        geo.rotateX(-Math.PI / 2);
-        centerOnBed(geo);
+        layGeometryOnBed(geo);
 
         const pos = geo.attributes.position;
         setGltfRoot(null);
@@ -529,7 +562,7 @@ export default function CadViewer3D({
           CANVAS THREE.JS Z SCENĄ "CAD INSPECTION ROOM"
           --------------------------------------------------------------------- */}
       <Canvas
-        camera={{ position: [95, 115, 145], fov: 45 }}
+        camera={{ position: studio ? [70, 160, 90] : [95, 115, 145], fov: 45 }}
         gl={{ preserveDrawingBuffer: true, antialias: true }}
         className="w-full h-full cursor-grab active:cursor-grabbing"
       >
@@ -572,6 +605,7 @@ export default function CadViewer3D({
         {/* Kontroler kamery, Gizmo Cube i obsługa screenshotów */}
         <CameraAndActions
           resetTrigger={resetTrigger}
+          cameraPos={studio ? [70, 160, 90] : [95, 115, 145]}
           onScreenshotReady={(fn) => {
             screenshotHandlerRef.current = fn;
           }}

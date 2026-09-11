@@ -3,7 +3,7 @@ import React from "react";
 function ParamRow({ label, children }) {
   return (
     <div>
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/55 mb-2">{label}</p>
+      <p className="text-sm font-semibold text-neutral-800 mb-2">{label}</p>
       <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
@@ -15,12 +15,12 @@ function Pill({ active, onClick, children, disabled }) {
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+      className={`px-3 py-1.5 rounded-full text-sm font-semibold transition ${
         disabled
-          ? "bg-white/5 text-white/30 cursor-not-allowed"
+          ? "bg-neutral-100 text-neutral-400 cursor-not-allowed"
           : active
-          ? "bg-white text-neutral-900"
-          : "bg-white/10 text-white/85 hover:bg-white/20"
+          ? "bg-[#111111] text-white"
+          : "bg-neutral-100 text-neutral-800 hover:bg-neutral-200"
       }`}
     >
       {children}
@@ -40,8 +40,8 @@ export default function StudioPrintParams({
   infillOptions = [10, 20, 40, 60, 100],
 }) {
   return (
-    <div className="w-[260px] rounded-2xl bg-[#2A2A2A]/92 backdrop-blur-md text-white p-4 shadow-[0_16px_40px_rgba(0,0,0,0.28)] space-y-4">
-      <p className="text-sm font-semibold">Parametry druku</p>
+    <div className="w-[280px] rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10 space-y-4">
+      <p className="text-base font-semibold">Parametry druku</p>
 
       <ParamRow label="Dysza">
         <Pill active={nozzleSize === 0.4} onClick={() => setNozzleSize(0.4)}>

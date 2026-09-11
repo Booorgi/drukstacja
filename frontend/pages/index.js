@@ -672,31 +672,35 @@ export default function Home() {
         </div>
 
         <div className="relative w-full">
-          <aside className="relative z-30 flex flex-row flex-wrap justify-center gap-3 px-4 pt-3 md:absolute md:left-3 md:top-2 md:flex-col md:items-center md:gap-2 md:px-0 md:pt-0">
-            <StudioWheel
-              items={materialWheelItems}
-              value={selectedMaterial}
-              onChange={(item) => handleSelectMaterial(item.id)}
-              size={82}
-              label="Materiał"
-            />
-            <StudioWheel
-              items={colorWheelItems}
-              value={selectedColor}
-              onChange={(item) => setSelectedColor(item.hex)}
-              size={82}
-              label="Kolor"
-            />
-            <div className="relative" ref={printParamsRef}>
+          <aside className="relative z-40 flex flex-row flex-wrap justify-center gap-4 px-4 pt-3 md:absolute md:inset-y-0 md:left-0 md:w-[170px] md:block md:px-0 md:pt-0 md:pointer-events-none">
+            <div className="md:absolute md:top-[16%] md:left-[42px] md:pointer-events-auto">
+              <StudioWheel
+                items={materialWheelItems}
+                value={selectedMaterial}
+                onChange={(item) => handleSelectMaterial(item.id)}
+                size={78}
+                label="Materiał"
+              />
+            </div>
+            <div className="md:absolute md:top-[42%] md:left-[10px] md:pointer-events-auto">
+              <StudioWheel
+                items={colorWheelItems}
+                value={selectedColor}
+                onChange={(item) => setSelectedColor(item.hex)}
+                size={78}
+                label="Kolor"
+              />
+            </div>
+            <div className="relative md:absolute md:top-[68%] md:left-[42px] md:pointer-events-auto" ref={printParamsRef}>
               <StudioWheel
                 items={printParamWheelItems}
                 onOpen={() => setPrintParamsOpen((open) => !open)}
-                size={82}
+                size={78}
                 label="Parametry"
                 caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
               />
               {printParamsOpen && (
-                <div className="absolute z-40 top-full left-1/2 -translate-x-1/2 mt-2 md:top-0 md:left-full md:translate-x-0 md:ml-3 md:mt-0">
+                <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 md:top-0 md:left-full md:translate-x-0 md:ml-3 md:mt-0">
                   <StudioPrintParams
                     nozzleSize={nozzleSize}
                     setNozzleSize={setNozzleSize}
@@ -713,7 +717,7 @@ export default function Home() {
             </div>
           </aside>
 
-          <div className="relative w-full flex items-center justify-center min-h-[560px] lg:min-h-[700px] md:pl-[118px] lg:pr-[440px]">
+          <div className="relative w-full flex items-center justify-center min-h-[560px] lg:min-h-[700px] md:pl-[90px] lg:pr-[400px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
@@ -840,7 +844,7 @@ export default function Home() {
               )}
             </div>
 
-            <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-5 lg:top-6 lg:bottom-6 lg:w-[420px] lg:px-0 lg:pb-0 lg:overflow-y-auto">
+            <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-5 lg:top-8 lg:w-[400px] lg:px-0 lg:pb-0 lg:bottom-auto">
               <StudioPrintSettings
                 isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
                 matConfig={matConfig}
@@ -865,7 +869,7 @@ export default function Home() {
               />
             </aside>
 
-            <div className="relative z-30 mx-4 mb-5 lg:absolute lg:left-[124px] lg:right-[450px] lg:bottom-5 lg:mx-0 lg:mb-0 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 shadow-sm px-4 py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative z-30 mx-4 mb-5 lg:absolute lg:left-[150px] lg:right-[420px] lg:bottom-5 lg:mx-0 lg:mb-0 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 shadow-sm px-4 py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               {analysisData && analysisData.instant_pricing === false ? (
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">

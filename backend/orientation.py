@@ -1,25 +1,11 @@
 """
-Auto-orientacja modelu pod druk 3D.
+Ustawienie modelu na stole podgladu i slicera.
 
-Prawdziwe slicery (PrusaSlicer, Cura) maja przycisk "Optimize orientation" /
-"Lay flat", ktory obraca model tak, aby zminimalizowac powierzchnie nawisow
-(a wiec ilosc potrzebnych podpor) i/lub wysokosc wydruku.
-
-PrusaSlicer w trybie CLI (linia komend, ktorego uzywamy w slicer.py) NIE MA
-takiej automatycznej optymalizacji - trzeba ja policzyc samemu PRZED wyslaniem
-pliku do PrusaSlicer-a, a nastepnie fizycznie obrocic siatke i wyeksportowac
-nowy plik STL w tej orientacji. Dokladnie to robi ponizszy modul.
-
-Algorytm (uproszczona wersja podejscia znanego z projektu "Tweaker"):
-1. Sprawdz 6 orientacji osiowych (X/Y/Z +/-). Nie uzywamy scian hull -
-   te potrafia polozyc model "pod katem" na stole, mimo ze w CAD lezal plasko.
-2. Dla kazdej kandydatki obroc siatke tak, aby dana os ladawala sie
-   plasko na stole (Z = min).
-3. Policz "koszt podpor": sume powierzchni trojkatow nachylonych wzgledem
-   stolu ponizej progu (domyslnie 30 stopni, jak w Bambu Studio) - to sa
-   dokladnie te powierzchnie, pod ktore slicer wstawi podpory.
-4. Wybierz orientacje z najnizszym kosztem (tie-break: nizsza bryla = krotszy
-   czas druku, wieksza podstawa = lepsza przyczepnosc do stolu).
+Nie szukamy "najlepszej sciany" z hull ani 6 osi pod katem podpor -
+to stawialo plytkie czesci (obudowa zegarka, pierscien) na rancie.
+Jesli jedna krawedz AABB jest wyraznie cientsza, ta krawedz staje sie
+wysokoscia Z. W przeciwnym razie zostaje orientacja z pliku, a model
+spada na Z = 0.
 """
 import numpy as np
 import trimesh
@@ -28,34 +14,6 @@ import trimesh
 # podpory powstaja dla nawisow, ktorych kat nachylenia wzgledem stolu jest
 # PONIZEJ progu (90 stopni = pionowa scianka, 0 stopni = plaski sufit).
 SUPPORT_THRESHOLD_ANGLE_DEG = 30.0
-DENSE_MESH_FACES = 20000
-SAMPLE_FACES = 8000
-AXIS_NORMALS = np.array(
-    [
-        [1.0, 0.0, 0.0],
-        [-1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, -1.0, 0.0],
-        [0.0, 0.0, 1.0],
-        [0.0, 0.0, -1.0],
-    ],
-    dtype=float,
-)
-
-
-def _cheap_sample_mesh(mesh: trimesh.Trimesh, max_faces: int = SAMPLE_FACES) -> trimesh.Trimesh:
-    """Równomierna próbka ścianek bez quadric decimation (to wisi na gęstych 3MF)."""
-    n = int(mesh.faces.shape[0])
-    if n <= max_faces:
-        return mesh
-    idx = np.linspace(0, n - 1, max_faces, dtype=int)
-    return trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces[idx], process=False)
-
-
-def _rotation_to_place_face_down(normal: np.ndarray) -> np.ndarray:
-    """Macierz obrotu 4x4, ktora uklada wskazana normalna scienia w dol (na -Z)."""
-    target = np.array([0.0, 0.0, -1.0])
-    return trimesh.geometry.align_vectors(normal, target)
 
 
 def _support_score(mesh: trimesh.Trimesh) -> float:
@@ -97,89 +55,53 @@ def _support_score(mesh: trimesh.Trimesh) -> float:
     return float(np.sum(areas[needs_support] * severity[needs_support]))
 
 
+def _drop_to_bed(mesh: trimesh.Trimesh) -> np.ndarray:
+    T = np.eye(4)
+    zmin = float(mesh.bounds[0][2]) if mesh.bounds is not None else 0.0
+    T[2, 3] = -zmin
+    return T
+
+
 def auto_orient_mesh(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, dict]:
     """
-    Zwraca (obrocona_siatka, info) - siatke ustawiona w orientacji
-    minimalizujacej powierzchnie nawisow, gotowa do wyslania do slicera.
+    Kladzie model na stole w orientacji pliku.
+
+    Jesli jedna krawedz AABB jest wyraznie cientsza (plytka, pierscien, obudowa
+    zegarka), ta krawedz staje sie wysokoscia Z. Nie obracamy na sciany hull
+    ani na osie, ktore stawiaja plaski model na rancie.
     """
     if mesh.faces.shape[0] == 0:
         return mesh, {"rotated": False, "reason": "empty_mesh"}
 
     n_faces = int(mesh.faces.shape[0])
-    dense = n_faces > DENSE_MESH_FACES
-    eval_mesh = _cheap_sample_mesh(mesh, SAMPLE_FACES) if dense else mesh
-    candidates = AXIS_NORMALS
-    mode = "axis_sample" if dense else "axis"
+    extents = np.asarray(mesh.extents, dtype=float)
+    thin = int(np.argmin(extents))
+    ordered = np.sort(extents)
+    clearly_flat = ordered[1] > 1e-9 and ordered[0] < ordered[1] * 0.75
 
-    # Tolerancja porownania wynikow jako WARTOSC BEZWZGLEDNA (nie procent!) -
-    # przy idealnym wyniku 0.0 (brak nawisow) procentowa tolerancja typu
-    # "score < best_score * 1.02" zawsze daje 0, wiec nigdy by sie nie
-    # uruchomil tie-break po wysokosci. Uzywamy wiec malego ulamka calkowitej
-    # powierzchni bryly jako progu "wynikow praktycznie rownych".
-    tie_tolerance = max(eval_mesh.area * 0.002, 0.5)
-
-    best_score = None
-    best_transform = None
-    best_height = None
-
-    for normal in candidates:
-        try:
-            transform = _rotation_to_place_face_down(normal)
-            candidate_mesh = eval_mesh.copy()
-            candidate_mesh.apply_transform(transform)
-
-            score = _support_score(candidate_mesh)
-            height = candidate_mesh.bounds[1][2] - candidate_mesh.bounds[0][2]
-
-            if best_score is None or score < best_score - tie_tolerance:
-                # wyraznie lepszy wynik (mniej podpor)
-                best_score, best_transform, best_height = score, transform, height
-            elif abs(score - best_score) <= tie_tolerance and height < best_height:
-                # praktycznie taki sam wynik podpor -> wybierz nizszy model
-                # (krotszy czas druku, lepsza stabilnosc na stole)
-                best_score, best_transform, best_height = score, transform, height
-        except Exception:
-            continue
-
-    if best_transform is None:
-        placed = mesh.copy()
-        zmin = float(placed.bounds[0][2]) if placed.bounds is not None else 0.0
-        T = np.eye(4)
-        T[2, 3] = -zmin
-        placed.apply_transform(T)
-        return placed, {
-            "rotated": False,
-            "reason": "no_valid_candidate",
-            "matrix": T.tolist(),
-        }
+    transform = np.eye(4)
+    mode = "as_exported"
+    if clearly_flat and thin != 2:
+        src = np.zeros(3, dtype=float)
+        src[thin] = 1.0
+        aligned = trimesh.geometry.align_vectors(src, np.array([0.0, 0.0, 1.0]))
+        if aligned is not None:
+            transform = np.asarray(aligned, dtype=float)
+            mode = "aabb_flat"
 
     oriented = mesh.copy()
-    oriented.apply_transform(best_transform)
-
-    # Postaw model dokladnie na stole (Z min = 0) - PrusaSlicer i tak by to
-    # zrobil, ale robimy to jawnie, zeby podglad w przegladarce tez byl poprawny
-    zmin = float(oriented.bounds[0][2])
-    bed_T = np.eye(4)
-    bed_T[2, 3] = -zmin
+    oriented.apply_transform(transform)
+    bed_T = _drop_to_bed(oriented)
     oriented.apply_transform(bed_T)
-    combined = bed_T @ best_transform
-
-    if dense:
-        baseline_score = float(best_score)
-        improvement_pct = 0.0
-    else:
-        baseline_score = _support_score(mesh)
-        improvement_pct = 0.0
-        if baseline_score > 0:
-            improvement_pct = round((1 - best_score / baseline_score) * 100, 1)
+    combined = bed_T @ transform
 
     return oriented, {
-        "rotated": True,
-        "support_score_before": round(baseline_score, 2),
-        "support_score_after": round(best_score, 2),
-        "improvement_pct": improvement_pct,
-        "candidates_tested": len(candidates),
+        "rotated": mode != "as_exported",
         "mode": mode,
-        "triangle_count": n_faces,
         "matrix": combined.tolist(),
+        "triangle_count": n_faces,
+        "support_score_before": round(_support_score(mesh), 2),
+        "support_score_after": round(_support_score(oriented), 2),
+        "improvement_pct": 0.0,
+        "candidates_tested": 1,
     }
