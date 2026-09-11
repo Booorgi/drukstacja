@@ -1196,6 +1196,226 @@ const KeychainViewer3D = dynamic(
         };
       }
 
+      function meshMatrixRelativeTo(node, root) {
+        root.updateMatrixWorld(true);
+        node.updateMatrixWorld(true);
+        const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+        return new THREE.Matrix4().multiplyMatrices(inv, node.matrixWorld);
+      }
+
+      function getHangAttachment({
+        shapeType,
+        hasHole,
+        baseWidth,
+        baseHeight,
+        baseDiameter,
+        offsetX = 0,
+        offsetY = 0,
+      }) {
+        const radius = (baseDiameter || 60) / 2;
+        if (shapeType === "rect") {
+          if (hasHole) {
+            return {
+              offset: [baseWidth / 2 + 4.5, 0, 0],
+              restRotation: [0, 0, -Math.PI / 2],
+            };
+          }
+          return {
+            offset: [0, -baseHeight / 2, 0],
+            restRotation: [0, 0, 0],
+          };
+        }
+        if (shapeType === "outline") {
+          return {
+            offset: [-offsetX, -(offsetY + radius + (hasHole ? 4.5 : 0)), 0],
+            restRotation: [0, 0, 0],
+          };
+        }
+        return {
+          offset: [0, -(radius + (hasHole ? 4.5 : 0)), 0],
+          restRotation: [0, 0, 0],
+        };
+      }
+
+      const RING_RADIUS = 12;
+      const MAX_TILT = Math.PI / 4;
+
+      function usePendulumPhysics(pendulumPivotRef) {
+        const { gl, controls } = useThree();
+        const physicsRef = React.useRef({
+          rotation: { x: 0.16, y: 0, z: -0.1 },
+          velocity: { x: 0, y: 0, z: 0 },
+          target: { x: 0, y: 0, z: 0 },
+          stiffness: 0.08,
+          damping: 0.92,
+          mass: 1.2,
+        });
+        const dragRef = React.useRef({
+          active: false,
+          startX: 0,
+          startY: 0,
+          lastX: 0,
+          lastY: 0,
+          lastT: 0,
+          vx: 0,
+          vy: 0,
+        });
+        const gyroReadyRef = React.useRef(false);
+
+        const applyGyro = React.useCallback((event) => {
+          if (dragRef.current.active) return;
+          const physics = physicsRef.current;
+          const tiltZ = THREE.MathUtils.degToRad(event.gamma || 0) * 0.4;
+          const tiltX = THREE.MathUtils.degToRad((event.beta || 0) - 45) * 0.4;
+          physics.target.z = THREE.MathUtils.clamp(tiltZ, -0.6, 0.6);
+          physics.target.x = THREE.MathUtils.clamp(tiltX, -0.6, 0.6);
+        }, []);
+
+        const requestGyro = React.useCallback(async () => {
+          if (gyroReadyRef.current || typeof window === "undefined") return;
+          try {
+            if (
+              typeof DeviceOrientationEvent !== "undefined" &&
+              typeof DeviceOrientationEvent.requestPermission === "function"
+            ) {
+              const res = await DeviceOrientationEvent.requestPermission();
+              if (res !== "granted") return;
+            }
+            window.addEventListener("deviceorientation", applyGyro, true);
+            gyroReadyRef.current = true;
+          } catch {
+            /* brak żyroskopu */
+          }
+        }, [applyGyro]);
+
+        React.useEffect(() => {
+          if (typeof window === "undefined") return undefined;
+          if (
+            typeof DeviceOrientationEvent === "undefined" ||
+            typeof DeviceOrientationEvent.requestPermission !== "function"
+          ) {
+            window.addEventListener("deviceorientation", applyGyro, true);
+            gyroReadyRef.current = true;
+          }
+          return () => {
+            window.removeEventListener("deviceorientation", applyGyro, true);
+          };
+        }, [applyGyro]);
+
+        React.useEffect(() => {
+          const el = gl?.domElement;
+          if (!el) return undefined;
+          el.style.touchAction = "none";
+          el.style.cursor = "grab";
+
+          const onMove = (e) => {
+            const drag = dragRef.current;
+            if (!drag.active) return;
+            const now = performance.now();
+            const dt = Math.max(0.008, (now - drag.lastT) / 1000);
+            drag.vx = (e.clientX - drag.lastX) / dt;
+            drag.vy = (e.clientY - drag.lastY) / dt;
+            drag.lastX = e.clientX;
+            drag.lastY = e.clientY;
+            drag.lastT = now;
+            const physics = physicsRef.current;
+            physics.target.z = THREE.MathUtils.clamp(
+              (e.clientX - drag.startX) * 0.008,
+              -MAX_TILT,
+              MAX_TILT
+            );
+            physics.target.x = THREE.MathUtils.clamp(
+              (e.clientY - drag.startY) * 0.008,
+              -MAX_TILT,
+              MAX_TILT
+            );
+          };
+
+          const onUp = () => {
+            const drag = dragRef.current;
+            if (!drag.active) return;
+            drag.active = false;
+            const physics = physicsRef.current;
+            physics.target.x = 0;
+            physics.target.y = 0;
+            physics.target.z = 0;
+            physics.velocity.z += drag.vx * 0.00022;
+            physics.velocity.x += drag.vy * 0.00022;
+            if (controls) controls.enabled = true;
+            if (gl?.domElement) gl.domElement.style.cursor = "grab";
+          };
+
+          window.addEventListener("pointermove", onMove);
+          window.addEventListener("pointerup", onUp);
+          window.addEventListener("pointercancel", onUp);
+          return () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+            window.removeEventListener("pointercancel", onUp);
+          };
+        }, [gl, controls]);
+
+        useFrame(() => {
+          const physics = physicsRef.current;
+          const forceX = (physics.target.x - physics.rotation.x) * physics.stiffness;
+          const forceZ = (physics.target.z - physics.rotation.z) * physics.stiffness;
+          const forceY = (physics.target.y - physics.rotation.y) * (physics.stiffness * 0.5);
+
+          physics.velocity.x += forceX / physics.mass;
+          physics.velocity.z += forceZ / physics.mass;
+          physics.velocity.y += forceY / physics.mass;
+
+          physics.velocity.x *= physics.damping;
+          physics.velocity.z *= physics.damping;
+          physics.velocity.y *= physics.damping;
+
+          physics.rotation.x += physics.velocity.x;
+          physics.rotation.z += physics.velocity.z;
+          physics.rotation.y += physics.velocity.y;
+
+          const pivot = pendulumPivotRef.current;
+          if (pivot) {
+            pivot.rotation.x = physics.rotation.x;
+            pivot.rotation.z = physics.rotation.z;
+            pivot.rotation.y = physics.rotation.y;
+          }
+        });
+
+        return React.useCallback(
+          (e) => {
+            e.stopPropagation();
+            requestGyro();
+            const native = e.nativeEvent || e;
+            const drag = dragRef.current;
+            drag.active = true;
+            drag.startX = native.clientX;
+            drag.startY = native.clientY;
+            drag.lastX = native.clientX;
+            drag.lastY = native.clientY;
+            drag.lastT = performance.now();
+            drag.vx = 0;
+            drag.vy = 0;
+            if (controls) controls.enabled = false;
+            if (gl?.domElement) gl.domElement.style.cursor = "grabbing";
+          },
+          [controls, gl, requestGyro]
+        );
+      }
+
+      function PendulumSimulation({ pendulumPivotRef, children }) {
+        const beginDrag = usePendulumPhysics(pendulumPivotRef);
+        return (
+          <group
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              beginDrag(e);
+            }}
+          >
+            {children}
+          </group>
+        );
+      }
+
       // Komponent wewnętrzny do rejestracji eksportu
       function ExportRegistrar({ keychainGroupRef, onExportReady }) {
         const { scene } = useThree();
@@ -1213,8 +1433,20 @@ const KeychainViewer3D = dynamic(
                   keychainGroupRef && keychainGroupRef.current ? keychainGroupRef.current : scene;
                 if (!target) return null;
                 target.updateMatrixWorld(true);
+                const bakeRoot = new THREE.Group();
+                bakeRoot.matrixAutoUpdate = false;
+                target.traverse((node) => {
+                  if (!node || !node.isMesh || !node.geometry) return;
+                  const proxy = new THREE.Mesh(node.geometry);
+                  proxy.matrixAutoUpdate = false;
+                  const local = meshMatrixRelativeTo(node, target);
+                  proxy.matrix.copy(local);
+                  proxy.matrixWorld.copy(local);
+                  bakeRoot.add(proxy);
+                });
+                bakeRoot.updateMatrixWorld(true);
                 const exporter = new STLExporter();
-                return exporter.parse(target, { binary: true });
+                return exporter.parse(bakeRoot, { binary: true });
               } catch (err) {
                 console.error("Błąd podczas eksportu STLExporter:", err);
                 return null;
@@ -1302,13 +1534,15 @@ const KeychainViewer3D = dynamic(
                   bucket.meshes.forEach((node) => {
                     const proxy = new THREE.Mesh(node.geometry);
                     proxy.matrixAutoUpdate = false;
-                    proxy.matrix.copy(node.matrixWorld);
-                    proxy.matrixWorld.copy(node.matrixWorld);
+                    const local = meshMatrixRelativeTo(node, target);
+                    proxy.matrix.copy(local);
+                    proxy.matrixWorld.copy(local);
                     partGroup.add(proxy);
                   });
 
                   // STLExporter kumuluje offset i licznik trójkątów między wywołaniami,
                   // więc każda część potrzebuje własnej instancji.
+                  partGroup.updateMatrixWorld(true);
                   const stlData = new STLExporter().parse(partGroup, { binary: true });
                   const arrayBuffer = stlToArrayBuffer(stlData);
 
@@ -1395,6 +1629,8 @@ const KeychainViewer3D = dynamic(
       return React.forwardRef(function Viewer({ onExportReady, ...props }, ref) {
         const exportFnRef = React.useRef(null);
         const keychainGroupRef = React.useRef(null);
+        const pendulumPivotRef = React.useRef(null);
+        const hang = getHangAttachment(props);
 
         React.useImperativeHandle(ref, () => ({
           exportSTL: () => {
@@ -1421,15 +1657,35 @@ const KeychainViewer3D = dynamic(
 
         return (
           <Canvas
-            gl={{ localClippingEnabled: true }}
-            camera={{ position: [0, 35, 115], fov: 45 }}
+            gl={{ localClippingEnabled: true, antialias: true }}
+            camera={{ position: [0, 8, 125], fov: 40 }}
           >
-            <ambientLight intensity={1.2} />
-            <directionalLight position={[40, 60, 50]} intensity={1.8} />
-            <directionalLight position={[-40, 30, -30]} intensity={0.7} />
+            <color attach="background" args={["#F3F1EC"]} />
+            <ambientLight intensity={1.15} />
+            <directionalLight position={[40, 70, 50]} intensity={1.7} />
+            <directionalLight position={[-40, 20, -30]} intensity={0.65} />
+            <spotLight position={[0, 90, 40]} angle={0.45} penumbra={0.6} intensity={0.55} />
             <React.Suspense fallback={null}>
-              <group ref={keychainGroupRef} name="KeychainGroup">
-                <KeychainMesh {...props} />
+              <group name="AnchorGroup" position={[0, 48, 0]}>
+                <mesh
+                  name="KeyRing"
+                  rotation={[0, Math.PI / 2, 0]}
+                  castShadow
+                >
+                  <torusGeometry args={[RING_RADIUS, 1.5, 16, 48]} />
+                  <meshStandardMaterial color={0xdcdcdc} metalness={0.95} roughness={0.15} />
+                </mesh>
+                <group ref={pendulumPivotRef} name="PendulumPivot" position={[0, -RING_RADIUS, 0]}>
+                  <PendulumSimulation pendulumPivotRef={pendulumPivotRef}>
+                    <group rotation={hang.restRotation}>
+                      <group position={hang.offset}>
+                        <group ref={keychainGroupRef} name="KeychainGroup">
+                          <KeychainMesh {...props} />
+                        </group>
+                      </group>
+                    </group>
+                  </PendulumSimulation>
+                </group>
               </group>
             </React.Suspense>
             <ExportRegistrar
@@ -1439,7 +1695,14 @@ const KeychainViewer3D = dynamic(
                 if (onExportReady) onExportReady(handlers);
               }}
             />
-            <OrbitControls makeDefault minDistance={30} maxDistance={280} />
+            <OrbitControls
+              makeDefault
+              enablePan={false}
+              minDistance={50}
+              maxDistance={220}
+              minPolarAngle={Math.PI * 0.28}
+              maxPolarAngle={Math.PI * 0.72}
+            />
           </Canvas>
         );
       });
@@ -2316,6 +2579,10 @@ export default function KeychainGenerator() {
                 textThickness={textThickness}
                 outlineMargin={outlineMargin}
               />
+
+              <div className="pointer-events-none absolute bottom-3 right-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500/80">
+                Pociągnij brelok
+              </div>
 
               {/* Layer View indicator */}
               {layerViewEnabled && (
