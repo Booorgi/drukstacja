@@ -1,5 +1,10 @@
 """Szacunek filamentu vs liczby z Bambu Studio dla Jaguara i malej obudowy."""
-from slicer import estimate_filament_from_geometry
+import os
+import tempfile
+
+import trimesh
+
+from slicer import estimate_filament_from_geometry, run_slicer
 
 
 def test_jaguar_matches_bambu_ballpark():
@@ -98,6 +103,29 @@ def test_old_formula_no_longer_used_for_large_solids():
     old_weight = round(old_effective * 1.24 * 1.42, 1)
     assert abs(old_weight - 1150.6) < 1.0
     assert est["filament_weight_g"] < old_weight * 0.65
+
+
+def test_dense_mesh_skips_prusa_cli():
+    """Gęsty 3MF nie może czekać 90 s na PrusaSlicer — wycena z geometrii."""
+    box = trimesh.creation.box(extents=[10, 10, 10])
+    path = os.path.join(tempfile.mkdtemp(), "tiny.stl")
+    box.export(path)
+    data = run_slicer(
+        path,
+        triangle_count=200000,
+        volume_cm3=1.0,
+        surface_area_cm2=6.0,
+        dimensions_mm=[10.0, 10.0, 10.0],
+        infill=20,
+        layer_height=0.20,
+        nozzle_size=0.4,
+        filament_type="PLA",
+        color_count=4,
+        painted_ratio=0.5,
+        support_needed=True,
+    )
+    assert data["engine"] == "geometry-estimate"
+    assert data["filament_weight_g"] > 0
 
 
 if __name__ == "__main__":

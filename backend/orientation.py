@@ -95,13 +95,20 @@ def auto_orient_mesh(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, dict]:
     oriented.apply_transform(bed_T)
     combined = bed_T @ transform
 
+    if n_faces > 40000:
+        score_before = 0.0
+        score_after = 0.0
+    else:
+        score_before = round(_support_score(mesh), 2)
+        score_after = round(_support_score(oriented), 2)
+
     return oriented, {
         "rotated": mode != "as_exported",
         "mode": mode,
         "matrix": combined.tolist(),
         "triangle_count": n_faces,
-        "support_score_before": round(_support_score(mesh), 2),
-        "support_score_after": round(_support_score(oriented), 2),
+        "support_score_before": score_before,
+        "support_score_after": score_after,
         "improvement_pct": 0.0,
         "candidates_tested": 1,
     }

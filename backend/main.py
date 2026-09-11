@@ -60,6 +60,29 @@ app.add_middleware(
 
 MAX_FILE_SIZE_MB = 100
 ALLOWED_EXTENSIONS = ALL_SUPPORTED_EXTENSIONS
+CACHED_MODEL_NAME = re.compile(r"^[a-fA-F0-9]+_(oriented\.stl|preview\.glb)$")
+
+
+def _bg_upload_cached(path_to_upload, key, ctype):
+    if not path_to_upload or not os.path.exists(path_to_upload):
+        return
+    try:
+        with open(path_to_upload, "rb") as f_up:
+            upload_file_to_r2(f_up, key, ctype)
+    except Exception as up_err:
+        print(f"[WARN] Błąd zapisu w R2 w tle: {up_err}")
+
+
+@app.get("/api/cached-model/{name}")
+def serve_cached_model(name: str):
+    """Podgląd STL/GLB od razu z dysku, bez czekania na upload do R2."""
+    if not CACHED_MODEL_NAME.match(name or ""):
+        raise HTTPException(status_code=400, detail="Nieprawidłowa nazwa pliku podglądu.")
+    path = os.path.join(MODELS_CACHE_DIR, name)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Podgląd modelu nie jest jeszcze dostępny.")
+    media = "model/gltf-binary" if name.endswith(".glb") else "model/stl"
+    return FileResponse(path, media_type=media, filename=name)
 
 
 class QuoteRequest(BaseModel):
@@ -83,6 +106,10 @@ class ResliceRequest(BaseModel):
     color_count: int = 1
     support_needed: bool = True
     painted_ratio: float = 0.0
+    volume_cm3: float | None = None
+    surface_area_cm2: float | None = None
+    dimensions_mm: list[float] | None = None
+    triangle_count: int | None = None
 
 
 class Generate3MFRequest(BaseModel):
@@ -511,22 +538,19 @@ async def analyze_model_endpoint(
                     oriented_mesh.export(oriented_stl_path)
 
                     preview_stl_key = f"models/{unique_id}_oriented.stl"
-                    # Zapisujemy kopię w lokalnym katalogu cache do błyskawicznego reslicowania
+                    cached_stl_name = f"{unique_id}_oriented.stl"
+                    cached_path = os.path.join(MODELS_CACHE_DIR, cached_stl_name)
                     try:
-                        cached_path = os.path.join(MODELS_CACHE_DIR, f"{unique_id}_oriented.stl")
                         shutil.copyfile(oriented_stl_path, cached_path)
                     except Exception as c_err:
                         print(f"[WARN] Błąd zapisu do lokalnego cache: {c_err}")
+                        cached_path = oriented_stl_path
 
-                    with open(oriented_stl_path, "rb") as f_stl:
-                        upload_file_to_r2(
-                            file_obj=f_stl,
-                            object_name=preview_stl_key,
-                            content_type="model/stl",
-                        )
-                    preview_stl_url = get_file_url(preview_stl_key)
+                    background_tasks.add_task(
+                        _bg_upload_cached, cached_path, preview_stl_key, "model/stl"
+                    )
                     result["preview_stl_key"] = preview_stl_key
-                    result["preview_stl_url"] = preview_stl_url
+                    result["preview_stl_url"] = f"/api/cached-model/{cached_stl_name}"
                     result["orientation"] = orientation_info
                     result["preview_glb_url"] = None
                     result["preview_glb_key"] = None
@@ -535,27 +559,26 @@ async def analyze_model_endpoint(
                     if colored_mesh is not None:
                         try:
                             matrix = orientation_info.get("matrix")
-                            preview_colored = colored_mesh.copy()
+                            preview_colored = colored_mesh
                             if matrix:
                                 preview_colored.apply_transform(np.array(matrix, dtype=float))
                             glb_path = os.path.join(tmp_dir, f"{unique_id}_preview.glb")
                             preview_colored.export(glb_path, file_type="glb")
+                            cached_glb_name = f"{unique_id}_preview.glb"
+                            cached_glb = os.path.join(MODELS_CACHE_DIR, cached_glb_name)
                             try:
-                                shutil.copyfile(
-                                    glb_path,
-                                    os.path.join(MODELS_CACHE_DIR, f"{unique_id}_preview.glb"),
-                                )
+                                shutil.copyfile(glb_path, cached_glb)
                             except Exception:
-                                pass
+                                cached_glb = glb_path
                             preview_glb_key = f"models/{unique_id}_preview.glb"
-                            with open(glb_path, "rb") as f_glb:
-                                upload_file_to_r2(
-                                    file_obj=f_glb,
-                                    object_name=preview_glb_key,
-                                    content_type="model/gltf-binary",
-                                )
+                            background_tasks.add_task(
+                                _bg_upload_cached,
+                                cached_glb,
+                                preview_glb_key,
+                                "model/gltf-binary",
+                            )
                             result["preview_glb_key"] = preview_glb_key
-                            result["preview_glb_url"] = get_file_url(preview_glb_key)
+                            result["preview_glb_url"] = f"/api/cached-model/{cached_glb_name}"
                             result["has_file_colors"] = True
                         except Exception as glb_err:
                             print(f"[WARN] Nie udało się wyeksportować kolorowego podglądu GLB: {glb_err}")
@@ -595,6 +618,10 @@ async def analyze_model_endpoint(
                             color_count=color_count,
                             support_needed=True,
                             painted_ratio=painted_ratio,
+                            triangle_count=result.get("triangle_count"),
+                            volume_cm3=result.get("volume_cm3"),
+                            surface_area_cm2=result.get("surface_area_cm2"),
+                            dimensions_mm=result.get("dimensions_mm"),
                         )
                         result["slicer_engine"] = slice_data.get("engine")
                         result["print_time_hours"] = slice_data.get("print_time_hours")
@@ -727,6 +754,10 @@ def reslice_model_endpoint(req: ResliceRequest):
         color_count=int(req.color_count or 1),
         support_needed=bool(req.support_needed),
         painted_ratio=float(req.painted_ratio or 0.0),
+        triangle_count=req.triangle_count,
+        volume_cm3=req.volume_cm3,
+        surface_area_cm2=req.surface_area_cm2,
+        dimensions_mm=req.dimensions_mm,
     )
 
     price_info = calculate_price_from_slicer(

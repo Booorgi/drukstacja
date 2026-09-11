@@ -420,6 +420,65 @@ def simulate_slicing_fallback(
     }
 
 
+DENSE_SLICE_FACES = 80000
+DENSE_STL_BYTES = 18 * 1024 * 1024
+
+
+def is_dense_slice_job(stl_path: str, triangle_count=None) -> bool:
+    """PrusaSlicer na Jaguarze (~76 MB STL) latwo przekracza 60 s limitu proxy."""
+    if triangle_count is not None and int(triangle_count) >= DENSE_SLICE_FACES:
+        return True
+    try:
+        return os.path.getsize(stl_path) >= DENSE_STL_BYTES
+    except OSError:
+        return False
+
+
+def slice_result_from_geometry(
+    volume_cm3: float,
+    surface_area_cm2: float,
+    dimensions_mm,
+    infill: int = 20,
+    layer_height: float = 0.20,
+    filament_type: str = "PLA",
+    nozzle_size: float = 0.4,
+    color_count: int = 1,
+    support_needed: bool = True,
+    painted_ratio: float = 0.0,
+) -> dict:
+    est = estimate_filament_from_geometry(
+        volume_cm3=volume_cm3,
+        surface_area_cm2=surface_area_cm2,
+        dimensions_mm=dimensions_mm,
+        infill=infill,
+        layer_height=layer_height,
+        nozzle_size=nozzle_size,
+        filament_type=filament_type,
+        support_needed=bool(support_needed),
+        color_count=color_count,
+        painted_ratio=painted_ratio,
+    )
+    return {
+        "success": True,
+        "engine": "geometry-estimate",
+        "print_time_hours": est["print_time_hours"],
+        "print_time_formatted": est["print_time_formatted"],
+        "filament_weight_g": est["filament_weight_g"],
+        "filament_length_m": est["filament_length_m"],
+        "filament_volume_cm3": est["filament_volume_cm3"],
+        "layer_height": layer_height,
+        "nozzle_size": nozzle_size,
+        "infill": infill,
+        "filament_type": filament_type,
+        "has_supports": est["has_supports"],
+        "support_lines": [],
+        "model_cm3": est.get("model_cm3"),
+        "support_cm3": est.get("support_cm3"),
+        "flush_cm3": est.get("flush_cm3"),
+        "color_count": color_count,
+    }
+
+
 def run_slicer(
     stl_path: str,
     infill: int = 20,
@@ -430,12 +489,43 @@ def run_slicer(
     color_count: int = 1,
     support_needed: bool | None = None,
     painted_ratio: float = 0.0,
+    triangle_count=None,
+    volume_cm3=None,
+    surface_area_cm2=None,
+    dimensions_mm=None,
 ) -> dict:
     """
     Uruchamia natywny proces slicera (PrusaSlicer CLI) na pliku STL,
     parsuje wygenerowany G-Code i zwraca dokładne metadane czasu i zużycia filamentu.
     Jeśli PrusaSlicer nie jest dostępny, przełącza się automatycznie na fallback.
+    Gęste siatki 3MF idą od razu na szacunek z geometrii — CLI i tak nie wraca przed timeoutem.
     """
+    if is_dense_slice_job(stl_path, triangle_count):
+        if volume_cm3 is not None:
+            return slice_result_from_geometry(
+                volume_cm3=float(volume_cm3),
+                surface_area_cm2=float(surface_area_cm2 or 0.0),
+                dimensions_mm=dimensions_mm,
+                infill=infill,
+                layer_height=layer_height,
+                filament_type=filament_type,
+                nozzle_size=nozzle_size,
+                color_count=color_count,
+                support_needed=True if support_needed is None else bool(support_needed),
+                painted_ratio=painted_ratio,
+            )
+        print("[INFO] Gęsta siatka — pomijam PrusaSlicer CLI, liczę z geometrii.")
+        return simulate_slicing_fallback(
+            stl_path,
+            infill=infill,
+            layer_height=layer_height,
+            filament_type=filament_type,
+            nozzle_size=nozzle_size,
+            color_count=color_count,
+            support_needed=support_needed,
+            painted_ratio=painted_ratio,
+        )
+
     slicer_bin = get_slicer_binary()
 
     if not slicer_bin:

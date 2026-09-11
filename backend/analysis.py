@@ -14,8 +14,9 @@ import zipfile
 import tarfile
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as XmlET
 
+from lxml import etree as lxml_etree
 import trimesh
 import numpy as np
 
@@ -124,6 +125,15 @@ def decode_paint_slot(code: str) -> int:
     return max(counts.items(), key=lambda kv: (kv[1], -kv[0]))[0]
 
 
+def _parse_xml(xml_bytes: bytes):
+    """lxml jest znacznie szybszy na gestych .model z Bambu; huge_tree bo Jaguar ma dziesiatki MB XML."""
+    try:
+        parser = lxml_etree.XMLParser(huge_tree=True, recover=False)
+        return lxml_etree.fromstring(xml_bytes, parser=parser)
+    except Exception:
+        return XmlET.fromstring(xml_bytes)
+
+
 def _read_file_bytes(file_input) -> bytes:
     if isinstance(file_input, (str, Path)):
         with open(file_input, "rb") as f:
@@ -145,7 +155,7 @@ def _triangle_paint_code(attrib: Dict[str, str]) -> str:
     return ""
 
 
-def _mesh_from_mesh_elem(mesh_elem) -> Optional[Tuple[trimesh.Trimesh, np.ndarray]]:
+def _mesh_from_mesh_elem(mesh_elem, read_paint: bool = True) -> Optional[Tuple[trimesh.Trimesh, np.ndarray]]:
     """Siatka pojedynczego <mesh> wraz z numerem slotu AMS dla kazdego trojkata."""
     verts = []
     faces = []
@@ -175,7 +185,9 @@ def _mesh_from_mesh_elem(mesh_elem) -> Optional[Tuple[trimesh.Trimesh, np.ndarra
                 except Exception:
                     continue
                 faces.append(face)
-
+                if not read_paint:
+                    slots.append(0)
+                    continue
                 code = _triangle_paint_code(t.attrib)
                 if not code:
                     slots.append(0)
@@ -197,10 +209,10 @@ def _mesh_from_mesh_elem(mesh_elem) -> Optional[Tuple[trimesh.Trimesh, np.ndarra
     return mesh, np.array(slots, dtype=int)
 
 
-def parse_model_xml_objects(xml_bytes: bytes) -> List[dict]:
+def parse_model_xml_objects(xml_bytes: bytes, read_paint: bool = True) -> List[dict]:
     """Zwraca listę {'id', 'mesh', 'face_slots'} dla każdego <object> z siatką."""
     try:
-        root = ET.fromstring(xml_bytes)
+        root = _parse_xml(xml_bytes)
     except Exception:
         return []
 
@@ -216,7 +228,7 @@ def parse_model_xml_objects(xml_bytes: bytes) -> List[dict]:
                 break
         if mesh_elem is None:
             continue
-        parsed = _mesh_from_mesh_elem(mesh_elem)
+        parsed = _mesh_from_mesh_elem(mesh_elem, read_paint=read_paint)
         if parsed is None:
             continue
         mesh, face_slots = parsed
@@ -330,7 +342,7 @@ def _extract_3mf_color_metadata(zf: zipfile.ZipFile) -> Tuple[List[str], Dict[st
     )
     if ms_name:
         try:
-            root = ET.fromstring(zf.read(ms_name))
+            root = _parse_xml(zf.read(ms_name))
             # <object> niesie ekstruder bazowy calej bryly, <part> nadpisuje go
             # dla pojedynczej czesci - oba trafiaja do tej samej mapy po id.
             for el in root.iter():
@@ -364,6 +376,7 @@ def load_3mf_bundle(file_input) -> dict:
     filament_colours: List[str] = []
     part_extruder: Dict[str, int] = {}
     print_profile: dict = {}
+    skipped_paint = False
 
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as z:
@@ -374,9 +387,13 @@ def load_3mf_bundle(file_input) -> dict:
             all_models = [f for f in names if f.lower().endswith(".model")]
             target_models = object_models if object_models else all_models
 
+            read_paint = len(file_bytes) < 12_000_000
+            skipped_paint = not read_paint
+            if skipped_paint:
+                print(f"[INFO] Duży .3MF ({len(file_bytes)} B) — pomijam dekodowanie pędzla AMS.")
             for mf in target_models:
                 try:
-                    objects.extend(parse_model_xml_objects(z.read(mf)))
+                    objects.extend(parse_model_xml_objects(z.read(mf), read_paint=read_paint))
                 except Exception as parse_err:
                     print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
 
@@ -426,7 +443,7 @@ def load_3mf_bundle(file_input) -> dict:
     if has_file_colors:
         painted = []
         for obj, slots in zip(objects, face_slots_per_object):
-            part = obj["mesh"].copy()
+            part = obj["mesh"]
             face_colors = np.zeros((len(part.faces), 4), dtype=np.uint8)
             for slot in np.unique(slots):
                 face_colors[slots == slot] = _hex_to_rgba(slot_hex.get(int(slot), palette[0]))
@@ -443,10 +460,21 @@ def load_3mf_bundle(file_input) -> dict:
             pass
 
     used_hex_list = [slot_hex[s] for s in used_slots if s in slot_hex]
+    profile_colours = list((print_profile or {}).get("filament_colours") or [])
     file_profile = dict(print_profile or {})
-    file_profile["filament_colours"] = used_hex_list or list(file_profile.get("filament_colours") or [])[:1]
+    if len(used_hex_list) >= 2:
+        file_profile["filament_colours"] = used_hex_list
+    elif profile_colours:
+        file_profile["filament_colours"] = profile_colours
+    else:
+        file_profile["filament_colours"] = used_hex_list[:1]
     if not file_profile.get("filament_types") and used_hex_list:
         file_profile["filament_types"] = []
+
+    if skipped_paint and len(profile_colours) >= 2:
+        color_count = max(color_count, len(profile_colours))
+        if painted_ratio < 0.05:
+            painted_ratio = 0.5
 
     return {
         "mesh": mesh,
@@ -498,23 +526,23 @@ def analyze_trimesh_geometry(loaded_obj) -> dict:
         # Konwersja na siatkę jeśli to możliwe
         mesh = trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces)
 
-    # 1. Głęboka naprawa topologii siatki (zwroty normalnych, nawinięcie, duplikaty)
-    # Dla bardzo gęstych siatek (>150k ścianek) omijamy kosztowne operacje macierzowe
+    n_faces = int(len(mesh.faces))
+    # 1. Naprawa topologii - na gestych 3MF (Jaguar) fix_winding/normals zjada limity czasu.
     try:
-        if len(mesh.faces) < 150000:
+        if n_faces < 80000:
             if hasattr(mesh, "process"):
                 mesh.process(validate=True)
             if hasattr(mesh, "remove_unreferenced_vertices"):
                 mesh.remove_unreferenced_vertices()
-        trimesh.repair.fix_normals(mesh)
-        trimesh.repair.fix_winding(mesh)
-        trimesh.repair.fix_inversion(mesh)
+            trimesh.repair.fix_normals(mesh)
+            trimesh.repair.fix_winding(mesh)
+            trimesh.repair.fix_inversion(mesh)
     except Exception as repair_err:
         print(f"[WARN] Błąd naprawy siatki trimesh: {repair_err}")
 
     # 2. Próba załatania drobnych mikroszczelin
     watertight = bool(mesh.is_watertight)
-    if not watertight and len(mesh.faces) < 100000:
+    if not watertight and n_faces < 80000:
         try:
             trimesh.repair.fill_holes(mesh)
             watertight = bool(mesh.is_watertight)
@@ -537,7 +565,7 @@ def analyze_trimesh_geometry(loaded_obj) -> dict:
 
     # Jeśli signed volume zawiodło, spróbuj voxelized volume lub orientację wypukłą z redukcją
     if volume_mm3 <= 0.0:
-        if len(mesh.faces) < 80000:
+        if n_faces < 80000:
             try:
                 voxel_pitch = max(mesh.extents) / 64.0
                 vox = mesh.voxelized(pitch=voxel_pitch).fill()
@@ -545,7 +573,10 @@ def analyze_trimesh_geometry(loaded_obj) -> dict:
             except Exception:
                 pass
         if volume_mm3 <= 0.0:
-            hull_vol = abs(float(mesh.convex_hull.volume)) if hasattr(mesh, "convex_hull") else 1000.0
+            if n_faces < 80000 and hasattr(mesh, "convex_hull"):
+                hull_vol = abs(float(mesh.convex_hull.volume))
+            else:
+                hull_vol = bbox_volume
             volume_mm3 = hull_vol * 0.35  # realistyczny udział ścianek w pustych obudowach
 
     surface_area_mm2 = float(mesh.area) if hasattr(mesh, "area") else 0.0

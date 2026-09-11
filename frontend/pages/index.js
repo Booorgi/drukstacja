@@ -15,6 +15,14 @@ import { STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+function resolveAssetUrl(url) {
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+  const base = String(API_URL || "").replace(/\/$/, "");
+  const path = url.startsWith("/") ? url : `/${url}`;
+  return `${base}${path}`;
+}
+
 const CadViewer3D = dynamic(() => import("../components/CadViewer3D"), {
   ssr: false,
   loading: () => (
@@ -314,8 +322,9 @@ export default function Home() {
     formData.append("infill", String(infill));
     formData.append("filament_type", matConfig?.name?.split(" ")[0] || "PLA");
 
+    const is3mf = file.name.toLowerCase().endsWith(".3mf");
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 55000);
+    const timeoutId = setTimeout(() => controller.abort(), is3mf ? 180000 : 55000);
 
     try {
       const res = await fetch(`${API_URL || ""}/api/analyze-model`, {
@@ -351,7 +360,7 @@ export default function Home() {
       }
 
       if (data.instant_pricing && (data.preview_glb_url || data.preview_stl_url)) {
-        setModelPreviewUrl(data.preview_glb_url || data.preview_stl_url);
+        setModelPreviewUrl(resolveAssetUrl(data.preview_glb_url || data.preview_stl_url));
       } else if (!data.instant_pricing) {
         setModelPreviewUrl(null);
       }
@@ -360,7 +369,7 @@ export default function Home() {
       const isAbort = err?.name === "AbortError";
       const isNetworkErr = err.message === "Failed to fetch" || err.name === "TypeError";
       const errorMsg = isAbort
-        ? "Analiza trwała zbyt długo. Pliki .3MF z MakerLab/Bambu bywają bardzo gęste — spróbuj ponownie albo wyeksportuj STL."
+        ? "Analiza gęstego pliku 3MF trwa dłużej niż zwykle. Spróbuj ponownie za chwilę."
         : isNetworkErr
         ? "Nie udało się połączyć z serwerem analizy (przekroczony limit czasu lub zbyt duży plik). Możesz ponowić próbę lub przesłać plik do bezpłatnej wyceny manualnej (RFQ)."
         : `Błąd analizy pliku: ${err.message}`;
@@ -422,6 +431,7 @@ export default function Home() {
   // Dynamiczne ponowne cięcie modelu (reslicing) przy zmianie infill, layerHeight lub materiału
   useEffect(() => {
     if (!analysisData || analysisData.instant_pricing === false) return;
+    if (analysisData.file_profile) return;
     const modelKey = analysisData.preview_stl_key || analysisData.file_key;
     if (!modelKey) return;
 
@@ -446,6 +456,10 @@ export default function Home() {
             ),
             painted_ratio: Number(analysisData.painted_ratio) || 0,
             support_needed: true,
+            volume_cm3: analysisData.volume_cm3,
+            surface_area_cm2: analysisData.surface_area_cm2,
+            dimensions_mm: analysisData.dimensions_mm,
+            triangle_count: analysisData.triangle_count,
           }),
         });
 
