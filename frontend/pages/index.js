@@ -671,7 +671,7 @@ export default function Home() {
   const fileProfile = analysisData?.file_profile || {};
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#EBE6DC] text-[#111111] font-sans">
+    <div className="min-h-screen flex flex-col bg-[#E2E2E2] text-[#111111] font-sans">
       <Head>
         <title>drukstacja — wycena druku 3D</title>
       </Head>
@@ -692,8 +692,7 @@ export default function Home() {
         onChange={handleFileUpload}
       />
 
-      <section id="configurator" className="relative scroll-mt-20 overflow-hidden bg-gradient-to-b from-[#D8D8D8] via-[#E4E4E4] to-[#EFEFEF]">
-        <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/[0.06] to-transparent pointer-events-none" />
+      <section id="configurator" className="relative scroll-mt-20 overflow-hidden bg-[#E2E2E2]">
 
         <div className="relative max-w-[1400px] mx-auto px-4 sm:px-8 pt-5 sm:pt-6">
           <div className="flex items-start justify-between gap-4">
@@ -720,9 +719,9 @@ export default function Home() {
         </div>
 
         <div className="relative w-full">
-          <aside className="relative z-40 flex flex-row flex-wrap justify-center gap-4 px-4 pt-3 md:absolute md:inset-y-0 md:left-0 lg:right-[400px] md:block md:px-0 md:pt-0 md:pointer-events-none">
+          <aside className="relative z-40 flex flex-row flex-wrap justify-center gap-4 px-4 pt-3 md:pointer-events-none md:absolute md:left-0 md:top-4 md:bottom-36 lg:right-[400px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-3 md:px-[12%] md:pt-0">
             {isLocked3mf ? (
-              <div className="md:absolute md:top-[22%] md:left-[16%] md:pointer-events-auto">
+              <div className="md:pointer-events-auto">
                 <StudioFileProfile
                   colours={fileProfile.filament_colours || analysisData?.filament_colours || []}
                   filamentTypes={fileProfile.filament_types || []}
@@ -733,7 +732,7 @@ export default function Home() {
               </div>
             ) : (
               <>
-                <div className="md:absolute md:top-[8%] md:left-[22%] md:pointer-events-auto">
+                <div className="md:pointer-events-auto">
                   <StudioWheel
                     items={materialWheelItems}
                     value={selectedMaterial}
@@ -742,7 +741,7 @@ export default function Home() {
                     label="Materiał"
                   />
                 </div>
-                <div className="md:absolute md:top-[28%] md:left-[16%] md:pointer-events-auto">
+                <div className="md:pointer-events-auto md:-ml-8">
                   <StudioWheel
                     items={colorWheelItems}
                     value={selectedColor}
@@ -751,7 +750,7 @@ export default function Home() {
                     label="Kolor"
                   />
                 </div>
-                <div className="relative md:absolute md:top-[48%] md:left-[22%] md:pointer-events-auto" ref={printParamsRef}>
+                <div className="relative md:pointer-events-auto" ref={printParamsRef}>
                   <StudioWheel
                     items={printParamWheelItems}
                     onOpen={() => setPrintParamsOpen((open) => !open)}
@@ -1029,7 +1028,7 @@ export default function Home() {
 
       </main>
 
-      <footer className="bg-[#EBE6DC] border-t border-black/5">
+      <footer className="bg-[#E2E2E2] border-t border-black/5">
         <div className="max-w-7xl mx-auto px-6 py-14 grid grid-cols-1 md:grid-cols-2 gap-10">
           <div>
             <h2 className="text-2xl font-semibold tracking-tight text-neutral-900 mb-6">Pomoc</h2>
