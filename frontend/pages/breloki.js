@@ -524,6 +524,18 @@ const KeychainViewer3D = dynamic(
         );
       }
 
+      function ClipPlanesFollow({ rootRef, localPlanes, worldPlanes }) {
+        useFrame(() => {
+          const root = rootRef.current;
+          if (!root || !localPlanes.length) return;
+          root.updateWorldMatrix(true, false);
+          for (let i = 0; i < localPlanes.length; i += 1) {
+            worldPlanes[i].copy(localPlanes[i]).applyMatrix4(root.matrixWorld);
+          }
+        });
+        return null;
+      }
+
       function SvgMakerWorldLayers({
         svgString,
         layersConfig,
@@ -532,14 +544,9 @@ const KeychainViewer3D = dynamic(
         offsetY,
         baseBounds,
         baseThickness,
-        shapeType,
-        baseWidth,
-        baseHeight,
-        baseDiameter,
-        strokeEnabled,
-        strokeWidth,
         layerSeparation,
         graphicUniformScale,
+        clippingPlanes,
       }) {
         const parsedGroups = useMemo(() => {
           if (!svgString) return {};
@@ -592,30 +599,7 @@ const KeychainViewer3D = dynamic(
           }
         }, [svgString]);
 
-        const clipPlanes = useMemo(() => {
-          const margin = strokeEnabled ? strokeWidth : 0.2;
-          if (shapeType === "rect") {
-            const hw = baseWidth / 2 - margin;
-            const hh = baseHeight / 2 - margin;
-            return [
-              new THREE.Plane(new THREE.Vector3(1, 0, 0), hw),
-              new THREE.Plane(new THREE.Vector3(-1, 0, 0), hw),
-              new THREE.Plane(new THREE.Vector3(0, 1, 0), hh),
-              new THREE.Plane(new THREE.Vector3(0, -1, 0), hh),
-            ];
-          }
-          if (shapeType === "hexagon") {
-            const r = (baseDiameter / 2 - margin) * 0.866;
-            const planes = [];
-            for (let i = 0; i < 6; i++) {
-              const angle = (i * Math.PI) / 3 + Math.PI / 6;
-              const normal = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0);
-              planes.push(new THREE.Plane(normal, r));
-            }
-            return planes;
-          }
-          return [];
-        }, [shapeType, baseWidth, baseHeight, baseDiameter, strokeEnabled, strokeWidth]);
+        const clipPlanes = clippingPlanes || [];
 
         // Budujemy grupy dynamicznie na podstawie layersConfig
         const groupEntries = layersConfig.map((cfg, idx) => ({
@@ -893,7 +877,9 @@ const KeychainViewer3D = dynamic(
           return { x: top.x, y: top.y + 4.5 };
         }, [outlineLayout, radius]);
 
-        const clipPlanes = useMemo(() => {
+        const meshRootRef = React.useRef(null);
+
+        const localClipPlanes = useMemo(() => {
           const margin = strokeEnabled ? strokeWidth : 0.2;
           if (shapeType === "rect") {
             const hw = baseWidth / 2 - margin;
@@ -918,8 +904,18 @@ const KeychainViewer3D = dynamic(
           return [];
         }, [shapeType, baseWidth, baseHeight, baseDiameter, strokeEnabled, strokeWidth]);
 
+        const clipPlanes = useMemo(
+          () => localClipPlanes.map((plane) => plane.clone()),
+          [localClipPlanes]
+        );
+
         return (
-          <group>
+          <group ref={meshRootRef}>
+            <ClipPlanesFollow
+              rootRef={meshRootRef}
+              localPlanes={localClipPlanes}
+              worldPlanes={clipPlanes}
+            />
             {shapeType === "rect" && (
               <group>
                 <group
@@ -1095,14 +1091,9 @@ const KeychainViewer3D = dynamic(
               offsetY={offsetY}
               baseBounds={baseBounds}
               baseThickness={baseThickness}
-              shapeType={shapeType}
-              baseWidth={baseWidth}
-              baseHeight={baseHeight}
-              baseDiameter={baseDiameter}
-              strokeEnabled={strokeEnabled}
-              strokeWidth={strokeWidth}
               layerSeparation={layerSeparation}
               graphicUniformScale={graphicUniformScale}
+              clippingPlanes={clipPlanes}
             />
 
             <TextErrorBoundary>
@@ -1237,8 +1228,300 @@ const KeychainViewer3D = dynamic(
         };
       }
 
+      const ANCHOR_Y = 48;
       const RING_RADIUS = 12;
+      const CHAIN_LINKS = 3;
+      const CHAIN_LINK_RADIUS = 2.15;
+      const CHAIN_LINK_TUBE = 0.42;
+      const CHAIN_SPACING = 3.55;
+      const CHAIN_LENGTH = CHAIN_LINKS * CHAIN_SPACING;
+      const CHAIN_TO_USZKO = 3.2;
       const MAX_TILT = Math.PI / 4;
+      const BUILDPLATE_Y = -52;
+      const KEY_STEEL = { color: 0xb0b5b9, metalness: 0.95, roughness: 0.35 };
+
+      function KeychainChain() {
+        return (
+          <group name="KeychainChain">
+            {Array.from({ length: CHAIN_LINKS }, (_, i) => (
+              <mesh
+                key={`chain-link-${i}`}
+                position={[0, -(i + 0.5) * CHAIN_SPACING, 0]}
+                rotation={i % 2 === 0 ? [0, Math.PI / 2, 0] : [0, 0, 0]}
+                castShadow
+              >
+                <torusGeometry args={[CHAIN_LINK_RADIUS, CHAIN_LINK_TUBE, 12, 28]} />
+                <meshStandardMaterial color={0xdcdcdc} metalness={0.95} roughness={0.18} />
+              </mesh>
+            ))}
+          </group>
+        );
+      }
+
+      let peiTextureCache = null;
+      function getPeiTexture() {
+        if (peiTextureCache) return peiTextureCache;
+        const size = 256;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#1E1E1E";
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = "rgba(255,255,255,0.04)";
+        for (let y = 3; y < size; y += 7) {
+          for (let x = 3; x < size; x += 7) {
+            ctx.beginPath();
+            ctx.arc(x, y, 0.85, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(6, 6);
+        texture.anisotropy = 8;
+        peiTextureCache = texture;
+        return texture;
+      }
+
+      let coinLabelCache = null;
+      function getCoinLabelTexture() {
+        if (coinLabelCache) return coinLabelCache;
+        const canvas = document.createElement("canvas");
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, 256, 256);
+        ctx.fillStyle = "#5A3A12";
+        ctx.font = "bold 78px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("5 ZŁ", 128, 128);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.anisotropy = 8;
+        coinLabelCache = texture;
+        return texture;
+      }
+
+      function getKeychainContextPlacement(props) {
+        const hang = getHangAttachment(props);
+        const attachY = ANCHOR_Y - RING_RADIUS - CHAIN_LENGTH - CHAIN_TO_USZKO;
+        const ox = hang.offset[0] || 0;
+        const oy = hang.offset[1] || 0;
+        const rotZ = hang.restRotation[2] || 0;
+        const cos = Math.cos(rotZ);
+        const sin = Math.sin(rotZ);
+        const centerY = attachY + sin * ox + cos * oy;
+        const half =
+          props.shapeType === "rect"
+            ? Math.max(props.baseWidth || 65, props.baseHeight || 50) / 2
+            : (props.baseDiameter || 60) / 2;
+        return { centerY, rightX: half + 15 + 12 };
+      }
+
+      function BuildPlateContext() {
+        const peiMap = React.useMemo(() => getPeiTexture(), []);
+        return (
+          <group name="BuildPlateContext">
+            <mesh
+              rotation={[-Math.PI / 2, 0, 0]}
+              position={[0, BUILDPLATE_Y, 0]}
+              receiveShadow
+            >
+              <planeGeometry args={[220, 220]} />
+              <meshStandardMaterial
+                color="#1E1E1E"
+                map={peiMap}
+                roughness={0.85}
+                metalness={0.1}
+              />
+            </mesh>
+            <gridHelper
+              args={[180, 18, 0x6b7280, 0x3f3f46]}
+              position={[0, BUILDPLATE_Y + 0.12, 0]}
+            />
+          </group>
+        );
+      }
+
+      function FiveZlotyCoin({ targetPosition }) {
+        const groupRef = React.useRef(null);
+        const progressRef = React.useRef(0);
+        const labelMap = React.useMemo(() => getCoinLabelTexture(), []);
+
+        useFrame((_, delta) => {
+          progressRef.current = Math.min(1, progressRef.current + delta * 3.2);
+          const t = 1 - Math.pow(1 - progressRef.current, 3);
+          const group = groupRef.current;
+          if (!group) return;
+          group.position.set(
+            targetPosition[0] + 32 * (1 - t),
+            targetPosition[1],
+            targetPosition[2]
+          );
+          group.scale.setScalar(0.12 + 0.88 * t);
+        });
+
+        return (
+          <group ref={groupRef} name="FiveZlotyCoin" position={targetPosition} scale={0.12}>
+            <mesh rotation={[Math.PI / 2, 0, 0]} castShadow>
+              <cylinderGeometry args={[12, 12, 2.0, 48]} />
+              <meshStandardMaterial color={0xd4d8dd} metalness={0.9} roughness={0.25} />
+            </mesh>
+            <mesh rotation={[Math.PI / 2, 0, 0]} castShadow>
+              <cylinderGeometry args={[8, 8, 2.05, 48]} />
+              <meshStandardMaterial color={0xc59b27} metalness={0.85} roughness={0.3} />
+            </mesh>
+            <mesh position={[0, 0, 1.08]}>
+              <planeGeometry args={[14, 14]} />
+              <meshBasicMaterial map={labelMap} transparent depthWrite={false} />
+            </mesh>
+          </group>
+        );
+      }
+
+      function createHouseKeyGeometry() {
+        const shape = new THREE.Shape();
+        const hw = 12.5;
+        const headTop = 7;
+        const headBottom = -16;
+        const shaftHalf = 4;
+        const tip = -58;
+        shape.moveTo(-hw, headBottom);
+        shape.lineTo(-hw, headTop - 7);
+        shape.quadraticCurveTo(-hw, headTop, -hw + 7, headTop);
+        shape.lineTo(hw - 7, headTop);
+        shape.quadraticCurveTo(hw, headTop, hw, headTop - 7);
+        shape.lineTo(hw, headBottom);
+        shape.lineTo(shaftHalf, headBottom);
+        shape.lineTo(shaftHalf, tip + 22);
+        shape.lineTo(shaftHalf + 3.2, tip + 18);
+        shape.lineTo(shaftHalf, tip + 14);
+        shape.lineTo(shaftHalf + 4.2, tip + 9);
+        shape.lineTo(shaftHalf, tip + 5);
+        shape.lineTo(shaftHalf + 2.4, tip);
+        shape.lineTo(-shaftHalf, tip);
+        shape.lineTo(-shaftHalf, headBottom);
+        shape.closePath();
+        const hole = new THREE.Path();
+        hole.absarc(0, -1.5, 3.7, 0, Math.PI * 2, true);
+        shape.holes.push(hole);
+        const geometry = new THREE.ExtrudeGeometry(shape, {
+          depth: 2.2,
+          bevelEnabled: false,
+        });
+        geometry.translate(0, 1.5, -1.1);
+        return geometry;
+      }
+
+      function createCarKeyGeometry() {
+        const shape = new THREE.Shape();
+        const hw = 11;
+        const headTop = 8;
+        const headBottom = -20;
+        const shaftHalf = 3.4;
+        const tip = -52;
+        shape.moveTo(-hw, headBottom);
+        shape.lineTo(-hw, headTop - 4);
+        shape.quadraticCurveTo(-hw, headTop, -hw + 4, headTop);
+        shape.lineTo(hw - 4, headTop);
+        shape.quadraticCurveTo(hw, headTop, hw, headTop - 4);
+        shape.lineTo(hw, headBottom + 4);
+        shape.quadraticCurveTo(hw, headBottom, hw - 4, headBottom);
+        shape.lineTo(shaftHalf, headBottom);
+        shape.lineTo(shaftHalf, tip);
+        shape.lineTo(-shaftHalf, tip);
+        shape.lineTo(-shaftHalf, headBottom);
+        shape.closePath();
+        const hole = new THREE.Path();
+        hole.absarc(0, -1.2, 3.5, 0, Math.PI * 2, true);
+        shape.holes.push(hole);
+        const geometry = new THREE.ExtrudeGeometry(shape, {
+          depth: 2.2,
+          bevelEnabled: false,
+        });
+        geometry.translate(0, 1.2, -1.1);
+        return geometry;
+      }
+
+      function KeysOnRing() {
+        const houseGeo = React.useMemo(() => createHouseKeyGeometry(), []);
+        const carGeo = React.useMemo(() => createCarKeyGeometry(), []);
+        React.useEffect(
+          () => () => {
+            houseGeo.dispose();
+            carGeo.dispose();
+          },
+          [houseGeo, carGeo]
+        );
+        return (
+          <group name="KeysOnRing" position={[0, ANCHOR_Y, 0]}>
+            <mesh
+              geometry={houseGeo}
+              position={[7.5, 3.5, 1.4]}
+              rotation={[0, 0.12, 0.52]}
+              castShadow
+            >
+              <meshStandardMaterial {...KEY_STEEL} />
+            </mesh>
+            <mesh
+              geometry={carGeo}
+              position={[-6.8, 2.8, -1.3]}
+              rotation={[0, -0.1, -0.62]}
+              castShadow
+            >
+              <meshStandardMaterial {...KEY_STEEL} />
+            </mesh>
+          </group>
+        );
+      }
+
+      function ScaleContextGroup({ scaleContext, viewerProps }) {
+        const placement = getKeychainContextPlacement(viewerProps);
+        return (
+          <group name="ContextGroup">
+            {scaleContext === "buildplate" ? <BuildPlateContext /> : null}
+            {scaleContext === "coin" ? (
+              <FiveZlotyCoin targetPosition={[placement.rightX, placement.centerY, 0]} />
+            ) : null}
+            {scaleContext === "keys" ? <KeysOnRing /> : null}
+          </group>
+        );
+      }
+
+      function CameraFraming({ scaleContext }) {
+        const { camera, controls } = useThree();
+        const untilRef = React.useRef(0);
+        const lookRef = React.useRef(new THREE.Vector3(0, 8, 0));
+        const posGoal = React.useMemo(() => {
+          if (scaleContext === "buildplate") return new THREE.Vector3(0, 48, 168);
+          if (scaleContext === "coin") return new THREE.Vector3(22, 8, 118);
+          return new THREE.Vector3(0, 16, 138);
+        }, [scaleContext]);
+        const lookGoal = React.useMemo(() => {
+          if (scaleContext === "buildplate") return new THREE.Vector3(0, -6, 0);
+          if (scaleContext === "coin") return new THREE.Vector3(10, 2, 0);
+          return new THREE.Vector3(0, 18, 0);
+        }, [scaleContext]);
+
+        React.useEffect(() => {
+          untilRef.current = performance.now() + 950;
+        }, [scaleContext]);
+
+        useFrame(() => {
+          if (performance.now() > untilRef.current) return;
+          camera.position.lerp(posGoal, 0.08);
+          lookRef.current.lerp(lookGoal, 0.08);
+          if (controls && controls.target) {
+            controls.target.copy(lookRef.current);
+            controls.update();
+          } else {
+            camera.lookAt(lookRef.current);
+          }
+        });
+        return null;
+      }
 
       function usePendulumPhysics(pendulumPivotRef) {
         const { gl, controls } = useThree();
@@ -1429,9 +1712,11 @@ const KeychainViewer3D = dynamic(
           const handlers = {
             exportSTL: () => {
               try {
-                const target =
-                  keychainGroupRef && keychainGroupRef.current ? keychainGroupRef.current : scene;
-                if (!target) return null;
+                const target = keychainGroupRef && keychainGroupRef.current;
+                if (!target) {
+                  console.warn("Eksport STL: brak keychainGroup – kontekst skali nie jest eksportowany.");
+                  return null;
+                }
                 target.updateMatrixWorld(true);
                 const bakeRoot = new THREE.Group();
                 bakeRoot.matrixAutoUpdate = false;
@@ -1457,10 +1742,9 @@ const KeychainViewer3D = dynamic(
             },
             exportMultiPartKeychain: async () => {
               try {
-                const target =
-                  keychainGroupRef && keychainGroupRef.current ? keychainGroupRef.current : scene;
+                const target = keychainGroupRef && keychainGroupRef.current;
                 if (!target) {
-                  console.warn("Brak referencji do grupy breloka.");
+                  console.warn("Brak referencji do grupy breloka – kontekst skali nie jest eksportowany.");
                   return null;
                 }
 
@@ -1626,7 +1910,7 @@ const KeychainViewer3D = dynamic(
         return null;
       }
 
-      return React.forwardRef(function Viewer({ onExportReady, ...props }, ref) {
+      return React.forwardRef(function Viewer({ onExportReady, scaleContext = "buildplate", ...props }, ref) {
         const exportFnRef = React.useRef(null);
         const keychainGroupRef = React.useRef(null);
         const pendulumPivotRef = React.useRef(null);
@@ -1658,15 +1942,17 @@ const KeychainViewer3D = dynamic(
         return (
           <Canvas
             gl={{ localClippingEnabled: true, antialias: true }}
-            camera={{ position: [0, 8, 125], fov: 40 }}
+            camera={{ position: [0, 48, 168], fov: 40 }}
           >
             <color attach="background" args={["#F3F1EC"]} />
             <ambientLight intensity={1.15} />
             <directionalLight position={[40, 70, 50]} intensity={1.7} />
             <directionalLight position={[-40, 20, -30]} intensity={0.65} />
             <spotLight position={[0, 90, 40]} angle={0.45} penumbra={0.6} intensity={0.55} />
+            <CameraFraming scaleContext={scaleContext} />
+            <ScaleContextGroup scaleContext={scaleContext} viewerProps={props} />
             <React.Suspense fallback={null}>
-              <group name="AnchorGroup" position={[0, 48, 0]}>
+              <group name="AnchorGroup" position={[0, ANCHOR_Y, 0]}>
                 <mesh
                   name="KeyRing"
                   rotation={[0, Math.PI / 2, 0]}
@@ -1677,10 +1963,13 @@ const KeychainViewer3D = dynamic(
                 </mesh>
                 <group ref={pendulumPivotRef} name="PendulumPivot" position={[0, -RING_RADIUS, 0]}>
                   <PendulumSimulation pendulumPivotRef={pendulumPivotRef}>
-                    <group rotation={hang.restRotation}>
-                      <group position={hang.offset}>
-                        <group ref={keychainGroupRef} name="KeychainGroup">
-                          <KeychainMesh {...props} />
+                    <KeychainChain />
+                    <group position={[0, -(CHAIN_LENGTH + CHAIN_TO_USZKO), 0]}>
+                      <group rotation={hang.restRotation}>
+                        <group position={hang.offset}>
+                          <group ref={keychainGroupRef} name="KeychainGroup">
+                            <KeychainMesh {...props} />
+                          </group>
                         </group>
                       </group>
                     </group>
@@ -1699,9 +1988,9 @@ const KeychainViewer3D = dynamic(
               makeDefault
               enablePan={false}
               minDistance={50}
-              maxDistance={220}
-              minPolarAngle={Math.PI * 0.28}
-              maxPolarAngle={Math.PI * 0.72}
+              maxDistance={280}
+              minPolarAngle={Math.PI * 0.18}
+              maxPolarAngle={Math.PI * 0.78}
             />
           </Canvas>
         );
@@ -1943,6 +2232,7 @@ export default function KeychainGenerator() {
   // --- NOWE: Layer View ---
   const [layerViewEnabled, setLayerViewEnabled] = useState(false);
   const [layerSeparation, setLayerSeparation] = useState(0);
+  const [scaleContext, setScaleContext] = useState("buildplate");
 
   // --- NOWE: Eksport STL & 3MF Bambu ---
   const viewerRef = useRef(null);
@@ -2549,6 +2839,7 @@ export default function KeychainGenerator() {
             <div className="relative w-full h-[380px] md:h-[430px] my-auto">
               <KeychainViewer3D
                 ref={viewerRef}
+                scaleContext={scaleContext}
                 onExportReady={(handlers) => {
                   exportHandlerRef.current = handlers;
                 }}
@@ -2580,14 +2871,50 @@ export default function KeychainGenerator() {
                 outlineMargin={outlineMargin}
               />
 
-              <div className="pointer-events-none absolute bottom-3 right-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500/80">
+              <div className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-1rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-2xl border border-slate-200/80 bg-white/90 px-2 py-1.5 shadow-lg shadow-slate-900/5 backdrop-blur-md">
+                <button
+                  type="button"
+                  onClick={() => setScaleContext("buildplate")}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
+                    scaleContext === "buildplate"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  🖨️ Stół
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScaleContext("coin")}
+                  className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
+                    scaleContext === "coin"
+                      ? "bg-amber-500 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  <span className="inline-block h-3.5 w-3.5 rounded-full border border-amber-300 bg-amber-200" />
+                  Porównaj z 5 zł
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScaleContext("keys")}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
+                    scaleContext === "keys"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  🔑 Z kluczami
+                </button>
+              </div>
+
+              <div className="pointer-events-none absolute right-3 top-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500/80">
                 Pociągnij brelok
               </div>
 
-              {/* Layer View indicator */}
               {layerViewEnabled && (
-                <div className="absolute bottom-3 left-3 flex items-center gap-2 bg-black/60 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                  <span className="w-2 h-2 bg-[#EF4444] rounded-full animate-pulse" />
+                <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur-sm">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-[#EF4444]" />
                   Widok warstw druku
                 </div>
               )}
