@@ -574,6 +574,16 @@ async def analyze_model_endpoint(
                         result.get("has_file_colors") or result.get("preview_glb_url")
                     )
 
+                    file_profile = result.get("file_profile") or {}
+                    if file_profile.get("layer_height"):
+                        layer_height = float(file_profile["layer_height"])
+                    if file_profile.get("nozzle_size"):
+                        nozzle_size = float(file_profile["nozzle_size"])
+                    if file_profile.get("infill") is not None:
+                        infill = int(file_profile["infill"])
+                    if file_profile.get("filament_types"):
+                        filament_type = str(file_profile["filament_types"][0])
+
                     # Slicing z parametrami przesłanymi z frontu
                     try:
                         slice_data = run_slicer(

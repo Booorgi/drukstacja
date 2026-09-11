@@ -92,6 +92,14 @@ def test_decode_paint_slot():
     assert decode_paint_slot("8884") == 2
 
 
+def test_3mf_exposes_file_profile():
+    bundle = load_3mf_bundle(SAMPLE)
+    profile = bundle.get("file_profile") or {}
+    assert profile.get("filament_colours")
+    assert len(profile["filament_colours"]) >= 2
+    assert "filament_types" in profile
+
+
 def test_load_3mf_bundle_paints_ams_parts():
     bundle = load_3mf_bundle(SAMPLE)
     assert bundle["part_count"] == 4

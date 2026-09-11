@@ -10,6 +10,7 @@ import MaterialCatalog from "../components/MaterialCatalog";
 import StudioWheel from "../components/StudioWheel";
 import StudioPrintSettings from "../components/StudioPrintSettings";
 import StudioPrintParams from "../components/StudioPrintParams";
+import StudioFileProfile from "../components/StudioFileProfile";
 import { STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -22,6 +23,21 @@ const CadViewer3D = dynamic(() => import("../components/CadViewer3D"), {
     </div>
   ),
 });
+
+function materialIdFromFilamentType(type) {
+  const t = String(type || "").toUpperCase();
+  if (t.includes("TPU") || t.includes("FLEX")) return "TPU_FLEX";
+  if (t.includes("ASA")) return "ASA_UV";
+  if (t.includes("ABS")) return "ABS_INDUSTRY";
+  if (t.includes("PA") || t.includes("NYLON") || t.includes("CF")) return "PA12_CF15";
+  if (t.includes("PCTG")) return "PCTG_PRO";
+  if (t.includes("PETG") && t.includes("FR")) return "PETG_FR";
+  if (t.includes("PETG") || t.includes("PET-G")) return "PETG_TOUGH";
+  if (t.includes("SILK")) return "PLA_SILK";
+  if (t.includes("MATTE")) return "PLA_MATTE";
+  if (t.includes("PLA")) return "PLA_STANDARD";
+  return "PLA_STANDARD";
+}
 
 
 export default function Home() {
@@ -320,6 +336,19 @@ export default function Home() {
         throw new Error(data.detail || data.message || "Błąd analizy modelu.");
       }
       setAnalysisData(data);
+
+      if (data.file_profile) {
+        const p = data.file_profile;
+        if (p.filament_types?.length) {
+          handleSelectMaterial(materialIdFromFilamentType(p.filament_types[0]));
+        }
+        if (p.layer_height) setLayerHeight(p.layer_height);
+        if (p.nozzle_size) setNozzleSize(p.nozzle_size);
+        if (p.infill != null) setInfill(p.infill);
+        if (p.filament_colours?.length) {
+          setSelectedColor(p.filament_colours[0]);
+        }
+      }
 
       if (data.instant_pricing && (data.preview_glb_url || data.preview_stl_url)) {
         setModelPreviewUrl(data.preview_glb_url || data.preview_stl_url);
@@ -621,6 +650,11 @@ export default function Home() {
     { id: "layer", hex: "#E11D2A", name: `${Number(layerHeight).toFixed(2)} mm` },
     { id: "infill", hex: "#D4D4D4", name: `${infill}%` },
   ];
+  const isLocked3mf = Boolean(
+    analysisData?.file_profile ||
+      String(selectedFile?.name || analysisData?.original_filename || "").toLowerCase().endsWith(".3mf")
+  );
+  const fileProfile = analysisData?.file_profile || {};
 
   return (
     <div className="min-h-screen flex flex-col bg-[#EBE6DC] text-[#111111] font-sans">
@@ -672,52 +706,66 @@ export default function Home() {
         </div>
 
         <div className="relative w-full">
-          <aside className="relative z-40 flex flex-row flex-wrap justify-center gap-4 px-4 pt-3 md:absolute md:inset-y-0 md:left-0 md:w-[170px] md:block md:px-0 md:pt-0 md:pointer-events-none">
-            <div className="md:absolute md:top-[16%] md:left-[42px] md:pointer-events-auto">
-              <StudioWheel
-                items={materialWheelItems}
-                value={selectedMaterial}
-                onChange={(item) => handleSelectMaterial(item.id)}
-                size={78}
-                label="Materiał"
-              />
-            </div>
-            <div className="md:absolute md:top-[42%] md:left-[10px] md:pointer-events-auto">
-              <StudioWheel
-                items={colorWheelItems}
-                value={selectedColor}
-                onChange={(item) => setSelectedColor(item.hex)}
-                size={78}
-                label="Kolor"
-              />
-            </div>
-            <div className="relative md:absolute md:top-[68%] md:left-[42px] md:pointer-events-auto" ref={printParamsRef}>
-              <StudioWheel
-                items={printParamWheelItems}
-                onOpen={() => setPrintParamsOpen((open) => !open)}
-                size={78}
-                label="Parametry"
-                caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
-              />
-              {printParamsOpen && (
-                <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 md:top-0 md:left-full md:translate-x-0 md:ml-3 md:mt-0">
-                  <StudioPrintParams
-                    nozzleSize={nozzleSize}
-                    setNozzleSize={setNozzleSize}
-                    isPlaMaterial={isPlaMaterial}
-                    layerHeight={layerHeight}
-                    setLayerHeight={setLayerHeight}
-                    layerHeightOptions={layerHeightOptions}
-                    infill={infill}
-                    setInfill={setInfill}
-                    infillOptions={[10, 20, 40, 60, 100]}
+          <aside className="relative z-40 flex flex-row flex-wrap justify-center gap-4 px-4 pt-3 md:absolute md:inset-y-0 md:left-0 lg:right-[400px] md:block md:px-0 md:pt-0 md:pointer-events-none">
+            {isLocked3mf ? (
+              <div className="md:absolute md:top-[22%] md:left-[16%] md:pointer-events-auto">
+                <StudioFileProfile
+                  colours={fileProfile.filament_colours || analysisData?.filament_colours || []}
+                  filamentTypes={fileProfile.filament_types || []}
+                  layerHeight={fileProfile.layer_height || layerHeight}
+                  nozzleSize={fileProfile.nozzle_size || nozzleSize}
+                  infill={fileProfile.infill ?? infill}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="md:absolute md:top-[16%] md:left-[22%] md:pointer-events-auto">
+                  <StudioWheel
+                    items={materialWheelItems}
+                    value={selectedMaterial}
+                    onChange={(item) => handleSelectMaterial(item.id)}
+                    size={78}
+                    label="Materiał"
                   />
                 </div>
-              )}
-            </div>
+                <div className="md:absolute md:top-[42%] md:left-[16%] md:pointer-events-auto">
+                  <StudioWheel
+                    items={colorWheelItems}
+                    value={selectedColor}
+                    onChange={(item) => setSelectedColor(item.hex)}
+                    size={78}
+                    label="Kolor"
+                  />
+                </div>
+                <div className="relative md:absolute md:top-[68%] md:left-[22%] md:pointer-events-auto" ref={printParamsRef}>
+                  <StudioWheel
+                    items={printParamWheelItems}
+                    onOpen={() => setPrintParamsOpen((open) => !open)}
+                    size={78}
+                    label="Parametry"
+                    caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
+                  />
+                  {printParamsOpen && (
+                    <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 md:top-0 md:left-full md:translate-x-0 md:ml-3 md:mt-0">
+                      <StudioPrintParams
+                        nozzleSize={nozzleSize}
+                        setNozzleSize={setNozzleSize}
+                        isPlaMaterial={isPlaMaterial}
+                        layerHeight={layerHeight}
+                        setLayerHeight={setLayerHeight}
+                        layerHeightOptions={layerHeightOptions}
+                        infill={infill}
+                        setInfill={setInfill}
+                        infillOptions={[10, 20, 40, 60, 100]}
+                      />
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </aside>
 
-          <div className="relative w-full flex items-center justify-center min-h-[560px] lg:min-h-[700px] md:pl-[90px] lg:pr-[400px]">
+          <div className="relative w-full flex items-center justify-center min-h-[560px] lg:min-h-[700px] md:pl-[40px] lg:pr-[400px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
@@ -869,7 +917,7 @@ export default function Home() {
               />
             </aside>
 
-            <div className="relative z-30 mx-4 mb-5 lg:absolute lg:left-[150px] lg:right-[420px] lg:bottom-5 lg:mx-0 lg:mb-0 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 shadow-sm px-4 py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative z-30 mx-4 mb-5 lg:absolute lg:left-[220px] lg:right-[420px] lg:bottom-5 lg:mx-0 lg:mb-0 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 shadow-sm px-4 py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               {analysisData && analysisData.instant_pricing === false ? (
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">

@@ -244,31 +244,86 @@ def parse_model_xml_content(xml_bytes: bytes) -> Optional[trimesh.Trimesh]:
     return trimesh.util.concatenate(meshes)
 
 
-def _extract_3mf_color_metadata(zf: zipfile.ZipFile) -> Tuple[List[str], Dict[str, int]]:
-    """Kolory AMS (filament_colour) oraz mapa id obiektu/części -> ekstruder (1-based)."""
+def _load_3mf_project_settings(zf: zipfile.ZipFile) -> dict:
     names = zf.namelist()
-    colours: List[str] = []
-    extruders: Dict[str, int] = {}
-
     ps_name = next(
         (n for n in names if n.replace("\\", "/").endswith("Metadata/project_settings.config")),
         None,
     )
-    if ps_name:
-        try:
-            ps = json.loads(zf.read(ps_name).decode("utf-8", errors="replace"))
-            raw = ps.get("filament_colour") or []
-            if isinstance(raw, list):
-                for c in raw:
-                    s = str(c).strip()
-                    if not s:
-                        continue
-                    if not s.startswith("#"):
-                        s = f"#{s}"
-                    colours.append(s.upper() if len(s) in (7, 9) else s)
-        except Exception as err:
-            print(f"[WARN] Nie udało się odczytać filament_colour: {err}")
+    if not ps_name:
+        return {}
+    try:
+        ps = json.loads(zf.read(ps_name).decode("utf-8", errors="replace"))
+        return ps if isinstance(ps, dict) else {}
+    except Exception as err:
+        print(f"[WARN] Nie udało się odczytać project_settings: {err}")
+        return {}
 
+
+def _as_float(val, default=None):
+    if val is None or val == "":
+        return default
+    if isinstance(val, (list, tuple)) and val:
+        val = val[0]
+    try:
+        return float(str(val).replace("%", "").strip())
+    except Exception:
+        return default
+
+
+def _extract_3mf_print_profile(ps: dict) -> dict:
+    """Warstwa, wypełnienie, dysza i filamenty zapisane w projekcie Bambu/Orca."""
+    colours = []
+    raw_colours = ps.get("filament_colour") or []
+    if isinstance(raw_colours, list):
+        for c in raw_colours:
+            s = str(c).strip()
+            if not s:
+                continue
+            if not s.startswith("#"):
+                s = f"#{s}"
+            colours.append(s.upper() if len(s) in (7, 9) else s)
+
+    types = ps.get("filament_type") or []
+    if isinstance(types, str):
+        types = [types]
+    unique_types = []
+    seen = set()
+    for t in types:
+        s = str(t).strip()
+        key = s.upper()
+        if not s or key in seen:
+            continue
+        seen.add(key)
+        unique_types.append(s)
+
+    nozzle = _as_float(ps.get("nozzle_diameter"), None)
+    layer = _as_float(ps.get("layer_height"), None)
+    infill = _as_float(ps.get("sparse_infill_density"), None)
+    if infill is not None:
+        infill = int(round(infill))
+
+    return {
+        "filament_colours": colours,
+        "filament_types": unique_types,
+        "layer_height": layer,
+        "infill": infill,
+        "nozzle_size": nozzle,
+    }
+
+
+def _extract_3mf_color_metadata(zf: zipfile.ZipFile) -> Tuple[List[str], Dict[str, int], dict]:
+    """Kolory AMS, mapa ekstruderów oraz profil druku z project_settings."""
+    colours: List[str] = []
+    extruders: Dict[str, int] = {}
+    print_profile: dict = {}
+
+    ps = _load_3mf_project_settings(zf)
+    if ps:
+        print_profile = _extract_3mf_print_profile(ps)
+        colours = list(print_profile.get("filament_colours") or [])
+
+    names = zf.namelist()
     ms_name = next(
         (n for n in names if n.replace("\\", "/").endswith("Metadata/model_settings.config")),
         None,
@@ -297,7 +352,7 @@ def _extract_3mf_color_metadata(zf: zipfile.ZipFile) -> Tuple[List[str], Dict[st
         except Exception as err:
             print(f"[WARN] Nie udało się odczytać model_settings extruder: {err}")
 
-    return colours, extruders
+    return colours, extruders, print_profile
 
 
 def load_3mf_bundle(file_input) -> dict:
@@ -308,6 +363,7 @@ def load_3mf_bundle(file_input) -> dict:
     objects: List[dict] = []
     filament_colours: List[str] = []
     part_extruder: Dict[str, int] = {}
+    print_profile: dict = {}
 
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as z:
@@ -324,7 +380,7 @@ def load_3mf_bundle(file_input) -> dict:
                 except Exception as parse_err:
                     print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
 
-            filament_colours, part_extruder = _extract_3mf_color_metadata(z)
+            filament_colours, part_extruder, print_profile = _extract_3mf_color_metadata(z)
     except Exception as zip_err:
         print(f"[WARN] Błąd inspekcji kontenera ZIP .3MF: {zip_err}")
 
@@ -386,14 +442,21 @@ def load_3mf_bundle(file_input) -> dict:
         except Exception:
             pass
 
+    used_hex_list = [slot_hex[s] for s in used_slots if s in slot_hex]
+    file_profile = dict(print_profile or {})
+    file_profile["filament_colours"] = used_hex_list or list(file_profile.get("filament_colours") or [])[:1]
+    if not file_profile.get("filament_types") and used_hex_list:
+        file_profile["filament_types"] = []
+
     return {
         "mesh": mesh,
         "colored_mesh": colored_mesh,
-        "filament_colours": [slot_hex[s] for s in used_slots] if has_file_colors else [],
+        "filament_colours": used_hex_list if has_file_colors else [],
         "part_count": len(objects),
         "has_file_colors": has_file_colors,
         "color_count": int(color_count),
         "painted_ratio": round(float(painted_ratio), 4),
+        "file_profile": file_profile,
     }
 
 
@@ -509,6 +572,7 @@ def analyze_mesh_file(path: str, ext: str) -> dict:
         geom["has_file_colors"] = bool(bundle.get("has_file_colors"))
         geom["color_count"] = int(bundle.get("color_count") or len(geom["filament_colours"]) or 1)
         geom["painted_ratio"] = float(bundle.get("painted_ratio") or 0.0)
+        geom["file_profile"] = bundle.get("file_profile") or {}
         return geom
 
     loaded = trimesh.load(path)
