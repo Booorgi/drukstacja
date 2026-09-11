@@ -5,17 +5,20 @@ import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
 import { supabase } from "../lib/supabaseClient";
 
+const CONTACT_PHONE = "+48 ___ ___ ___";
+
 export default function KontaktPage() {
   const [user, setUser] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState([]);
 
-  const [formName, setFormName] = useState("");
-  const [formEmail, setFormEmail] = useState("");
-  const [formSubject, setFormSubject] = useState("");
-  const [formMessage, setFormMessage] = useState("");
-  const [isSent, setIsSent] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState("idle");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -42,9 +45,27 @@ export default function KontaktPage() {
     if (data) setCartItems(data);
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    setIsSent(true);
+    setSubmitStatus("idle");
+    setIsSubmitting(true);
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, subject, message }),
+      });
+      if (!res.ok) throw new Error("send_failed");
+      setName("");
+      setEmail("");
+      setSubject("");
+      setMessage("");
+      setSubmitStatus("success");
+    } catch {
+      setSubmitStatus("error");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -70,7 +91,7 @@ export default function KontaktPage() {
             Skontaktuj się z Drukstacją
           </h1>
           <p className="text-sm text-slate-500 max-w-2xl mt-1">
-            Masz nietypowy projekt, potrzebujesz produkcji seryjnej lub weryfikacji technologicznej DFM? Nasz zespół odpowiada średnio w 2 godziny.
+            Masz nietypowy projekt, potrzebujesz produkcji seryjnej lub weryfikacji technologicznej DFM? Skontaktuj się z naszym zespołem.
           </p>
         </div>
 
@@ -89,7 +110,7 @@ export default function KontaktPage() {
                 <div>
                   <span className="text-xs font-bold text-slate-400 block">Siedziba i Park Maszynowy</span>
                   <span className="text-sm font-bold text-slate-900 block">Drukstacja 3D Lab</span>
-                  <span className="text-xs text-slate-600 block mt-0.5">Polska, Warszawa & Wrocław</span>
+                  <span className="text-xs text-slate-600 block mt-0.5">Poznań, Polska</span>
                 </div>
               </div>
 
@@ -112,113 +133,94 @@ export default function KontaktPage() {
                 </div>
                 <div>
                   <span className="text-xs font-bold text-slate-400 block">Infolinia Technologiczna</span>
-                  <a href="tel:+48500000000" className="text-sm font-bold text-slate-900 hover:text-[#EF4444] transition block">
-                    +48 500 000 000
-                  </a>
+                  <span className="text-sm font-bold text-slate-900 block">
+                    {CONTACT_PHONE}
+                  </span>
                   <span className="text-xs text-slate-600 block mt-0.5">Pn - Pt: 8:00 - 18:00</span>
                 </div>
               </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 text-white space-y-3 shadow-sm">
-              <span className="text-xs font-bold text-[#EF4444] uppercase tracking-wider block">
-                Standard Przemysłowy
-              </span>
-              <h3 className="text-base font-bold text-white">Gwarancja Poufności (NDA)</h3>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Wszystkie pliki CAD przesłane do kalkulatora Drukstacja są przetwarzane w bezpiecznym środowisku chmurowym i chronione automatyczną klauzulą NDA.
-              </p>
             </div>
           </div>
 
           {/* PRAWA KOLUMNA: FORMULARZ */}
           <div className="lg:col-span-7 bg-white rounded-3xl border border-slate-200/80 p-6 md:p-8 shadow-sm">
-            {isSent ? (
-              <div className="text-center py-12 space-y-4">
-                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl mx-auto shadow-sm">
-                  ✓
-                </div>
-                <h3 className="text-xl font-bold text-slate-900">Wiadomość została wysłana!</h3>
-                <p className="text-sm text-slate-600 max-w-md mx-auto">
-                  Dziękujemy za kontakt. Nasz inżynier zapozna się z zapytaniem i skontaktuje się z Tobą najszybciej jak to możliwe.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsSent(false)}
-                  className="px-6 py-2.5 rounded-full bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition cursor-pointer"
-                >
-                  Wyślij kolejną wiadomość
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <h2 className="text-lg font-bold text-slate-900">Napisz do nas bezpośrednio</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <h2 className="text-lg font-bold text-slate-900">Napisz do nas bezpośrednio</h2>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Twoje imię / Firma:
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formName}
-                      onChange={(e) => setFormName(e.target.value)}
-                      placeholder="Jan Kowalski"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#EF4444]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Adres e-mail:
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={formEmail}
-                      onChange={(e) => setFormEmail(e.target.value)}
-                      placeholder="jan@firma.pl"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#EF4444]"
-                    />
-                  </div>
+              {submitStatus === "success" && (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                  Dziękujemy! Twoja wiadomość została wysłana. Skontaktujemy się z Tobą najszybciej jak to możliwe.
                 </div>
+              )}
+              {submitStatus === "error" && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+                  Nie udało się wysłać wiadomości. Spróbuj ponownie lub napisz na kontakt@drukstacja.pl.
+                </div>
+              )}
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Temat zapytania:
+                    Twoje imię / Firma:
                   </label>
                   <input
                     type="text"
-                    required
-                    value={formSubject}
-                    onChange={(e) => setFormSubject(e.target.value)}
-                    placeholder="np. Wycena seryjna 500 sztuk / dobór materiału"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Jan Kowalski"
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#EF4444]"
                   />
                 </div>
-
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Treść wiadomości:
+                    Adres e-mail:
                   </label>
-                  <textarea
-                    rows={5}
+                  <input
+                    type="email"
                     required
-                    value={formMessage}
-                    onChange={(e) => setFormMessage(e.target.value)}
-                    placeholder="Opisz swój projekt, wymagania mechaniczne, oczekiwany czas realizacji..."
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#EF4444] resize-none"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="jan@firma.pl"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#EF4444]"
                   />
                 </div>
+              </div>
 
-                <button
-                  type="submit"
-                  className="w-full py-3.5 rounded-xl bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25 transition cursor-pointer"
-                >
-                  Wyślij zapytanie →
-                </button>
-              </form>
-            )}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Temat zapytania:
+                </label>
+                <input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="np. Wycena seryjna 500 sztuk / dobór materiału"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#EF4444]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Treść wiadomości:
+                </label>
+                <textarea
+                  rows={5}
+                  required
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Opisz swój projekt, wymagania mechaniczne, oczekiwany czas realizacji..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#EF4444] resize-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-3.5 rounded-xl bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25 transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSubmitting ? "Wysyłanie..." : "Wyślij zapytanie →"}
+              </button>
+            </form>
           </div>
         </div>
       </main>
