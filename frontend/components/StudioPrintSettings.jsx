@@ -33,7 +33,7 @@ export default function StudioPrintSettings({
 }) {
   if (isRfq) {
     return (
-      <div className="rounded-3xl bg-[#2A2A2A]/80 backdrop-blur-md text-white p-6 space-y-4">
+      <div className="rounded-3xl bg-[#2A2A2A]/80 backdrop-blur-md text-white p-6 space-y-4 w-full">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">
           Wycena inżynierska
         </p>
@@ -113,7 +113,7 @@ export default function StudioPrintSettings({
       : "Standard";
 
   return (
-    <div className="rounded-3xl bg-[#2A2A2A]/75 backdrop-blur-md text-white p-6 space-y-5">
+    <div className="rounded-3xl bg-[#2A2A2A]/75 backdrop-blur-md text-white p-6 space-y-5 w-full">
       <div>
         <p className="text-sm font-semibold uppercase tracking-[0.14em] text-white/60">Wybrany materiał</p>
         <h2 className="text-3xl font-semibold tracking-tight mt-1">{matConfig?.name}</h2>

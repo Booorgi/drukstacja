@@ -19,8 +19,10 @@ export default function StudioWheel({
   items = [],
   value,
   onChange,
+  onOpen,
   size = 92,
   label,
+  caption,
   className = "",
 }) {
   const n = items.length;
@@ -39,13 +41,16 @@ export default function StudioWheel({
       (it.value != null && value != null && Number(it.value) === Number(value))
   );
 
+  const subtitle = caption ?? selected?.name;
+
   return (
-    <div className={`flex flex-col items-center gap-2 ${className}`}>
+    <div className={`flex flex-col items-center gap-1 ${className}`}>
       <div
-        className="relative rounded-full bg-white shadow-[0_8px_28px_rgba(0,0,0,0.18)] ring-1 ring-black/5"
+        className="relative rounded-full bg-white shadow-[0_8px_28px_rgba(0,0,0,0.18)] ring-1 ring-black/5 cursor-pointer"
         style={{ width: size, height: size }}
+        onClick={onOpen ? () => onOpen() : undefined}
       >
-        <svg viewBox="0 0 100 100" className="w-full h-full">
+        <svg viewBox="0 0 100 100" className={`w-full h-full ${onOpen ? "pointer-events-none" : ""}`}>
           {items.map((item, i) => {
             const start = i * step;
             const end = (i + 1) * step;
@@ -64,9 +69,9 @@ export default function StudioWheel({
                 d={slicePath(cx, cy, r, start, end)}
                 fill={fill}
                 stroke={isOn ? "#111111" : isLight ? "#d4d4d4" : "rgba(255,255,255,0.35)"}
-                strokeWidth={isOn ? 2.2 : 0.6}
-                className="cursor-pointer"
-                onClick={() => onChange(item)}
+                strokeWidth={isOn || onOpen ? 1.4 : 0.6}
+                className={onOpen ? "" : "cursor-pointer"}
+                onClick={onOpen ? undefined : () => onChange?.(item)}
               >
                 <title>{item.name || item.label}</title>
               </path>
@@ -81,13 +86,13 @@ export default function StudioWheel({
         </svg>
       </div>
       {label ? (
-        <div className="text-center max-w-[108px]">
-          <span className="text-[13px] font-semibold text-neutral-900 block leading-tight">
+        <div className="text-center max-w-[96px]">
+          <span className="text-[12px] font-semibold text-neutral-900 block leading-tight">
             {label}
           </span>
-          {selected?.name ? (
-            <span className="text-[11px] text-neutral-600 block mt-0.5 leading-tight">
-              {selected.name}
+          {subtitle ? (
+            <span className="text-[10px] text-neutral-600 block mt-0.5 leading-tight">
+              {subtitle}
             </span>
           ) : null}
         </div>

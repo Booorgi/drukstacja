@@ -9,6 +9,7 @@ import Navbar from "../components/Navbar";
 import MaterialCatalog from "../components/MaterialCatalog";
 import StudioWheel from "../components/StudioWheel";
 import StudioPrintSettings from "../components/StudioPrintSettings";
+import StudioPrintParams from "../components/StudioPrintParams";
 import { STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -16,7 +17,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 const CadViewer3D = dynamic(() => import("../components/CadViewer3D"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[560px] lg:h-[720px] bg-transparent animate-pulse flex items-center justify-center text-xs font-semibold text-neutral-700">
+    <div className="w-full h-[520px] lg:h-[680px] bg-transparent animate-pulse flex items-center justify-center text-xs font-semibold text-neutral-700">
       Ładowanie podglądu…
     </div>
   ),
@@ -120,7 +121,9 @@ export default function Home() {
   const [showSupports, setShowSupports] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [printParamsOpen, setPrintParamsOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const printParamsRef = useRef(null);
 
   // Weryfikacja tworzywa PLA dla dyszy 0.2 mm
   const isPlaMaterial = useMemo(() => {
@@ -133,6 +136,17 @@ export default function Home() {
       setNozzleSize(0.4);
     }
   }, [isPlaMaterial, nozzleSize]);
+
+  useEffect(() => {
+    if (!printParamsOpen) return undefined;
+    function onDocClick(e) {
+      if (printParamsRef.current && !printParamsRef.current.contains(e.target)) {
+        setPrintParamsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [printParamsOpen]);
 
   // Dostępne wysokości warstwy dopasowane do wybranej średnicy dyszy
   const layerHeightOptions = useMemo(() => {
@@ -602,22 +616,11 @@ export default function Home() {
     hex: m.colors?.[0]?.hex || "#888888",
     name: m.name,
   }));
-  const nozzleWheelItems = [
-    { id: "0.4", value: 0.4, hex: "#333333", name: "0.4 mm" },
-    ...(isPlaMaterial ? [{ id: "0.2", value: 0.2, hex: "#D4D4D4", name: "0.2 mm" }] : []),
+  const printParamWheelItems = [
+    { id: "nozzle", hex: "#2A2A2A", name: `${nozzleSize} mm` },
+    { id: "layer", hex: "#E11D2A", name: `${Number(layerHeight).toFixed(2)} mm` },
+    { id: "infill", hex: "#D4D4D4", name: `${infill}%` },
   ];
-  const layerWheelItems = layerHeightOptions.map((opt, i) => ({
-    id: String(opt.val),
-    value: opt.val,
-    hex: ["#1A1A1A", "#E11D2A", "#E5E5E5"][i] || "#888888",
-    name: opt.label,
-  }));
-  const infillWheelItems = [10, 20, 40, 60, 100].map((pct, i) => ({
-    id: String(pct),
-    value: pct,
-    hex: ["#F3F3F3", "#D4D4D4", "#9A9A9A", "#5A5A5A", "#1A1A1A"][i],
-    name: `${pct}%`,
-  }));
 
   return (
     <div className="min-h-screen flex flex-col bg-[#EBE6DC] text-[#111111] font-sans">
@@ -644,23 +647,17 @@ export default function Home() {
       <section id="configurator" className="relative scroll-mt-20 overflow-hidden bg-gradient-to-b from-[#D8D8D8] via-[#E4E4E4] to-[#EFEFEF]">
         <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/[0.06] to-transparent pointer-events-none" />
 
-        <div className="relative max-w-[1400px] mx-auto px-4 sm:px-8 pt-6 sm:pt-8">
+        <div className="relative max-w-[1400px] mx-auto px-4 sm:px-8 pt-5 sm:pt-6">
           <div className="flex items-start justify-between gap-4">
-            <div className="rounded-2xl bg-white/70 backdrop-blur-sm px-5 py-3.5 shadow-sm">
+            <div>
               <p className="text-sm font-semibold uppercase tracking-[0.16em] text-neutral-700">
                 {analysisData && analysisData.instant_pricing === false
                   ? "Wycena inżynierska"
                   : "Konfigurator druku"}
               </p>
-              <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-neutral-900 mt-1">
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-neutral-900 mt-0.5">
                 {selectedFile ? selectedFile.name : "Wgraj model do wyceny"}
               </h1>
-              {hasModel && analysisData?.instant_pricing !== false && (
-                <p className="text-base text-neutral-800 mt-1">
-                  {totalPrice} PLN
-                  {isReslicing ? <span className="ml-2 text-sm">przeliczam…</span> : null}
-                </p>
-              )}
             </div>
             {selectedFile && (
               <button
@@ -675,45 +672,48 @@ export default function Home() {
         </div>
 
         <div className="relative w-full">
-          <aside className="relative z-20 flex flex-row flex-wrap justify-center gap-4 px-4 pt-4 md:absolute md:left-4 md:top-4 md:flex-col md:items-center md:px-0 md:pt-0">
+          <aside className="relative z-30 flex flex-row flex-wrap justify-center gap-3 px-4 pt-3 md:absolute md:left-3 md:top-2 md:flex-col md:items-center md:gap-2 md:px-0 md:pt-0">
             <StudioWheel
               items={materialWheelItems}
               value={selectedMaterial}
               onChange={(item) => handleSelectMaterial(item.id)}
-              size={92}
+              size={82}
               label="Materiał"
             />
             <StudioWheel
               items={colorWheelItems}
               value={selectedColor}
               onChange={(item) => setSelectedColor(item.hex)}
-              size={84}
+              size={82}
               label="Kolor"
             />
-            <StudioWheel
-              items={nozzleWheelItems}
-              value={String(nozzleSize)}
-              onChange={(item) => setNozzleSize(item.value)}
-              size={76}
-              label="Dysza"
-            />
-            <StudioWheel
-              items={layerWheelItems}
-              value={String(layerHeight)}
-              onChange={(item) => setLayerHeight(item.value)}
-              size={76}
-              label="Warstwa"
-            />
-            <StudioWheel
-              items={infillWheelItems}
-              value={String(infill)}
-              onChange={(item) => setInfill(item.value)}
-              size={76}
-              label="Wypełnienie"
-            />
+            <div className="relative" ref={printParamsRef}>
+              <StudioWheel
+                items={printParamWheelItems}
+                onOpen={() => setPrintParamsOpen((open) => !open)}
+                size={82}
+                label="Parametry"
+                caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
+              />
+              {printParamsOpen && (
+                <div className="absolute z-40 top-full left-1/2 -translate-x-1/2 mt-2 md:top-0 md:left-full md:translate-x-0 md:ml-3 md:mt-0">
+                  <StudioPrintParams
+                    nozzleSize={nozzleSize}
+                    setNozzleSize={setNozzleSize}
+                    isPlaMaterial={isPlaMaterial}
+                    layerHeight={layerHeight}
+                    setLayerHeight={setLayerHeight}
+                    layerHeightOptions={layerHeightOptions}
+                    infill={infill}
+                    setInfill={setInfill}
+                    infillOptions={[10, 20, 40, 60, 100]}
+                  />
+                </div>
+              )}
+            </div>
           </aside>
 
-          <div className="relative w-full flex items-center justify-center min-h-[560px] lg:min-h-[700px] md:pl-[150px] lg:pr-[380px]">
+          <div className="relative w-full flex items-center justify-center min-h-[560px] lg:min-h-[700px] md:pl-[118px] lg:pr-[440px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
@@ -840,7 +840,7 @@ export default function Home() {
               )}
             </div>
 
-            <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-6 lg:top-10 lg:bottom-24 lg:w-[340px] lg:px-0 lg:pb-0 lg:overflow-y-auto">
+            <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-5 lg:top-6 lg:bottom-6 lg:w-[420px] lg:px-0 lg:pb-0 lg:overflow-y-auto">
               <StudioPrintSettings
                 isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
                 matConfig={matConfig}
@@ -865,99 +865,63 @@ export default function Home() {
               />
             </aside>
 
-            {analysisData && analysisData.instant_pricing !== false && (
-              <div className="hidden lg:flex absolute left-4 bottom-28 z-10 py-3 px-4 rounded-2xl bg-white/80 backdrop-blur-md border border-white/60 shadow-sm flex-wrap items-center justify-between gap-3 text-sm max-w-lg">
-                <div className="flex items-center gap-4">
-                  {/* Czas druku */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm">⏱️</span>
-                    <div>
-                      <span className="text-xs uppercase font-semibold text-slate-500 block leading-tight">Czas druku</span>
-                      <span className="font-extrabold text-slate-800">
-                        {analysisData.print_time_formatted || (analysisData.print_time_hours ? `${analysisData.print_time_hours}h` : "~2h 15m")}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Waga filamentu */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm">⚖️</span>
-                    <div>
-                      <span className="text-xs uppercase font-semibold text-slate-500 block leading-tight">Waga materiału</span>
-                      <span className="font-extrabold text-slate-800">
-                        {analysisData.filament_weight_g ? `${analysisData.filament_weight_g} g` : `${Math.round(volume * 1.24 * (0.35 + (infill/100)*0.65))} g`}
-                      </span>
-                      {Number(analysisData.flush_cm3) > 0 && (
-                        <span className="text-[8px] font-bold text-slate-400 block">
-                          w tym AMS (płukanie + wieża)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Długość filamentu */}
-                  {analysisData.filament_length_m && (
-                    <div className="hidden sm:flex items-center gap-1.5">
-                      <span className="text-sm">📏</span>
-                      <div>
-                        <span className="text-xs uppercase font-semibold text-slate-500 block leading-tight">Długość</span>
-                        <span className="font-extrabold text-slate-800">
-                          {analysisData.filament_length_m} m
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Status silnika slicera */}
-                <div className="flex items-center gap-1.5 ml-auto">
-                  {isReslicing ? (
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#EF4444] bg-red-50 px-2.5 py-1 rounded-full border border-red-200/70 animate-pulse">
-                      <svg className="animate-spin w-3 h-3 text-[#EF4444]" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Przeliczam G-Code...
-                    </span>
-                  ) : (
-                    <span className="text-[9px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200 shadow-xs flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span>{analysisData.slicer_engine === "prusa-slicer-cli" ? "PrusaSlicer CLI" : "G-Code Core"}</span>
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="relative z-20 px-4 pb-6 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 lg:absolute lg:left-8 lg:right-[380px] lg:bottom-6 lg:px-0 lg:pb-0">
+            <div className="relative z-30 mx-4 mb-5 lg:absolute lg:left-[124px] lg:right-[450px] lg:bottom-5 lg:mx-0 lg:mb-0 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 shadow-sm px-4 py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               {analysisData && analysisData.instant_pricing === false ? (
                 <div>
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-800/70 block">
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">
                     Status wyceny
                   </span>
                   <span className="text-2xl font-semibold text-neutral-900">Wycena inżynierska</span>
                 </div>
               ) : (
                 <>
-                  <div>
-                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">
-                      Razem
-                    </span>
-                    <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-4xl font-semibold text-neutral-900 tracking-tight">
-                        {hasModel ? totalPrice : "—"}
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 min-w-0">
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">
+                        Razem
                       </span>
-                      <span className="text-sm font-medium text-neutral-700">PLN</span>
+                      <div className="flex items-baseline gap-2 mt-0.5">
+                        <span className="text-3xl sm:text-4xl font-semibold text-neutral-900 tracking-tight">
+                          {hasModel ? totalPrice : "—"}
+                        </span>
+                        <span className="text-sm font-medium text-neutral-700">PLN</span>
+                        {isReslicing ? <span className="text-sm text-neutral-500">przeliczam…</span> : null}
+                      </div>
+                      {isBelowMoq && hasModel && (
+                        <p className="text-xs text-neutral-800/80 mt-1">
+                          Min. zamówienie 30 PLN (jeszcze {diffToMoq} zł)
+                        </p>
+                      )}
                     </div>
-                    {isBelowMoq && hasModel && (
-                      <p className="text-[10px] text-neutral-800/80 mt-1">
-                        Min. zamówienie 30 PLN (jeszcze {diffToMoq} zł)
-                      </p>
+
+                    {hasModel && analysisData && analysisData.instant_pricing !== false && (
+                      <div className="flex flex-wrap items-center gap-4 sm:gap-5">
+                        <div>
+                          <span className="text-xs uppercase font-semibold text-neutral-500 block">Czas druku</span>
+                          <span className="text-sm font-semibold text-neutral-900">
+                            {analysisData.print_time_formatted || (analysisData.print_time_hours ? `${analysisData.print_time_hours}h` : "—")}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-xs uppercase font-semibold text-neutral-500 block">Waga</span>
+                          <span className="text-sm font-semibold text-neutral-900">
+                            {analysisData.filament_weight_g ? `${analysisData.filament_weight_g} g` : `${Math.round(volume * 1.24 * (0.35 + (infill / 100) * 0.65))} g`}
+                          </span>
+                        </div>
+                        {analysisData.filament_length_m ? (
+                          <div>
+                            <span className="text-xs uppercase font-semibold text-neutral-500 block">Długość</span>
+                            <span className="text-sm font-semibold text-neutral-900">
+                              {analysisData.filament_length_m} m
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center bg-white/80 rounded-full px-2 py-1">
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center bg-neutral-100 rounded-full px-2 py-1">
                       <button
                         onClick={() => setQuantity(Math.max(1, quantity - 1))}
                         disabled={!hasModel}

@@ -11,10 +11,9 @@ pliku do PrusaSlicer-a, a nastepnie fizycznie obrocic siatke i wyeksportowac
 nowy plik STL w tej orientacji. Dokladnie to robi ponizszy modul.
 
 Algorytm (uproszczona wersja podejscia znanego z projektu "Tweaker"):
-1. Wyznacz zestaw kandydackich orientacji: normalne scian bryly wypuklej
-   (convex hull) + normalne scian bounding-boxa (na wypadek modeli z plaskimi
-   podstawami, ktore hull moze pominac przy duzej liczbie trojkatow).
-2. Dla kazdej kandydatki obroc siatke tak, aby dana sciana laodowala sie
+1. Sprawdz 6 orientacji osiowych (X/Y/Z +/-). Nie uzywamy scian hull -
+   te potrafia polozyc model "pod katem" na stole, mimo ze w CAD lezal plasko.
+2. Dla kazdej kandydatki obroc siatke tak, aby dana os ladawala sie
    plasko na stole (Z = min).
 3. Policz "koszt podpor": sume powierzchni trojkatow nachylonych wzgledem
    stolu ponizej progu (domyslnie 30 stopni, jak w Bambu Studio) - to sa
@@ -51,33 +50,6 @@ def _cheap_sample_mesh(mesh: trimesh.Trimesh, max_faces: int = SAMPLE_FACES) -> 
         return mesh
     idx = np.linspace(0, n - 1, max_faces, dtype=int)
     return trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces[idx], process=False)
-
-
-def _candidate_normals(mesh: trimesh.Trimesh) -> np.ndarray:
-    """Zwraca zestaw unikalnych kierunkow, kazdy testowany jako 'ta sciana na dole'."""
-    candidates = []
-
-    try:
-        hull = mesh.convex_hull
-        candidates.extend(hull.face_normals.tolist())
-    except Exception:
-        pass
-
-    # Dokladamy 6 kierunkow osiowych (X/Y/Z +/-) jako zabezpieczenie - waznie
-    # przy bryłach prostopadloscianopodobnych, gdzie hull moze dac szumiace wyniki
-    candidates.extend([
-        [1, 0, 0], [-1, 0, 0],
-        [0, 1, 0], [0, -1, 0],
-        [0, 0, 1], [0, 0, -1],
-    ])
-
-    arr = np.array(candidates, dtype=float)
-    arr = arr / np.linalg.norm(arr, axis=1, keepdims=True)
-
-    # Deduplikacja bardzo podobnych kierunkow (zaokraglenie do 2 miejsc)
-    rounded = np.round(arr, 2)
-    _, unique_idx = np.unique(rounded, axis=0, return_index=True)
-    return arr[unique_idx]
 
 
 def _rotation_to_place_face_down(normal: np.ndarray) -> np.ndarray:
@@ -135,16 +107,9 @@ def auto_orient_mesh(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, dict]:
 
     n_faces = int(mesh.faces.shape[0])
     dense = n_faces > DENSE_MESH_FACES
-    if dense:
-        # MakerLab / Bambu .3mf często ma 100k+ ścianek. simplify_quadric_decimation
-        # potrafi zablokować worker na minuty i frontend zgłasza "Failed to fetch".
-        eval_mesh = _cheap_sample_mesh(mesh, SAMPLE_FACES)
-        candidates = AXIS_NORMALS
-        mode = "axis_sample"
-    else:
-        eval_mesh = mesh
-        candidates = _candidate_normals(eval_mesh)
-        mode = "hull"
+    eval_mesh = _cheap_sample_mesh(mesh, SAMPLE_FACES) if dense else mesh
+    candidates = AXIS_NORMALS
+    mode = "axis_sample" if dense else "axis"
 
     # Tolerancja porownania wynikow jako WARTOSC BEZWZGLEDNA (nie procent!) -
     # przy idealnym wyniku 0.0 (brak nawisow) procentowa tolerancja typu

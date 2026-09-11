@@ -89,58 +89,6 @@ function centerOnBed(geo) {
   geo.computeBoundingBox();
 }
 
-function autoOrientFlattestFace(geo) {
-  const pos = geo.attributes.position;
-  if (!pos || pos.count === 0) return;
-
-  const faceData = [];
-  const pA = new THREE.Vector3();
-  const pB = new THREE.Vector3();
-  const pC = new THREE.Vector3();
-  const ab = new THREE.Vector3();
-  const ac = new THREE.Vector3();
-  const fn = new THREE.Vector3();
-
-  for (let i = 0; i < pos.count; i += 3) {
-    pA.fromBufferAttribute(pos, i);
-    pB.fromBufferAttribute(pos, i + 1);
-    pC.fromBufferAttribute(pos, i + 2);
-
-    ab.subVectors(pB, pA);
-    ac.subVectors(pC, pA);
-    fn.crossVectors(ab, ac);
-    const area = fn.length() * 0.5;
-    fn.normalize();
-
-    if (area > 0.01) {
-      faceData.push({ normal: fn.clone(), area });
-    }
-  }
-
-  const clusters = [];
-  faceData.forEach((f) => {
-    let found = false;
-    for (let c of clusters) {
-      if (c.normal.dot(f.normal) > 0.98) {
-        c.totalArea += f.area;
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      clusters.push({ normal: f.normal.clone(), totalArea: f.area });
-    }
-  });
-
-  if (clusters.length > 0) {
-    clusters.sort((a, b) => b.totalArea - a.totalArea);
-    const bestNormal = clusters[0].normal;
-    const targetDown = new THREE.Vector3(0, -1, 0);
-    const q = new THREE.Quaternion().setFromUnitVectors(bestNormal, targetDown);
-    geo.applyQuaternion(q);
-  }
-}
-
 function placeObjectOnBed(object3d) {
   object3d.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object3d);
@@ -160,7 +108,6 @@ function CadModelGeometry({
   showSupports,
   showBBox,
   onGeometryLoaded,
-  skipAutoOrient = false,
   useFileColors = false,
 }) {
   const [geometry, setGeometry] = useState(null);
@@ -222,12 +169,9 @@ function CadModelGeometry({
         if (cancelled) return;
         geo.computeVertexNormals();
 
-        if (skipAutoOrient) {
-          geo.rotateX(-Math.PI / 2);
-        } else {
-          autoOrientFlattestFace(geo);
-        }
-
+        // Plik z backendu (i CAD) jest Z-up. Three.js jest Y-up.
+        // Nie szukamy "najplaszszej sciany" - przy pierscieniach to kładzie model na rant.
+        geo.rotateX(-Math.PI / 2);
         centerOnBed(geo);
 
         const pos = geo.attributes.position;
@@ -242,7 +186,7 @@ function CadModelGeometry({
     return () => {
       cancelled = true;
     };
-  }, [url, skipAutoOrient, onGeometryLoaded]);
+  }, [url, onGeometryLoaded]);
 
   // Wyliczanie powierzchni podpór (nachylenie do stołu poniżej progu Bambu)
   const supportMeshGeometry = useMemo(() => {
@@ -520,7 +464,6 @@ export default function CadViewer3D({
     analysisData?.has_file_colors || analysisData?.preview_glb_url
   );
   const useFileColors = hasFileColors && !recolorToMaterial;
-  const skipAutoOrient = Boolean(analysisData?.orientation);
 
   // Lista kolorów do wyświetlenia w lewym doku próbek
   const colorSwatches = useMemo(() => {
@@ -578,7 +521,7 @@ export default function CadViewer3D({
 
   return (
     <div className={studio
-      ? "relative w-full h-[560px] md:h-[640px] lg:h-[720px] overflow-hidden select-none bg-transparent"
+      ? "relative w-full h-[520px] md:h-[600px] lg:h-[680px] overflow-hidden select-none bg-transparent"
       : "relative w-full h-[520px] md:h-[580px] lg:h-[620px] rounded-3xl overflow-hidden select-none bg-[#F8FAFC] border border-slate-200/90 shadow-[0_15px_40px_rgba(0,0,0,0.06)]"
     }>
       
@@ -608,7 +551,6 @@ export default function CadViewer3D({
             showSupports={showSupports}
             showBBox={showBBox}
             onGeometryLoaded={setLoadedDimensions}
-            skipAutoOrient={skipAutoOrient}
             useFileColors={useFileColors}
           />
         </Bounds>

@@ -145,6 +145,18 @@ def test_support_threshold_matches_bambu():
     assert _support_score(_tilted_panel(20.0)) > 0.0
 
 
+def test_auto_orient_keeps_model_square_on_bed():
+    """Plytka ma lezec plasko, bez obrotu na sciane z hull."""
+    mesh = trimesh.creation.box(extents=[20.0, 10.0, 2.0])
+    oriented, info = auto_orient_mesh(mesh)
+    height = float(oriented.extents[2])
+    assert abs(height - 2.0) < 1e-4
+    R = np.array(info["matrix"], dtype=float)[:3, :3]
+    assert np.allclose(np.abs(R).sum(axis=0), 1.0, atol=1e-5)
+    assert np.allclose(np.abs(R).sum(axis=1), 1.0, atol=1e-5)
+    assert oriented.bounds[0][2] >= -1e-6
+
+
 def test_oriented_glb_keeps_vertex_colors():
     bundle = load_3mf_bundle(SAMPLE)
     oriented, info = auto_orient_mesh(bundle["mesh"])
