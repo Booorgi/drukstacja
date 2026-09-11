@@ -32,6 +32,11 @@ const CadViewer3D = dynamic(() => import("../components/CadViewer3D"), {
   ),
 });
 
+const StudioBenchyPreview = dynamic(() => import("../components/StudioBenchyPreview"), {
+  ssr: false,
+  loading: () => <div className="h-full w-full" />,
+});
+
 function materialIdFromFilamentType(type) {
   const t = String(type || "").toUpperCase();
   if (t.includes("TPU") || t.includes("FLEX")) return "TPU_FLEX";
@@ -906,7 +911,36 @@ export default function Home() {
               )}
             </div>
 
-            <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-5 lg:top-8 lg:w-[400px] lg:px-0 lg:pb-0 lg:bottom-auto">
+            <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-5 lg:top-2 lg:w-[400px] lg:px-0 lg:pb-0 lg:bottom-auto">
+              {!selectedFile && !isAnalyzing ? (
+                <div className="relative z-20 -mb-10 h-[200px] sm:h-[230px] lg:-mb-16 lg:h-[250px]">
+                  <StudioBenchyPreview />
+                  <div className="pointer-events-none absolute right-1 top-2 sm:right-2 sm:top-3">
+                    <p className="rotate-[11deg] text-[13px] font-medium italic tracking-tight text-neutral-500">
+                      Twój model w 3D
+                    </p>
+                    <svg
+                      className="ml-6 mt-0.5 h-10 w-16 text-neutral-400"
+                      viewBox="0 0 64 40"
+                      fill="none"
+                      aria-hidden
+                    >
+                      <path
+                        d="M8 6c18 2 28 8 36 22"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M36 24c4 4 7 7 8 12"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </div>
+                </div>
+              ) : null}
               <StudioPrintSettings
                 isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
                 matConfig={matConfig}
