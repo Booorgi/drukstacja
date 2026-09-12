@@ -530,7 +530,7 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [layerHeight, nozzleSize, infill, selectedMaterial, modelScale, analysisData?.preview_stl_key, analysisData?.color_count, analysisData?.painted_ratio]);
 
-  const volume = (analysisData?.source_volume_cm3 ?? analysisData?.volume_cm3 || 32.5) * (modelScale ** 3);
+  const volume = ((analysisData?.source_volume_cm3 ?? analysisData?.volume_cm3) || 32.5) * (modelScale ** 3);
   const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
   const activeColorObj = matConfig?.colors?.find((c) => c.hex === selectedColor) || matConfig?.colors?.[0];
   const isNozzle02 = Math.abs(nozzleSize - 0.2) < 0.05;
