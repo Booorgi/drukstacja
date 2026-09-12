@@ -970,6 +970,7 @@ export default function Home() {
             <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-4 lg:top-4 lg:w-[300px] lg:px-0 lg:pb-0 lg:bottom-auto">
               <StudioPrintSettings
                 isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
+                compact={isEmptyStage}
                 matConfig={matConfig}
                 recommendedApps={recommendedApps}
                 chemicalResistance={chemicalResistance}
