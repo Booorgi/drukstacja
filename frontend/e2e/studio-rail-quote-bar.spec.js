@@ -35,7 +35,7 @@ async function assertRailClearsQuoteBar(page) {
     `rail frame ${JSON.stringify(railBox)} overlaps quote surface ${JSON.stringify(surfaceBox)}`
   ).toBeFalsy();
 
-  const cta = page.getByRole("button", { name: /Do koszyka|Wybierz plik/ });
+  const cta = page.locator("[data-studio-quote-bar]").getByRole("button", { name: /Do koszyka|Wybierz plik/ });
   await expect(cta).toBeVisible();
   const ctaBox = await cta.boundingBox();
   const sample = page.locator("[data-studio-control-rail-frame] >> text=Materiał");
