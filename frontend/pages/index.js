@@ -13,6 +13,7 @@ import StudioPrintParams from "../components/StudioPrintParams";
 import StudioFileProfile from "../components/StudioFileProfile";
 import StudioEmptyDropzone from "../components/StudioEmptyDropzone";
 import StudioControlRail from "../components/StudioControlRail";
+import StudioQuoteBar from "../components/StudioQuoteBar";
 import { STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -436,6 +437,7 @@ export default function Home() {
     setAnalysisData(null);
     setModelPreviewUrl(null);
     setRfqSubmitted(false);
+    setQuantity(1);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -928,91 +930,32 @@ export default function Home() {
             </aside>
           </div>
 
-          <div className="sticky bottom-0 z-40 px-3 pb-2 pt-1 sm:px-4">
-            <div className="relative z-30 mx-auto flex max-w-[1400px] items-center justify-between gap-3 rounded-full bg-white/95 px-3 py-1.5 shadow-sm ring-1 ring-black/5 md:ml-[108px] lg:mr-[300px]">
-              {analysisData && analysisData.instant_pricing === false ? (
-                <div className="flex items-baseline gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                    Status
-                  </span>
-                  <span className="text-sm font-semibold text-neutral-900">Wycena inżynierska</span>
-                </div>
-              ) : (
-                <>
-                  <div className="flex min-w-0 items-center gap-3 sm:gap-5">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                        Razem
-                      </span>
-                      <span className="text-lg font-semibold tracking-tight text-neutral-900">
-                        {hasModel ? totalPrice : "—"}
-                      </span>
-                      <span className="text-xs font-medium text-neutral-600">PLN</span>
-                      {isReslicing ? <span className="text-[11px] text-neutral-500">przeliczam…</span> : null}
-                    </div>
-                    {isBelowMoq && hasModel ? (
-                      <span className="hidden text-[11px] text-neutral-500 sm:inline">
-                        min. 30 zł
-                      </span>
-                    ) : null}
-                    {hasModel && analysisData && analysisData.instant_pricing !== false ? (
-                      <div className="hidden items-center gap-3 text-[11px] text-neutral-600 md:flex">
-                        <span>{analysisData.print_time_formatted || (analysisData.print_time_hours ? `${analysisData.print_time_hours}h` : "—")}</span>
-                        <span>
-                          {analysisData.filament_weight_g
-                            ? `${analysisData.filament_weight_g} g`
-                            : `${Math.round(volume * 1.24 * (0.35 + (infill / 100) * 0.65))} g`}
-                        </span>
-                        {analysisData.filament_length_m ? <span>{analysisData.filament_length_m} m</span> : null}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    <div className="flex items-center rounded-full bg-neutral-100 px-1">
-                      <button
-                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        disabled={!hasModel}
-                        className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-neutral-800 hover:bg-white disabled:opacity-40"
-                      >
-                        −
-                      </button>
-                      <span className="w-6 text-center text-xs font-semibold">{quantity}</span>
-                      <button
-                        onClick={() => setQuantity(quantity + 1)}
-                        disabled={!hasModel}
-                        className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-neutral-800 hover:bg-white disabled:opacity-40"
-                      >
-                        +
-                      </button>
-                    </div>
-                    {!hasModel && !isAnalyzing ? (
-                      <button
-                        type="button"
-                        onClick={openFilePicker}
-                        className="rounded-full bg-[#111111] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-black"
-                      >
-                        Wybierz plik
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={!hasModel || addingToCart || isAnalyzing}
-                        onClick={handleAddToCart}
-                        className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                          !hasModel || addingToCart || isAnalyzing
-                            ? "cursor-not-allowed bg-neutral-400 text-white/70"
-                            : "cursor-pointer bg-[#111111] text-white hover:bg-black"
-                        }`}
-                      >
-                        {addingToCart ? "Zapisuję…" : isAnalyzing ? "Analizuję…" : "Do koszyka"}
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+          <StudioQuoteBar
+            isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
+            hasModel={hasModel}
+            isAnalyzing={isAnalyzing}
+            isReslicing={isReslicing}
+            isBelowMoq={isBelowMoq}
+            totalPrice={totalPrice}
+            quantity={quantity}
+            onDecreaseQuantity={() => setQuantity(Math.max(1, quantity - 1))}
+            onIncreaseQuantity={() => setQuantity(quantity + 1)}
+            onBrowse={openFilePicker}
+            onAddToCart={handleAddToCart}
+            addingToCart={addingToCart}
+            printTime={
+              analysisData?.print_time_formatted ||
+              (analysisData?.print_time_hours ? `${analysisData.print_time_hours}h` : null)
+            }
+            filamentWeight={
+              analysisData?.filament_weight_g
+                ? `${analysisData.filament_weight_g} g`
+                : hasModel
+                ? `${Math.round(volume * 1.24 * (0.35 + (infill / 100) * 0.65))} g`
+                : null
+            }
+            filamentLength={analysisData?.filament_length_m ? `${analysisData.filament_length_m} m` : null}
+          />
       </section>
 
       <main className="max-w-7xl mx-auto px-4 py-10 space-y-8 w-full">
