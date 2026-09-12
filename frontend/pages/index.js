@@ -869,7 +869,7 @@ export default function Home() {
             )}
           </StudioControlRail>
 
-          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] pb-[72px] md:pl-[96px] lg:pr-[320px]">
+          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] pb-[var(--studio-quote-bar-clearance)] md:pl-[96px] lg:pr-[320px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
