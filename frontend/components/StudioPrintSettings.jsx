@@ -2,21 +2,21 @@ import React, { useEffect, useState } from "react";
 
 function SpecTile({ label, value }) {
   return (
-    <div className="rounded-lg bg-white/12 px-2.5 py-1.5">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/60">{label}</p>
-      <p className="text-xs font-medium text-white mt-0.5 leading-snug">{value}</p>
+    <div className="rounded-lg bg-white/10 px-2.5 py-2">
+      <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/40">{label}</p>
+      <p className="text-xs font-medium text-white mt-1 leading-snug">{value}</p>
     </div>
   );
 }
 
 function MaterialDetails({ matConfig, recommendedApps, chemicalResistance, groupLabel }) {
   return (
-    <>
-      <p className="text-xs text-white/80 leading-relaxed">{matConfig?.desc}</p>
+    <div className="space-y-3.5">
+      <p className="text-xs text-white/50 leading-relaxed">{matConfig?.desc}</p>
 
       <div className="flex flex-wrap gap-1.5">
-        <span className="px-2 py-1 rounded-full bg-white/10 text-xs">{groupLabel}</span>
-        <span className="px-2 py-1 rounded-full bg-white/10 text-xs">FDM</span>
+        <span className="px-2 py-1 rounded-full bg-white/10 text-xs text-white/70">{groupLabel}</span>
+        <span className="px-2 py-1 rounded-full bg-white/10 text-xs text-white/70">FDM</span>
         {matConfig?.badge ? (
           <span className="px-2 py-1 rounded-full bg-white text-neutral-900 text-xs font-medium">
             {matConfig.badge}
@@ -24,22 +24,22 @@ function MaterialDetails({ matConfig, recommendedApps, chemicalResistance, group
         ) : null}
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 gap-2">
         <SpecTile label="Sztywność" value={matConfig?.tensileStrength || "Wysoka"} />
         <SpecTile label="Chemia" value={chemicalResistance} />
       </div>
 
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60 mb-1.5">Zastosowania</p>
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40 mb-2">Zastosowania</p>
         <div className="flex flex-wrap gap-1.5">
           {recommendedApps.slice(0, 3).map((app) => (
-            <div key={app} className="rounded-full bg-white/10 px-2 py-1 text-xs text-white/90">
+            <div key={app} className="rounded-full bg-white/10 px-2 py-1 text-xs text-white/60">
               {app}
             </div>
           ))}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -165,13 +165,13 @@ export default function StudioPrintSettings({
       data-material-panel={panelState}
       data-compact={compact ? "true" : "false"}
       className={`rounded-2xl bg-[#2A2A2A] text-white w-full ${
-        compact && !detailsOpen ? "p-3 space-y-2" : "p-3.5 space-y-2.5"
+        compact && !detailsOpen ? "p-3 space-y-2" : "p-4 space-y-4"
       }`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">Wybrany materiał</p>
-          <h2 className="text-lg font-semibold tracking-tight mt-0.5">{matConfig?.name}</h2>
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">Wybrany materiał</p>
+          <h2 className="text-lg font-semibold tracking-tight mt-1">{matConfig?.name}</h2>
         </div>
         {compact && !detailsOpen && matConfig?.badge ? (
           <span className="shrink-0 mt-0.5 px-2 py-1 rounded-full bg-white text-neutral-900 text-xs font-medium">
@@ -180,7 +180,7 @@ export default function StudioPrintSettings({
         ) : null}
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 gap-2">
         <SpecTile label="Cena" value={`${(matConfig?.pricePerCm3 || 0).toFixed(2)} zł/cm³`} />
         <SpecTile label="Gęstość" value={`${matConfig?.density || 1.24} g/cm³`} />
         {showDetails ? (
@@ -192,7 +192,7 @@ export default function StudioPrintSettings({
       </div>
 
       {!showDetails ? (
-        <p className="text-[11px] text-white/65">
+        <p className="text-[11px] text-white/40">
           HDT {matConfig?.hdt || "55°C"}
         </p>
       ) : null}
