@@ -554,7 +554,7 @@ export default function CadViewer3D({
 
   return (
     <div className={studio
-      ? "relative w-full h-[520px] md:h-[600px] lg:h-[680px] overflow-hidden select-none bg-transparent"
+      ? "relative w-full h-[400px] md:h-[440px] lg:h-[480px] overflow-hidden select-none bg-transparent"
       : "relative w-full h-[520px] md:h-[580px] lg:h-[620px] rounded-3xl overflow-hidden select-none bg-[#F8FAFC] border border-slate-200/90 shadow-[0_15px_40px_rgba(0,0,0,0.06)]"
     }>
       
@@ -909,12 +909,12 @@ export default function CadViewer3D({
       </div>}
 
       {studio && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
-          <div className="bg-[#111111]/85 backdrop-blur-xl border border-white/10 rounded-full px-2 py-1 shadow-lg flex items-center gap-1">
+        <div className="absolute top-2 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5 pointer-events-auto">
+          <div className="bg-[#111111]/85 backdrop-blur-xl border border-white/10 rounded-full px-1.5 py-0.5 shadow-lg flex items-center gap-0.5">
             <button
               type="button"
               onClick={() => setResetTrigger((prev) => prev + 1)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white/80 hover:text-white hover:bg-white/10 text-sm font-medium transition"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-white/80 hover:text-white hover:bg-white/10 text-xs font-medium transition"
               title="Wycentruj model"
             >
               Centrum
@@ -922,7 +922,7 @@ export default function CadViewer3D({
             <button
               type="button"
               onClick={() => setIsWireframe(!isWireframe)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
                 isWireframe ? "bg-white text-neutral-900" : "text-white/80 hover:text-white hover:bg-white/10"
               }`}
               title="Widok siatki CAD"
@@ -931,8 +931,18 @@ export default function CadViewer3D({
             </button>
             <button
               type="button"
+              onClick={() => setShowBBox(!showBBox)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
+                showBBox ? "bg-emerald-500 text-white" : "text-white/80 hover:text-white hover:bg-white/10"
+              }`}
+              title="Pokaż wymiary XYZ modelu"
+            >
+              Wymiary
+            </button>
+            <button
+              type="button"
               onClick={() => setShowSupports(!showSupports)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
                 showSupports ? "bg-[#EF4444] text-white" : "text-white/80 hover:text-white hover:bg-white/10"
               }`}
               title="Podświetl nawisy wymagające podpór"
@@ -940,6 +950,15 @@ export default function CadViewer3D({
               Podpory
             </button>
           </div>
+          {showBBox && dimensions.some((v) => v > 0) ? (
+            <div className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-neutral-800 shadow-sm border border-white/70">
+              <span className="text-blue-600">X {dimensions[0]}</span>
+              <span className="mx-1.5 text-neutral-400">·</span>
+              <span className="text-emerald-600">Y {dimensions[1]}</span>
+              <span className="mx-1.5 text-neutral-400">·</span>
+              <span className="text-amber-600">Z {dimensions[2]} mm</span>
+            </div>
+          ) : null}
         </div>
       )}
 

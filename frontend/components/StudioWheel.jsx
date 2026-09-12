@@ -86,12 +86,12 @@ export default function StudioWheel({
         </svg>
       </div>
       {label ? (
-        <div className="text-center max-w-[96px]">
-          <span className="text-[12px] font-semibold text-neutral-900 block leading-tight">
+        <div className="text-center max-w-[80px]">
+          <span className="text-[11px] font-semibold text-neutral-900 block leading-tight">
             {label}
           </span>
           {subtitle ? (
-            <span className="text-[10px] text-neutral-600 block mt-0.5 leading-tight">
+            <span className="text-[9px] text-neutral-600 block mt-0.5 leading-tight">
               {subtitle}
             </span>
           ) : null}

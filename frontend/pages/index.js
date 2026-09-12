@@ -26,7 +26,7 @@ function resolveAssetUrl(url) {
 const CadViewer3D = dynamic(() => import("../components/CadViewer3D"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[520px] lg:h-[680px] bg-transparent animate-pulse flex items-center justify-center text-xs font-semibold text-neutral-700">
+    <div className="w-full h-[400px] lg:h-[480px] bg-transparent animate-pulse flex items-center justify-center text-xs font-semibold text-neutral-700">
       Ładowanie podglądu…
     </div>
   ),
@@ -694,15 +694,15 @@ export default function Home() {
 
       <section id="configurator" className="relative scroll-mt-20 overflow-hidden bg-[#E2E2E2]">
 
-        <div className="relative max-w-[1400px] mx-auto px-4 sm:px-8 pt-5 sm:pt-6">
+        <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 pt-3 sm:pt-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-neutral-700">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-700">
                 {analysisData && analysisData.instant_pricing === false
                   ? "Wycena inżynierska"
                   : "Konfigurator druku"}
               </p>
-              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-neutral-900 mt-0.5">
+              <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-neutral-900 mt-0.5">
                 {selectedFile ? selectedFile.name : "Wgraj model do wyceny"}
               </h1>
             </div>
@@ -710,7 +710,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={handleResetFile}
-                className="rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-white"
+                className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-white"
               >
                 Zmień plik
               </button>
@@ -719,7 +719,7 @@ export default function Home() {
         </div>
 
         <div className="relative w-full">
-          <aside className="relative z-40 flex flex-row flex-wrap justify-center gap-4 px-4 pt-3 md:pointer-events-none md:absolute md:left-0 md:top-4 md:bottom-36 lg:right-[400px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-3 md:px-[12%] md:pt-0">
+          <aside className="relative z-40 flex flex-row flex-wrap justify-center gap-3 px-4 pt-2 md:pointer-events-none md:absolute md:left-0 md:top-2 md:bottom-28 lg:right-[320px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-2 md:px-[10%] md:pt-0">
             {isLocked3mf ? (
               <div className="md:pointer-events-auto">
                 <StudioFileProfile
@@ -737,7 +737,7 @@ export default function Home() {
                     items={materialWheelItems}
                     value={selectedMaterial}
                     onChange={(item) => handleSelectMaterial(item.id)}
-                    size={78}
+                    size={58}
                     label="Materiał"
                   />
                 </div>
@@ -746,7 +746,7 @@ export default function Home() {
                     items={colorWheelItems}
                     value={selectedColor}
                     onChange={(item) => setSelectedColor(item.hex)}
-                    size={78}
+                    size={58}
                     label="Kolor"
                   />
                 </div>
@@ -754,7 +754,7 @@ export default function Home() {
                   <StudioWheel
                     items={printParamWheelItems}
                     onOpen={() => setPrintParamsOpen((open) => !open)}
-                    size={78}
+                    size={58}
                     label="Parametry"
                     caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
                   />
@@ -778,7 +778,7 @@ export default function Home() {
             )}
           </aside>
 
-          <div className="relative w-full flex items-center justify-center min-h-[560px] lg:min-h-[700px] md:pl-[40px] lg:pr-[400px]">
+          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] md:pl-[28px] lg:pr-[320px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
@@ -905,7 +905,7 @@ export default function Home() {
               )}
             </div>
 
-            <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-5 lg:top-8 lg:w-[400px] lg:px-0 lg:pb-0 lg:bottom-auto">
+            <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-4 lg:top-4 lg:w-[300px] lg:px-0 lg:pb-0 lg:bottom-auto">
               <StudioPrintSettings
                 isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
                 matConfig={matConfig}
@@ -930,7 +930,7 @@ export default function Home() {
               />
             </aside>
 
-            <div className="relative z-30 mx-4 mb-5 lg:absolute lg:left-[220px] lg:right-[420px] lg:bottom-5 lg:mx-0 lg:mb-0 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 shadow-sm px-4 py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative z-30 mx-4 mb-4 lg:absolute lg:left-[180px] lg:right-[328px] lg:bottom-3 lg:mx-0 lg:mb-0 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 shadow-sm px-3 py-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
               {analysisData && analysisData.instant_pricing === false ? (
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">
@@ -946,7 +946,7 @@ export default function Home() {
                         Razem
                       </span>
                       <div className="flex items-baseline gap-2 mt-0.5">
-                        <span className="text-3xl sm:text-4xl font-semibold text-neutral-900 tracking-tight">
+                        <span className="text-2xl sm:text-3xl font-semibold text-neutral-900 tracking-tight">
                           {hasModel ? totalPrice : "—"}
                         </span>
                         <span className="text-sm font-medium text-neutral-700">PLN</span>

@@ -2,9 +2,9 @@ import React from "react";
 
 function SpecTile({ label, value }) {
   return (
-    <div className="rounded-xl bg-white/12 px-3 py-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/60">{label}</p>
-      <p className="text-sm font-medium text-white mt-0.5 leading-snug">{value}</p>
+    <div className="rounded-lg bg-white/12 px-2.5 py-1.5">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/60">{label}</p>
+      <p className="text-xs font-medium text-white mt-0.5 leading-snug">{value}</p>
     </div>
   );
 }
@@ -113,41 +113,41 @@ export default function StudioPrintSettings({
       : "Standard";
 
   return (
-    <div className="rounded-3xl bg-[#2A2A2A] text-white p-5 space-y-4 w-full">
+    <div className="rounded-2xl bg-[#2A2A2A] text-white p-3.5 space-y-2.5 w-full">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">Wybrany materiał</p>
-        <h2 className="text-2xl font-semibold tracking-tight mt-1">{matConfig?.name}</h2>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">Wybrany materiał</p>
+        <h2 className="text-lg font-semibold tracking-tight mt-0.5">{matConfig?.name}</h2>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-1.5">
         <SpecTile label="Cena" value={`${(matConfig?.pricePerCm3 || 0).toFixed(2)} zł/cm³`} />
         <SpecTile label="Gęstość" value={`${matConfig?.density || 1.24} g/cm³`} />
         <SpecTile label="HDT" value={matConfig?.hdt || "55°C"} />
         <SpecTile label="UV" value={matConfig?.uvResistance || "Średnia"} />
       </div>
 
-      <p className="text-sm text-white/85 leading-relaxed">{matConfig?.desc}</p>
+      <p className="text-xs text-white/80 leading-relaxed">{matConfig?.desc}</p>
 
-      <div className="flex flex-wrap gap-2">
-        <span className="px-3 py-1.5 rounded-full bg-white/10 text-sm">{groupLabel}</span>
-        <span className="px-3 py-1.5 rounded-full bg-white/10 text-sm">FDM</span>
+      <div className="flex flex-wrap gap-1.5">
+        <span className="px-2 py-1 rounded-full bg-white/10 text-xs">{groupLabel}</span>
+        <span className="px-2 py-1 rounded-full bg-white/10 text-xs">FDM</span>
         {matConfig?.badge ? (
-          <span className="px-3 py-1.5 rounded-full bg-white text-neutral-900 text-sm font-medium">
+          <span className="px-2 py-1 rounded-full bg-white text-neutral-900 text-xs font-medium">
             {matConfig.badge}
           </span>
         ) : null}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-1.5">
         <SpecTile label="Sztywność" value={matConfig?.tensileStrength || "Wysoka"} />
         <SpecTile label="Chemia" value={chemicalResistance} />
       </div>
 
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60 mb-2">Zastosowania</p>
-        <div className="flex flex-wrap gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60 mb-1.5">Zastosowania</p>
+        <div className="flex flex-wrap gap-1.5">
           {recommendedApps.slice(0, 3).map((app) => (
-            <div key={app} className="rounded-full bg-white/10 px-3 py-1.5 text-sm text-white/90">
+            <div key={app} className="rounded-full bg-white/10 px-2 py-1 text-xs text-white/90">
               {app}
             </div>
           ))}
