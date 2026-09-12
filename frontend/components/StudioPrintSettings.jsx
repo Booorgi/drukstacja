@@ -180,12 +180,22 @@ export default function StudioPrintSettings({
         ) : null}
       </div>
 
-      <div className={`grid gap-1.5 ${showDetails ? "grid-cols-2" : "grid-cols-3"}`}>
+      <div className="grid grid-cols-2 gap-1.5">
         <SpecTile label="Cena" value={`${(matConfig?.pricePerCm3 || 0).toFixed(2)} zł/cm³`} />
         <SpecTile label="Gęstość" value={`${matConfig?.density || 1.24} g/cm³`} />
-        <SpecTile label="HDT" value={matConfig?.hdt || "55°C"} />
-        {showDetails ? <SpecTile label="UV" value={matConfig?.uvResistance || "Średnia"} /> : null}
+        {showDetails ? (
+          <>
+            <SpecTile label="HDT" value={matConfig?.hdt || "55°C"} />
+            <SpecTile label="UV" value={matConfig?.uvResistance || "Średnia"} />
+          </>
+        ) : null}
       </div>
+
+      {!showDetails ? (
+        <p className="text-[11px] text-white/65">
+          HDT {matConfig?.hdt || "55°C"}
+        </p>
+      ) : null}
 
       {showDetails ? (
         <div id="material-details" data-material-details>
