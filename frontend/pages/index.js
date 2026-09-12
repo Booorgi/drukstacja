@@ -11,6 +11,9 @@ import StudioWheel from "../components/StudioWheel";
 import StudioPrintSettings from "../components/StudioPrintSettings";
 import StudioPrintParams from "../components/StudioPrintParams";
 import StudioFileProfile from "../components/StudioFileProfile";
+import StudioEmptyDropzone from "../components/StudioEmptyDropzone";
+import StudioControlRail from "../components/StudioControlRail";
+import StudioQuoteBar from "../components/StudioQuoteBar";
 import { STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -299,8 +302,17 @@ export default function Home() {
     };
   }, []);
 
-  async function handleFileUpload(e) {
+  function handleFileInputChange(e) {
     const file = e.target.files?.[0];
+    if (!file) return;
+    handleSelectedFile(file);
+  }
+
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
+  async function handleSelectedFile(file) {
     if (!file) return;
 
     setSelectedFile(file);
@@ -425,6 +437,7 @@ export default function Home() {
     setAnalysisData(null);
     setModelPreviewUrl(null);
     setRfqSubmitted(false);
+    setQuantity(1);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -525,6 +538,7 @@ export default function Home() {
 
   // Weryfikacja wgranego modelu – ukrycie ceny i blokada koszyka przed analizą
   const hasModel = Boolean(analysisData && (analysisData.preview_stl_url || analysisData.file_key || analysisData.volume_cm3 != null));
+  const isEmptyStage = !selectedFile && !analysisData && !isAnalyzing;
   const MIN_ORDER_VALUE = 30.00;
   const isBelowMoq = hasModel && parseFloat(totalPrice) < MIN_ORDER_VALUE;
   const diffToMoq = (MIN_ORDER_VALUE - parseFloat(totalPrice)).toFixed(2);
@@ -689,10 +703,23 @@ export default function Home() {
         type="file"
         accept=".stl,.step,.stp,.obj,.3mf,.iges,.igs,.ply,.glb,.gltf,.off,.3ds,.dxf,.dwg,.pdf,.zip,.rar,.7z,.kicad_pcb,.pcbdoc,.brd,.gbr,.ger,.gtl,.gbl,.gts,.gbs,.drl,.fcstd,.ifc,.3dm,.png,.jpg,.jpeg"
         className="hidden"
-        onChange={handleFileUpload}
+        onChange={handleFileInputChange}
       />
 
-      <section id="configurator" className="relative scroll-mt-20 bg-[#E2E2E2]">
+      <section
+        id="configurator"
+        className="relative scroll-mt-20 bg-[#E2E2E2]"
+        onDragOver={(e) => {
+          if (selectedFile || isAnalyzing || analysisData) return;
+          e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (selectedFile || isAnalyzing || analysisData) return;
+          e.preventDefault();
+          const file = e.dataTransfer?.files?.[0];
+          if (file) handleSelectedFile(file);
+        }}
+      >
 
         <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 pt-3 sm:pt-4">
           <div className="flex items-start justify-between gap-4">
@@ -719,42 +746,39 @@ export default function Home() {
         </div>
 
         <div className="relative w-full">
-          <aside className="relative z-50 flex flex-row flex-wrap justify-center gap-3 overflow-visible px-4 pt-2 md:pointer-events-none md:absolute md:left-0 md:top-2 md:bottom-[72px] lg:right-[320px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-2 md:px-[10%] md:pt-0">
+          <StudioControlRail empty={isEmptyStage} framed={!isLocked3mf}>
             {isLocked3mf ? (
-              <div className="md:pointer-events-auto">
-                <StudioFileProfile
-                  colours={fileProfile.filament_colours || analysisData?.filament_colours || []}
-                  filamentTypes={fileProfile.filament_types || []}
-                  layerHeight={fileProfile.layer_height || layerHeight}
-                  nozzleSize={fileProfile.nozzle_size || nozzleSize}
-                  infill={fileProfile.infill ?? infill}
-                />
-              </div>
+              <StudioFileProfile
+                colours={fileProfile.filament_colours || analysisData?.filament_colours || []}
+                filamentTypes={fileProfile.filament_types || []}
+                layerHeight={fileProfile.layer_height || layerHeight}
+                nozzleSize={fileProfile.nozzle_size || nozzleSize}
+                infill={fileProfile.infill ?? infill}
+              />
             ) : (
               <>
-                <div className="md:pointer-events-auto">
-                  <StudioWheel
-                    items={materialWheelItems}
-                    value={selectedMaterial}
-                    onChange={(item) => handleSelectMaterial(item.id)}
-                    size={58}
-                    label="Materiał"
-                  />
-                </div>
-                <div className="md:pointer-events-auto md:-ml-8">
-                  <StudioWheel
-                    items={colorWheelItems}
-                    value={selectedColor}
-                    onChange={(item) => setSelectedColor(item.hex)}
-                    size={58}
-                    label="Kolor"
-                  />
-                </div>
-                <div className="relative z-[80] overflow-visible md:pointer-events-auto" ref={printParamsRef}>
+                <StudioWheel
+                  items={materialWheelItems}
+                  value={selectedMaterial}
+                  onChange={(item) => handleSelectMaterial(item.id)}
+                  size={isEmptyStage ? 46 : 58}
+                  muted={isEmptyStage}
+                  label="Materiał"
+                />
+                <StudioWheel
+                  items={colorWheelItems}
+                  value={selectedColor}
+                  onChange={(item) => setSelectedColor(item.hex)}
+                  size={isEmptyStage ? 46 : 58}
+                  muted={isEmptyStage}
+                  label="Kolor"
+                />
+                <div className="relative z-[80] overflow-visible" ref={printParamsRef}>
                   <StudioWheel
                     items={printParamWheelItems}
                     onOpen={() => setPrintParamsOpen((open) => !open)}
-                    size={58}
+                    size={isEmptyStage ? 46 : 58}
+                    muted={isEmptyStage}
                     label="Parametry"
                     caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
                   />
@@ -776,9 +800,9 @@ export default function Home() {
                 </div>
               </>
             )}
-          </aside>
+          </StudioControlRail>
 
-          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] pb-[72px] md:pl-[28px] lg:pr-[320px]">
+          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] pb-[72px] md:pl-[96px] lg:pr-[320px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
@@ -873,29 +897,10 @@ export default function Home() {
                   showSupportsDefault={showSupports}
                 />
               ) : (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center gap-3 px-6 py-8 text-center cursor-pointer group"
-                >
-                  <svg
-                    className="w-8 h-8 text-neutral-500 group-hover:text-neutral-800 transition"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    aria-hidden
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16.5V18a2 2 0 002 2h12a2 2 0 002-2v-1.5" />
-                  </svg>
-                  <span className="text-[15px] font-medium text-neutral-700 group-hover:text-neutral-900 transition">
-                    Kliknij, aby wybrać model
-                  </span>
-                  <span className="text-xs text-neutral-400">
-                    .stl .step .obj .3mf · PCB · 2D
-                  </span>
-                </button>
+                <StudioEmptyDropzone
+                  onBrowse={openFilePicker}
+                  onFileSelected={handleSelectedFile}
+                />
               )}
             </div>
 
@@ -925,80 +930,32 @@ export default function Home() {
             </aside>
           </div>
 
-          <div className="sticky bottom-0 z-40 px-3 pb-2 pt-1 sm:px-4">
-            <div className="relative z-30 mx-auto flex max-w-[1400px] items-center justify-between gap-3 rounded-full bg-white/95 px-3 py-1.5 shadow-sm ring-1 ring-black/5 md:ml-[140px] lg:ml-[160px] lg:mr-[300px]">
-              {analysisData && analysisData.instant_pricing === false ? (
-                <div className="flex items-baseline gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                    Status
-                  </span>
-                  <span className="text-sm font-semibold text-neutral-900">Wycena inżynierska</span>
-                </div>
-              ) : (
-                <>
-                  <div className="flex min-w-0 items-center gap-3 sm:gap-5">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                        Razem
-                      </span>
-                      <span className="text-lg font-semibold tracking-tight text-neutral-900">
-                        {hasModel ? totalPrice : "—"}
-                      </span>
-                      <span className="text-xs font-medium text-neutral-600">PLN</span>
-                      {isReslicing ? <span className="text-[11px] text-neutral-500">przeliczam…</span> : null}
-                    </div>
-                    {isBelowMoq && hasModel ? (
-                      <span className="hidden text-[11px] text-neutral-500 sm:inline">
-                        min. 30 zł
-                      </span>
-                    ) : null}
-                    {hasModel && analysisData && analysisData.instant_pricing !== false ? (
-                      <div className="hidden items-center gap-3 text-[11px] text-neutral-600 md:flex">
-                        <span>{analysisData.print_time_formatted || (analysisData.print_time_hours ? `${analysisData.print_time_hours}h` : "—")}</span>
-                        <span>
-                          {analysisData.filament_weight_g
-                            ? `${analysisData.filament_weight_g} g`
-                            : `${Math.round(volume * 1.24 * (0.35 + (infill / 100) * 0.65))} g`}
-                        </span>
-                        {analysisData.filament_length_m ? <span>{analysisData.filament_length_m} m</span> : null}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    <div className="flex items-center rounded-full bg-neutral-100 px-1">
-                      <button
-                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        disabled={!hasModel}
-                        className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-neutral-800 hover:bg-white disabled:opacity-40"
-                      >
-                        −
-                      </button>
-                      <span className="w-6 text-center text-xs font-semibold">{quantity}</span>
-                      <button
-                        onClick={() => setQuantity(quantity + 1)}
-                        disabled={!hasModel}
-                        className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-neutral-800 hover:bg-white disabled:opacity-40"
-                      >
-                        +
-                      </button>
-                    </div>
-                    <button
-                      disabled={!hasModel || addingToCart || isAnalyzing}
-                      onClick={handleAddToCart}
-                      className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                        !hasModel || addingToCart || isAnalyzing
-                          ? "cursor-not-allowed bg-neutral-400 text-white/70"
-                          : "cursor-pointer bg-[#111111] text-white hover:bg-black"
-                      }`}
-                    >
-                      {addingToCart ? "Zapisuję…" : isAnalyzing ? "Analizuję…" : !hasModel ? "Wgraj model" : "Do koszyka"}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+          <StudioQuoteBar
+            isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
+            hasModel={hasModel}
+            isAnalyzing={isAnalyzing}
+            isReslicing={isReslicing}
+            isBelowMoq={isBelowMoq}
+            totalPrice={totalPrice}
+            quantity={quantity}
+            onDecreaseQuantity={() => setQuantity(Math.max(1, quantity - 1))}
+            onIncreaseQuantity={() => setQuantity(quantity + 1)}
+            onBrowse={openFilePicker}
+            onAddToCart={handleAddToCart}
+            addingToCart={addingToCart}
+            printTime={
+              analysisData?.print_time_formatted ||
+              (analysisData?.print_time_hours ? `${analysisData.print_time_hours}h` : null)
+            }
+            filamentWeight={
+              analysisData?.filament_weight_g
+                ? `${analysisData.filament_weight_g} g`
+                : hasModel
+                ? `${Math.round(volume * 1.24 * (0.35 + (infill / 100) * 0.65))} g`
+                : null
+            }
+            filamentLength={analysisData?.filament_length_m ? `${analysisData.filament_length_m} m` : null}
+          />
       </section>
 
       <main className="max-w-7xl mx-auto px-4 py-10 space-y-8 w-full">
