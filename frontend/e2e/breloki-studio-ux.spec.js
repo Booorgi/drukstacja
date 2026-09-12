@@ -46,7 +46,7 @@ test.describe("breloki studio UX (#19)", () => {
 
     await input.fill("Ada");
     await expect(page.locator("[data-text-style-controls]")).toBeVisible();
-    await expect(page.getByText("Font")).toBeVisible();
+    await expect(page.getByText("Font", { exact: true })).toBeVisible();
     await expect(page.getByText("Pozycja tekstu")).toBeVisible();
   });
 });
