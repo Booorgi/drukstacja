@@ -39,6 +39,7 @@ export default function StudioWheel({
   size = 92,
   label,
   caption,
+  muted = false,
   className = "",
 }) {
   const n = items.length;
@@ -54,7 +55,11 @@ export default function StudioWheel({
   return (
     <div className={`flex flex-col items-center gap-1 ${className}`}>
       <div
-        className="relative cursor-pointer overflow-visible rounded-full bg-white shadow-[0_8px_28px_rgba(0,0,0,0.18)] ring-1 ring-black/5"
+        className={`relative cursor-pointer overflow-visible rounded-full bg-white ring-1 ring-black/5 ${
+          muted
+            ? "shadow-[0_2px_10px_rgba(0,0,0,0.08)]"
+            : "shadow-[0_8px_28px_rgba(0,0,0,0.18)]"
+        }`}
         style={{ width: size, height: size }}
         onClick={onOpen ? () => onOpen() : undefined}
       >
@@ -104,11 +109,19 @@ export default function StudioWheel({
       </div>
       {label ? (
         <div className="max-w-[80px] text-center">
-          <span className="block text-[11px] font-semibold leading-tight text-neutral-900">
+          <span
+            className={`block text-[11px] font-semibold leading-tight ${
+              muted ? "text-neutral-500" : "text-neutral-900"
+            }`}
+          >
             {label}
           </span>
           {subtitle ? (
-            <span className="mt-0.5 block text-[9px] leading-tight text-neutral-600">
+            <span
+              className={`mt-0.5 block text-[9px] leading-tight ${
+                muted ? "text-neutral-400" : "text-neutral-600"
+              }`}
+            >
               {subtitle}
             </span>
           ) : null}
