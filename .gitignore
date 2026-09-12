@@ -3,6 +3,7 @@ __pycache__/
 *$py.class
 node_modules/
 .next/
+.venv/
 .env
 .env.local
 
