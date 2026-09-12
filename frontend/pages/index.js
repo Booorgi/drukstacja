@@ -719,7 +719,7 @@ export default function Home() {
         </div>
 
         <div className="relative w-full">
-          <aside className="relative z-50 flex flex-row flex-wrap justify-center gap-3 overflow-visible px-4 pt-2 md:pointer-events-none md:absolute md:left-0 md:top-2 md:bottom-4 lg:right-[320px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-2 md:px-[10%] md:pt-0">
+          <aside className="relative z-50 flex flex-row flex-wrap justify-center gap-3 overflow-visible px-4 pt-2 md:pointer-events-none md:absolute md:left-0 md:top-2 md:bottom-[72px] lg:right-[320px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-2 md:px-[10%] md:pt-0">
             {isLocked3mf ? (
               <div className="md:pointer-events-auto">
                 <StudioFileProfile
@@ -778,7 +778,7 @@ export default function Home() {
             )}
           </aside>
 
-          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] md:pl-[28px] lg:pr-[320px]">
+          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] pb-[72px] md:pl-[28px] lg:pr-[320px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
@@ -925,76 +925,60 @@ export default function Home() {
             </aside>
           </div>
 
-          <div className="sticky bottom-0 z-40 bg-gradient-to-t from-[#E2E2E2] via-[#E2E2E2]/95 to-transparent px-4 pb-3 pt-2 sm:px-6">
-            <div className="relative z-30 mx-auto max-w-[1400px] rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 shadow-sm px-3 py-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+          <div className="sticky bottom-0 z-40 px-3 pb-2 pt-1 sm:px-4">
+            <div className="relative z-30 mx-auto flex max-w-[1400px] items-center justify-between gap-3 rounded-full bg-white/95 px-3 py-1.5 shadow-sm ring-1 ring-black/5 md:ml-[140px] lg:ml-[160px] lg:mr-[300px]">
               {analysisData && analysisData.instant_pricing === false ? (
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">
-                    Status wyceny
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                    Status
                   </span>
-                  <span className="text-2xl font-semibold text-neutral-900">Wycena inżynierska</span>
+                  <span className="text-sm font-semibold text-neutral-900">Wycena inżynierska</span>
                 </div>
               ) : (
                 <>
-                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 min-w-0">
-                    <div>
-                      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">
+                  <div className="flex min-w-0 items-center gap-3 sm:gap-5">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
                         Razem
                       </span>
-                      <div className="flex items-baseline gap-2 mt-0.5">
-                        <span className="text-2xl sm:text-3xl font-semibold text-neutral-900 tracking-tight">
-                          {hasModel ? totalPrice : "—"}
-                        </span>
-                        <span className="text-sm font-medium text-neutral-700">PLN</span>
-                        {isReslicing ? <span className="text-sm text-neutral-500">przeliczam…</span> : null}
-                      </div>
-                      {isBelowMoq && hasModel && (
-                        <p className="text-xs text-neutral-800/80 mt-1">
-                          Min. zamówienie 30 PLN (jeszcze {diffToMoq} zł)
-                        </p>
-                      )}
+                      <span className="text-lg font-semibold tracking-tight text-neutral-900">
+                        {hasModel ? totalPrice : "—"}
+                      </span>
+                      <span className="text-xs font-medium text-neutral-600">PLN</span>
+                      {isReslicing ? <span className="text-[11px] text-neutral-500">przeliczam…</span> : null}
                     </div>
-
-                    {hasModel && analysisData && analysisData.instant_pricing !== false && (
-                      <div className="flex flex-wrap items-center gap-4 sm:gap-5">
-                        <div>
-                          <span className="text-xs uppercase font-semibold text-neutral-500 block">Czas druku</span>
-                          <span className="text-sm font-semibold text-neutral-900">
-                            {analysisData.print_time_formatted || (analysisData.print_time_hours ? `${analysisData.print_time_hours}h` : "—")}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-xs uppercase font-semibold text-neutral-500 block">Waga</span>
-                          <span className="text-sm font-semibold text-neutral-900">
-                            {analysisData.filament_weight_g ? `${analysisData.filament_weight_g} g` : `${Math.round(volume * 1.24 * (0.35 + (infill / 100) * 0.65))} g`}
-                          </span>
-                        </div>
-                        {analysisData.filament_length_m ? (
-                          <div>
-                            <span className="text-xs uppercase font-semibold text-neutral-500 block">Długość</span>
-                            <span className="text-sm font-semibold text-neutral-900">
-                              {analysisData.filament_length_m} m
-                            </span>
-                          </div>
-                        ) : null}
+                    {isBelowMoq && hasModel ? (
+                      <span className="hidden text-[11px] text-neutral-500 sm:inline">
+                        min. 30 zł
+                      </span>
+                    ) : null}
+                    {hasModel && analysisData && analysisData.instant_pricing !== false ? (
+                      <div className="hidden items-center gap-3 text-[11px] text-neutral-600 md:flex">
+                        <span>{analysisData.print_time_formatted || (analysisData.print_time_hours ? `${analysisData.print_time_hours}h` : "—")}</span>
+                        <span>
+                          {analysisData.filament_weight_g
+                            ? `${analysisData.filament_weight_g} g`
+                            : `${Math.round(volume * 1.24 * (0.35 + (infill / 100) * 0.65))} g`}
+                        </span>
+                        {analysisData.filament_length_m ? <span>{analysisData.filament_length_m} m</span> : null}
                       </div>
-                    )}
+                    ) : null}
                   </div>
 
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="flex items-center bg-neutral-100 rounded-full px-2 py-1">
+                  <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex items-center rounded-full bg-neutral-100 px-1">
                       <button
                         onClick={() => setQuantity(Math.max(1, quantity - 1))}
                         disabled={!hasModel}
-                        className="w-8 h-8 flex items-center justify-center text-neutral-800 font-medium hover:bg-white rounded-full disabled:opacity-40"
+                        className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-neutral-800 hover:bg-white disabled:opacity-40"
                       >
                         −
                       </button>
-                      <span className="w-8 text-center font-semibold text-sm">{quantity}</span>
+                      <span className="w-6 text-center text-xs font-semibold">{quantity}</span>
                       <button
                         onClick={() => setQuantity(quantity + 1)}
                         disabled={!hasModel}
-                        className="w-8 h-8 flex items-center justify-center text-neutral-800 font-medium hover:bg-white rounded-full disabled:opacity-40"
+                        className="flex h-6 w-6 items-center justify-center rounded-full text-sm text-neutral-800 hover:bg-white disabled:opacity-40"
                       >
                         +
                       </button>
@@ -1002,13 +986,13 @@ export default function Home() {
                     <button
                       disabled={!hasModel || addingToCart || isAnalyzing}
                       onClick={handleAddToCart}
-                      className={`px-6 py-3 rounded-full text-sm font-semibold transition ${
+                      className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
                         !hasModel || addingToCart || isAnalyzing
-                          ? "bg-neutral-400 text-white/70 cursor-not-allowed"
-                          : "bg-[#111111] hover:bg-black text-white cursor-pointer"
+                          ? "cursor-not-allowed bg-neutral-400 text-white/70"
+                          : "cursor-pointer bg-[#111111] text-white hover:bg-black"
                       }`}
                     >
-                      {addingToCart ? "Zapisuję…" : isAnalyzing ? "Analizuję…" : !hasModel ? "Wgraj model" : "Dodaj do koszyka"}
+                      {addingToCart ? "Zapisuję…" : isAnalyzing ? "Analizuję…" : !hasModel ? "Wgraj model" : "Do koszyka"}
                     </button>
                   </div>
                 </>
