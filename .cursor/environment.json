@@ -1,0 +1,19 @@
+{
+  "name": "Drukstacja (backend + frontend)",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "backend",
+      "command": "cd backend && ./.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000"
+    },
+    {
+      "name": "frontend",
+      "command": "cd frontend && NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev"
+    }
+  ],
+  "ports": [
+    { "name": "frontend", "port": 3000 },
+    { "name": "backend", "port": 8000 }
+  ]
+}
