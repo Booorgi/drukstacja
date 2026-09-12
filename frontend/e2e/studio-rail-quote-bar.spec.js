@@ -26,6 +26,14 @@ async function assertRailClearsQuoteBar(page) {
   expect(barBox, "quote bar should have a box").toBeTruthy();
   expect(surfaceBox, "quote surface should have a box").toBeTruthy();
 
+  const railStyle = await page.locator("[data-studio-control-rail]").evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { position: s.position, bottom: s.bottom, zIndex: s.zIndex };
+  });
+  expect(railStyle.position, "desktop rail must be absolutely confined to the stage").toBe("absolute");
+  expect(railStyle.bottom, "desktop rail must have a bottom inset").not.toBe("auto");
+  expect(railBox.y + railBox.height, "rail frame must end above the quote bar").toBeLessThanOrEqual(barBox.y + 0.5);
+
   expect(
     boxesOverlap(railBox, barBox),
     `rail frame ${JSON.stringify(railBox)} overlaps quote bar wrapper ${JSON.stringify(barBox)}`

@@ -24,6 +24,13 @@ module.exports = defineConfig({
         viewport: { width: 1280, height: 720 },
       },
     },
+    {
+      name: "chromium-laptop",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1366, height: 640 },
+      },
+    },
   ],
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
