@@ -170,6 +170,7 @@ function CadModelGeometry({
   showBBox,
   onGeometryLoaded,
   useFileColors = false,
+  displayScale = 1,
 }) {
   const [geometry, setGeometry] = useState(null);
   const [gltfRoot, setGltfRoot] = useState(null);
@@ -464,11 +465,11 @@ function CadModelGeometry({
             distanceFactor={180}
           >
             <div className="bg-slate-900/90 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl shadow-xl border border-white/20 whitespace-nowrap backdrop-blur-md flex items-center gap-2 pointer-events-none">
-              <span className="text-blue-400">X: {bboxData.size.x.toFixed(1)}</span>
+              <span className="text-blue-400">X: {(bboxData.size.x * displayScale).toFixed(1)}</span>
               <span className="text-slate-500">|</span>
-              <span className="text-emerald-400">Y: {bboxData.size.y.toFixed(1)}</span>
+              <span className="text-emerald-400">Y: {(bboxData.size.y * displayScale).toFixed(1)}</span>
               <span className="text-slate-500">|</span>
-              <span className="text-amber-400">Z: {bboxData.size.z.toFixed(1)} mm</span>
+              <span className="text-amber-400">Z: {(bboxData.size.z * displayScale).toFixed(1)} mm</span>
             </div>
           </Html>
         </group>
@@ -490,6 +491,7 @@ export default function CadViewer3D({
   availableColors = [],
   showSupportsDefault = false,
   studio = false,
+  modelScale = 1,
 }) {
   // Stany narzędziowe CAD
   const [isWireframe, setIsWireframe] = useState(false);
@@ -518,14 +520,15 @@ export default function CadViewer3D({
   }, [volumeCm3, volumeUnit]);
 
   const dimensions = useMemo(() => {
+    const s = Number(modelScale) > 0 ? Number(modelScale) : 1;
     if (analysisData?.dimensions_mm && analysisData.dimensions_mm.length === 3) {
-      return analysisData.dimensions_mm;
+      return analysisData.dimensions_mm.map((v) => Number((Number(v) * s).toFixed(1)));
     }
     if (loadedDimensions?.size) {
-      return loadedDimensions.size.map((v) => Number(v.toFixed(1)));
+      return loadedDimensions.size.map((v) => Number((v * s).toFixed(1)));
     }
     return [0, 0, 0];
-  }, [analysisData, loadedDimensions]);
+  }, [analysisData, loadedDimensions, modelScale]);
 
   const hasFileColors = Boolean(
     analysisData?.has_file_colors ||
@@ -612,17 +615,20 @@ export default function CadViewer3D({
 
         {/* Model 3D */}
         <Bounds fit observe margin={1.85}>
-          <CadModelGeometry
-            url={modelUrl}
-            fileName={fileName}
-            color={selectedColor}
-            materialConfig={materialConfig}
-            isWireframe={isWireframe}
-            showSupports={showSupports}
-            showBBox={showBBox}
-            onGeometryLoaded={setLoadedDimensions}
-            useFileColors={useFileColors}
-          />
+          <group scale={[modelScale, modelScale, modelScale]}>
+            <CadModelGeometry
+              url={modelUrl}
+              fileName={fileName}
+              color={selectedColor}
+              materialConfig={materialConfig}
+              isWireframe={isWireframe}
+              showSupports={showSupports}
+              showBBox={showBBox}
+              onGeometryLoaded={setLoadedDimensions}
+              useFileColors={useFileColors}
+              displayScale={modelScale}
+            />
+          </group>
         </Bounds>
 
         {/* Siatka pomiarowa stołu roboczego (260x260 mm) */}

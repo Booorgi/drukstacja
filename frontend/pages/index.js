@@ -14,6 +14,7 @@ import StudioFileProfile from "../components/StudioFileProfile";
 import StudioEmptyDropzone from "../components/StudioEmptyDropzone";
 import StudioControlRail from "../components/StudioControlRail";
 import StudioQuoteBar from "../components/StudioQuoteBar";
+import StudioScale from "../components/StudioScale";
 import { STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -149,8 +150,12 @@ export default function Home() {
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
   const [printParamsOpen, setPrintParamsOpen] = useState(false);
+  const [scaleOpen, setScaleOpen] = useState(false);
+  const [scalePercent, setScalePercent] = useState(100);
   const fileInputRef = useRef(null);
   const printParamsRef = useRef(null);
+  const scaleParamsRef = useRef(null);
+  const modelScale = Math.max(0.05, Math.min(2, scalePercent / 100));
 
   // Weryfikacja tworzywa PLA dla dyszy 0.2 mm
   const isPlaMaterial = useMemo(() => {
@@ -165,15 +170,18 @@ export default function Home() {
   }, [isPlaMaterial, nozzleSize]);
 
   useEffect(() => {
-    if (!printParamsOpen) return undefined;
+    if (!printParamsOpen && !scaleOpen) return undefined;
     function onDocClick(e) {
-      if (printParamsRef.current && !printParamsRef.current.contains(e.target)) {
+      if (printParamsOpen && printParamsRef.current && !printParamsRef.current.contains(e.target)) {
         setPrintParamsOpen(false);
+      }
+      if (scaleOpen && scaleParamsRef.current && !scaleParamsRef.current.contains(e.target)) {
+        setScaleOpen(false);
       }
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
-  }, [printParamsOpen]);
+  }, [printParamsOpen, scaleOpen]);
 
   // Dostępne wysokości warstwy dopasowane do wybranej średnicy dyszy
   const layerHeightOptions = useMemo(() => {
@@ -319,6 +327,8 @@ export default function Home() {
     setIsAnalyzing(true);
     setAnalysisData(null);
     setRfqSubmitted(false);
+    setScalePercent(100);
+    setScaleOpen(false);
 
     const lowerName = file.name.toLowerCase();
     const isDirectPreview =
@@ -358,7 +368,12 @@ export default function Home() {
       if (!res.ok) {
         throw new Error(data.detail || data.message || "Błąd analizy modelu.");
       }
-      setAnalysisData(data);
+      setAnalysisData({
+        ...data,
+        source_dimensions_mm: data.dimensions_mm,
+        source_volume_cm3: data.volume_cm3,
+        source_surface_area_cm2: data.surface_area_cm2,
+      });
 
       if (data.file_profile) {
         const p = data.file_profile;
@@ -444,6 +459,8 @@ export default function Home() {
     setModelPreviewUrl(null);
     setRfqSubmitted(false);
     setQuantity(1);
+    setScalePercent(100);
+    setScaleOpen(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -475,10 +492,11 @@ export default function Home() {
             ),
             painted_ratio: Number(analysisData.painted_ratio) || 0,
             support_needed: true,
-            volume_cm3: analysisData.volume_cm3,
-            surface_area_cm2: analysisData.surface_area_cm2,
-            dimensions_mm: analysisData.dimensions_mm,
+            volume_cm3: analysisData.source_volume_cm3 ?? analysisData.volume_cm3,
+            surface_area_cm2: analysisData.source_surface_area_cm2 ?? analysisData.surface_area_cm2,
+            dimensions_mm: analysisData.source_dimensions_mm || analysisData.dimensions_mm,
             triangle_count: analysisData.triangle_count,
+            scale: modelScale,
           }),
         });
 
@@ -510,9 +528,9 @@ export default function Home() {
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [layerHeight, nozzleSize, infill, selectedMaterial, analysisData?.preview_stl_key, analysisData?.color_count, analysisData?.painted_ratio]);
+  }, [layerHeight, nozzleSize, infill, selectedMaterial, modelScale, analysisData?.preview_stl_key, analysisData?.color_count, analysisData?.painted_ratio]);
 
-  const volume = analysisData?.volume_cm3 || 32.5;
+  const volume = (analysisData?.source_volume_cm3 ?? analysisData?.volume_cm3 || 32.5) * (modelScale ** 3);
   const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
   const activeColorObj = matConfig?.colors?.find((c) => c.hex === selectedColor) || matConfig?.colors?.[0];
   const isNozzle02 = Math.abs(nozzleSize - 0.2) < 0.05;
@@ -616,14 +634,16 @@ export default function Home() {
               : `FDM Precision ${nozzleSize}mm`
           }${analysisData?.print_time_formatted ? ` | Czas: ${analysisData.print_time_formatted}` : ""}${
             analysisData?.filament_weight_g ? ` | Waga: ${analysisData.filament_weight_g}g` : ""
-          }`,
+          }${scalePercent !== 100 ? ` | Skala: ${scalePercent}%` : ""}`,
           layer_height: `${layerHeight} mm`,
           infill: infill,
           clean_supports: true,
           brass_inserts: false,
           quantity: quantity,
           total_price: parseFloat(totalPrice),
-          dimensions_mm: analysisData?.dimensions_mm || [60, 60, 40],
+          dimensions_mm: (analysisData?.source_dimensions_mm || analysisData?.dimensions_mm || [60, 60, 40]).map(
+            (v) => Number((Number(v) * modelScale).toFixed(2))
+          ),
           status: "in_cart",
         })
         .select()
@@ -645,6 +665,7 @@ export default function Home() {
             layer_height: parseFloat(String(layerHeight || "0.2").replace(/[^\d.]/g, "")) || 0.2,
             infill: parseInt(String(infill || "20").replace(/[^\d.]/g, "")) || 20,
             nozzle_size: parseFloat(String(nozzleSize || "0.4").replace(/[^\d.]/g, "")) || 0.4,
+            scale: modelScale,
           }),
         })
           .then(async (res) => {
@@ -782,7 +803,10 @@ export default function Home() {
                 <div className="relative z-[80] overflow-visible" ref={printParamsRef}>
                   <StudioWheel
                     items={printParamWheelItems}
-                    onOpen={() => setPrintParamsOpen((open) => !open)}
+                    onOpen={() => {
+                      setScaleOpen(false);
+                      setPrintParamsOpen((open) => !open);
+                    }}
                     size={isEmptyStage ? 46 : 58}
                     muted={isEmptyStage}
                     label="Parametry"
@@ -800,6 +824,38 @@ export default function Home() {
                         infill={infill}
                         setInfill={setInfill}
                         infillOptions={[10, 20, 40, 60, 100]}
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="relative z-[80] overflow-visible" ref={scaleParamsRef}>
+                  <StudioWheel
+                    items={[
+                      { id: "s10", hex: "#E5E5E5", name: "10%" },
+                      { id: "s25", hex: "#A3A3A3", name: "25%" },
+                      { id: "s50", hex: "#525252", name: "50%" },
+                      { id: "s100", hex: "#111111", name: "100%" },
+                    ]}
+                    value={
+                      scalePercent <= 17 ? "s10" : scalePercent <= 37 ? "s25" : scalePercent <= 75 ? "s50" : "s100"
+                    }
+                    onOpen={() => {
+                      setPrintParamsOpen(false);
+                      setScaleOpen((open) => !open);
+                    }}
+                    size={isEmptyStage ? 46 : 58}
+                    muted={isEmptyStage}
+                    label="Skala"
+                    caption={`${scalePercent}%`}
+                  />
+                  {scaleOpen && (
+                    <div className="absolute bottom-full left-1/2 z-[90] mb-2 -translate-x-1/2 md:bottom-0 md:left-full md:top-auto md:mb-0 md:ml-3 md:translate-x-0">
+                      <StudioScale
+                        scalePercent={scalePercent}
+                        setScalePercent={setScalePercent}
+                        sourceDimensionsMm={
+                          analysisData?.source_dimensions_mm || analysisData?.dimensions_mm || [0, 0, 0]
+                        }
                       />
                     </div>
                   )}
@@ -901,6 +957,7 @@ export default function Home() {
                   materialConfig={matConfig}
                   availableColors={matConfig?.colors || []}
                   showSupportsDefault={showSupports}
+                  modelScale={modelScale}
                 />
               ) : (
                 <StudioEmptyDropzone

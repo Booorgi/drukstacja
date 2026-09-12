@@ -12,7 +12,7 @@ export default function StudioControlRail({
 }) {
   return (
     <aside
-      aria-label="Materiał, kolor i parametry druku"
+      aria-label="Materiał, kolor, parametry i skala modelu"
       aria-describedby={empty ? "studio-control-rail-hint" : undefined}
       data-empty={empty ? "true" : "false"}
       className={`relative z-50 flex justify-center px-4 pt-2 md:pointer-events-none md:absolute md:left-3 md:top-1/2 md:bottom-auto md:-translate-y-1/2 md:px-0 md:pt-0 ${className}`}

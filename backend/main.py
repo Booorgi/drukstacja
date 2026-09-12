@@ -110,6 +110,7 @@ class ResliceRequest(BaseModel):
     surface_area_cm2: float | None = None
     dimensions_mm: list[float] | None = None
     triangle_count: int | None = None
+    scale: float = 1.0
 
 
 class Generate3MFRequest(BaseModel):
@@ -122,6 +123,39 @@ class Generate3MFRequest(BaseModel):
     infill: Any = 20
     material: str = "PLA"
     color_hex: str = "#EF4444"
+    scale: float = 1.0
+
+
+def clamp_model_scale(scale) -> float:
+    try:
+        value = float(scale)
+    except (TypeError, ValueError):
+        return 1.0
+    return max(0.05, min(2.0, value))
+
+
+def scaled_geometry(volume_cm3, surface_area_cm2, dimensions_mm, scale: float):
+    factor = clamp_model_scale(scale)
+    dims = None
+    if dimensions_mm and len(dimensions_mm) == 3:
+        dims = [round(float(v) * factor, 2) for v in dimensions_mm]
+    vol = None if volume_cm3 is None else round(float(volume_cm3) * (factor ** 3), 3)
+    area = None if surface_area_cm2 is None else round(float(surface_area_cm2) * (factor ** 2), 2)
+    return vol, area, dims
+
+
+def write_scaled_mesh(src_path: str, scale: float) -> str:
+    factor = clamp_model_scale(scale)
+    if abs(factor - 1.0) < 1e-6:
+        return src_path
+    loaded = trimesh.load(src_path)
+    if isinstance(loaded, trimesh.Scene):
+        loaded = loaded.to_geometry()
+    loaded.apply_scale(factor)
+    tmp = tempfile.NamedTemporaryFile(suffix=".stl", delete=False)
+    tmp.close()
+    loaded.export(tmp.name, file_type="stl")
+    return tmp.name
 
 
 REMBG_AVAILABLE = False
@@ -755,8 +789,20 @@ def reslice_model_endpoint(req: ResliceRequest):
                     detail=f"Plik modelu nie został odnaleziony na serwerze ({key}). Proszę wgrać plik ponownie."
                 )
 
+    scale = clamp_model_scale(req.scale)
+    volume_cm3, surface_area_cm2, dimensions_mm = scaled_geometry(
+        req.volume_cm3, req.surface_area_cm2, req.dimensions_mm, scale
+    )
+    scaled_stl = local_cached
+    if abs(scale - 1.0) >= 1e-6:
+        try:
+            scaled_stl = write_scaled_mesh(local_cached, scale)
+        except Exception as scale_err:
+            print(f"[WARN] Nie udało się przeskalować siatki: {scale_err}")
+            scaled_stl = local_cached
+
     slice_data = run_slicer(
-        stl_path=local_cached,
+        stl_path=scaled_stl,
         infill=int(req.infill),
         layer_height=float(req.layer_height),
         nozzle_size=float(req.nozzle_size),
@@ -765,10 +811,15 @@ def reslice_model_endpoint(req: ResliceRequest):
         support_needed=bool(req.support_needed),
         painted_ratio=float(req.painted_ratio or 0.0),
         triangle_count=req.triangle_count,
-        volume_cm3=req.volume_cm3,
-        surface_area_cm2=req.surface_area_cm2,
-        dimensions_mm=req.dimensions_mm,
+        volume_cm3=volume_cm3,
+        surface_area_cm2=surface_area_cm2,
+        dimensions_mm=dimensions_mm,
     )
+    if scaled_stl != local_cached:
+        try:
+            os.remove(scaled_stl)
+        except OSError:
+            pass
 
     price_info = calculate_price_from_slicer(
         print_time_hours=slice_data.get("print_time_hours") or 1.0,
@@ -798,6 +849,10 @@ def reslice_model_endpoint(req: ResliceRequest):
         "price_breakdown": price_info,
         "unit_price": price_info["unit_price_pln"],
         "total_price": price_info["total_price_pln"],
+        "scale": scale,
+        "volume_cm3": volume_cm3,
+        "surface_area_cm2": surface_area_cm2,
+        "dimensions_mm": dimensions_mm,
     }
 
 
@@ -941,9 +996,18 @@ def generate_3mf_endpoint(req: Generate3MFRequest):
         except Exception as meta_err:
             print(f"[WARN] Błąd odczytu {parts_meta_file}: {meta_err}")
 
+    scale = clamp_model_scale(getattr(req, "scale", 1.0))
+    scaled_model = local_model
+    if abs(scale - 1.0) >= 1e-6:
+        try:
+            scaled_model = write_scaled_mesh(local_model, scale)
+        except Exception as scale_err:
+            print(f"[WARN] Skala 3MF: {scale_err}")
+            scaled_model = local_model
+
     # Generowanie .3MF
     generate_production_3mf(
-        model_path=local_model,
+        model_path=scaled_model,
         order_metadata={"order_id": order_id, "file_name": file_name},
         print_settings={
             "layer_height": clean_layer_height,
