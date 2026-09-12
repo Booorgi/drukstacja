@@ -719,7 +719,7 @@ export default function Home() {
         </div>
 
         <div className="relative w-full">
-          <aside className="relative z-40 flex flex-row flex-wrap justify-center gap-3 px-4 pt-2 md:pointer-events-none md:absolute md:left-0 md:top-2 md:bottom-4 lg:right-[320px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-2 md:px-[10%] md:pt-0">
+          <aside className="relative z-50 flex flex-row flex-wrap justify-center gap-3 overflow-visible px-4 pt-2 md:pointer-events-none md:absolute md:left-0 md:top-2 md:bottom-4 lg:right-[320px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-2 md:px-[10%] md:pt-0">
             {isLocked3mf ? (
               <div className="md:pointer-events-auto">
                 <StudioFileProfile
@@ -750,7 +750,7 @@ export default function Home() {
                     label="Kolor"
                   />
                 </div>
-                <div className="relative md:pointer-events-auto" ref={printParamsRef}>
+                <div className="relative z-[80] overflow-visible md:pointer-events-auto" ref={printParamsRef}>
                   <StudioWheel
                     items={printParamWheelItems}
                     onOpen={() => setPrintParamsOpen((open) => !open)}
@@ -759,7 +759,7 @@ export default function Home() {
                     caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
                   />
                   {printParamsOpen && (
-                    <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 md:top-0 md:left-full md:translate-x-0 md:ml-3 md:mt-0">
+                    <div className="absolute bottom-full left-1/2 z-[90] mb-2 -translate-x-1/2 md:bottom-0 md:left-full md:top-auto md:mb-0 md:ml-3 md:translate-x-0">
                       <StudioPrintParams
                         nozzleSize={nozzleSize}
                         setNozzleSize={setNozzleSize}
@@ -873,28 +873,29 @@ export default function Home() {
                   showSupportsDefault={showSupports}
                 />
               ) : (
-                <div
+                <button
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full max-w-[280px] mx-auto rounded-3xl bg-white/80 hover:bg-white border border-white/80 shadow-sm flex flex-col items-center justify-center gap-2.5 px-5 py-6 cursor-pointer transition text-center"
+                  className="flex flex-col items-center justify-center gap-3 px-6 py-8 text-center cursor-pointer group"
                 >
-                  <div className="w-11 h-11 rounded-full bg-[#111111] text-white flex items-center justify-center font-light text-2xl leading-none">
-                    +
-                  </div>
-                  <span className="font-semibold text-neutral-900 text-base">
-                    Wgraj model
+                  <svg
+                    className="w-8 h-8 text-neutral-500 group-hover:text-neutral-800 transition"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    aria-hidden
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16.5V18a2 2 0 002 2h12a2 2 0 002-2v-1.5" />
+                  </svg>
+                  <span className="text-[15px] font-medium text-neutral-700 group-hover:text-neutral-900 transition">
+                    Kliknij, aby wybrać model
                   </span>
-                  <div className="flex flex-wrap items-center justify-center gap-1.5">
-                    <span className="px-2 py-1 rounded-full bg-white text-[11px] font-medium text-neutral-700 shadow-sm">
-                      .stl .step .obj .3mf
-                    </span>
-                    <span className="px-2 py-1 rounded-full bg-white text-[11px] font-medium text-neutral-700 shadow-sm">
-                      PCB
-                    </span>
-                    <span className="px-2 py-1 rounded-full bg-white text-[11px] font-medium text-neutral-700 shadow-sm">
-                      2D
-                    </span>
-                  </div>
-                </div>
+                  <span className="text-xs text-neutral-400">
+                    .stl .step .obj .3mf · PCB · 2D
+                  </span>
+                </button>
               )}
             </div>
 
