@@ -68,7 +68,7 @@ export default function Navbar({
   const navLink = (active) =>
     `relative px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] rounded-full transition-colors ${
       active
-        ? "text-white bg-white/12"
+        ? "text-white bg-white/20"
         : "text-white/40 hover:text-white/80 bg-transparent"
     }`;
 
@@ -340,7 +340,7 @@ export default function Navbar({
               data-nav-active={isWycenaActive ? "true" : "false"}
               className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                 isWycenaActive
-                  ? "bg-white/12 text-white"
+                  ? "bg-white/20 text-white"
                   : "text-white/55 hover:bg-white/5 hover:text-white"
               }`}
             >

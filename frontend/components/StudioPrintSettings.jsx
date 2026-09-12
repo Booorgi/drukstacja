@@ -15,8 +15,8 @@ function MaterialDetails({ matConfig, recommendedApps, chemicalResistance, group
       <p className="text-xs text-white/50 leading-relaxed">{matConfig?.desc}</p>
 
       <div className="flex flex-wrap gap-1.5">
-        <span className="px-2 py-1 rounded-full bg-white/8 text-xs text-white/70">{groupLabel}</span>
-        <span className="px-2 py-1 rounded-full bg-white/8 text-xs text-white/70">FDM</span>
+        <span className="px-2 py-1 rounded-full bg-white/10 text-xs text-white/70">{groupLabel}</span>
+        <span className="px-2 py-1 rounded-full bg-white/10 text-xs text-white/70">FDM</span>
         {matConfig?.badge ? (
           <span className="px-2 py-1 rounded-full bg-white text-neutral-900 text-xs font-medium">
             {matConfig.badge}
@@ -33,7 +33,7 @@ function MaterialDetails({ matConfig, recommendedApps, chemicalResistance, group
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40 mb-2">Zastosowania</p>
         <div className="flex flex-wrap gap-1.5">
           {recommendedApps.slice(0, 3).map((app) => (
-            <div key={app} className="rounded-full bg-white/8 px-2 py-1 text-xs text-white/65">
+            <div key={app} className="rounded-full bg-white/10 px-2 py-1 text-xs text-white/60">
               {app}
             </div>
           ))}
@@ -192,7 +192,7 @@ export default function StudioPrintSettings({
       </div>
 
       {!showDetails ? (
-        <p className="text-[11px] text-white/45">
+        <p className="text-[11px] text-white/40">
           HDT {matConfig?.hdt || "55°C"}
         </p>
       ) : null}
