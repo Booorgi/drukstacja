@@ -11,6 +11,7 @@ import StudioWheel from "../components/StudioWheel";
 import StudioPrintSettings from "../components/StudioPrintSettings";
 import StudioPrintParams from "../components/StudioPrintParams";
 import StudioFileProfile from "../components/StudioFileProfile";
+import StudioEmptyDropzone from "../components/StudioEmptyDropzone";
 import { STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -299,8 +300,17 @@ export default function Home() {
     };
   }, []);
 
-  async function handleFileUpload(e) {
+  function handleFileInputChange(e) {
     const file = e.target.files?.[0];
+    if (!file) return;
+    handleSelectedFile(file);
+  }
+
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
+  async function handleSelectedFile(file) {
     if (!file) return;
 
     setSelectedFile(file);
@@ -689,10 +699,23 @@ export default function Home() {
         type="file"
         accept=".stl,.step,.stp,.obj,.3mf,.iges,.igs,.ply,.glb,.gltf,.off,.3ds,.dxf,.dwg,.pdf,.zip,.rar,.7z,.kicad_pcb,.pcbdoc,.brd,.gbr,.ger,.gtl,.gbl,.gts,.gbs,.drl,.fcstd,.ifc,.3dm,.png,.jpg,.jpeg"
         className="hidden"
-        onChange={handleFileUpload}
+        onChange={handleFileInputChange}
       />
 
-      <section id="configurator" className="relative scroll-mt-20 bg-[#E2E2E2]">
+      <section
+        id="configurator"
+        className="relative scroll-mt-20 bg-[#E2E2E2]"
+        onDragOver={(e) => {
+          if (selectedFile || isAnalyzing || analysisData) return;
+          e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (selectedFile || isAnalyzing || analysisData) return;
+          e.preventDefault();
+          const file = e.dataTransfer?.files?.[0];
+          if (file) handleSelectedFile(file);
+        }}
+      >
 
         <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 pt-3 sm:pt-4">
           <div className="flex items-start justify-between gap-4">
@@ -873,29 +896,10 @@ export default function Home() {
                   showSupportsDefault={showSupports}
                 />
               ) : (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center gap-3 px-6 py-8 text-center cursor-pointer group"
-                >
-                  <svg
-                    className="w-8 h-8 text-neutral-500 group-hover:text-neutral-800 transition"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    aria-hidden
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16.5V18a2 2 0 002 2h12a2 2 0 002-2v-1.5" />
-                  </svg>
-                  <span className="text-[15px] font-medium text-neutral-700 group-hover:text-neutral-900 transition">
-                    Kliknij, aby wybrać model
-                  </span>
-                  <span className="text-xs text-neutral-400">
-                    .stl .step .obj .3mf · PCB · 2D
-                  </span>
-                </button>
+                <StudioEmptyDropzone
+                  onBrowse={openFilePicker}
+                  onFileSelected={handleSelectedFile}
+                />
               )}
             </div>
 
@@ -983,17 +987,28 @@ export default function Home() {
                         +
                       </button>
                     </div>
-                    <button
-                      disabled={!hasModel || addingToCart || isAnalyzing}
-                      onClick={handleAddToCart}
-                      className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                        !hasModel || addingToCart || isAnalyzing
-                          ? "cursor-not-allowed bg-neutral-400 text-white/70"
-                          : "cursor-pointer bg-[#111111] text-white hover:bg-black"
-                      }`}
-                    >
-                      {addingToCart ? "Zapisuję…" : isAnalyzing ? "Analizuję…" : !hasModel ? "Wgraj model" : "Do koszyka"}
-                    </button>
+                    {!hasModel && !isAnalyzing ? (
+                      <button
+                        type="button"
+                        onClick={openFilePicker}
+                        className="rounded-full bg-[#111111] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-black"
+                      >
+                        Wybierz plik
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={!hasModel || addingToCart || isAnalyzing}
+                        onClick={handleAddToCart}
+                        className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                          !hasModel || addingToCart || isAnalyzing
+                            ? "cursor-not-allowed bg-neutral-400 text-white/70"
+                            : "cursor-pointer bg-[#111111] text-white hover:bg-black"
+                        }`}
+                      >
+                        {addingToCart ? "Zapisuję…" : isAnalyzing ? "Analizuję…" : "Do koszyka"}
+                      </button>
+                    )}
                   </div>
                 </>
               )}
