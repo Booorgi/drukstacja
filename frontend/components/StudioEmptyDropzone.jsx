@@ -60,17 +60,17 @@ export default function StudioEmptyDropzone({ onBrowse, onFileSelected }) {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`group mx-4 flex w-full max-w-[460px] min-h-[280px] cursor-pointer flex-col items-center justify-center gap-4 rounded-[28px] border-2 border-dashed px-8 py-10 text-center transition duration-200 ${
+      className={`group mx-4 flex w-full max-w-[480px] min-h-[300px] cursor-pointer flex-col items-center justify-center gap-4 rounded-[28px] border-2 border-dashed px-8 py-10 text-center transition duration-200 ${
         isDragActive
-          ? "scale-[1.01] border-[#111111] bg-white shadow-lg shadow-black/10"
-          : "border-neutral-400/80 bg-white/70 hover:border-neutral-800 hover:bg-white hover:shadow-md hover:shadow-black/10"
+          ? "scale-[1.01] border-[#111111] bg-white shadow-lg shadow-black/15 ring-4 ring-black/5"
+          : "border-neutral-500 bg-white/85 shadow-sm hover:border-[#111111] hover:bg-white hover:shadow-md hover:shadow-black/10 hover:ring-4 hover:ring-black/5"
       }`}
     >
       <span
         className={`flex h-14 w-14 items-center justify-center rounded-2xl border transition ${
           isDragActive
             ? "border-[#111111] bg-[#111111] text-white"
-            : "border-neutral-300 bg-white text-neutral-600 group-hover:border-neutral-800 group-hover:text-neutral-900"
+            : "border-neutral-400 bg-white text-neutral-700 group-hover:border-[#111111] group-hover:bg-[#111111] group-hover:text-white"
         }`}
         aria-hidden
       >
