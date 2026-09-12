@@ -78,7 +78,7 @@ export default function StudioPrintSettings({
 
   if (isRfq) {
     return (
-      <div className="rounded-3xl bg-[#2A2A2A] text-white p-5 space-y-4 w-full">
+      <div className="rounded-2xl bg-[#2A2A2A] text-white p-5 space-y-4 w-full">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">
           Wycena inżynierska
         </p>
