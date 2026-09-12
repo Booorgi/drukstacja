@@ -26,7 +26,7 @@ export default function StudioQuoteBar({
   const showQuantity = hasModel && !isRfq;
 
   return (
-    <div className="sticky bottom-0 z-40 px-3 pb-2 pt-1 sm:px-4">
+    <div data-studio-quote-bar className="sticky bottom-0 z-40 px-3 pb-2 pt-1 sm:px-4">
       <div
         data-quote-state={quoteState}
         data-quote-surface="studio"

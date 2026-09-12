@@ -276,6 +276,37 @@ export default function Home() {
     }
   }
 
+  // Opt-in layout fixture so empty vs quoted rail/quote-bar overlap can be
+  // checked without the analyze API (`/?studioLayout=quoted`).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("studioLayout") !== "quoted") return;
+
+    const stl = `solid fixture
+facet normal 0 0 1
+  outer loop
+    vertex 0 0 0
+    vertex 10 0 0
+    vertex 0 10 0
+  endloop
+endfacet
+endsolid fixture
+`;
+    const file = new File([stl], "Watch case 1.stl", { type: "model/stl" });
+    setSelectedFile(file);
+    setModelPreviewUrl(URL.createObjectURL(file));
+    setAnalysisData({
+      instant_pricing: true,
+      volume_cm3: 8.8,
+      dimensions_mm: [40, 40, 10],
+      file_key: "layout-fixture",
+      print_time_formatted: "54m",
+      filament_weight_g: 8.8,
+      filament_length_m: 2.94,
+      price_breakdown: { unit_price_pln: 38 },
+    });
+  }, []);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const u = session?.user ?? null;
@@ -869,7 +900,7 @@ export default function Home() {
             )}
           </StudioControlRail>
 
-          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] pb-[72px] md:pl-[96px] lg:pr-[320px]">
+          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] pb-[var(--studio-quote-bar-clearance)] md:pl-[96px] lg:pr-[320px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />

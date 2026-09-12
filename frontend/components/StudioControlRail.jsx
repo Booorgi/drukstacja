@@ -3,6 +3,10 @@ import React from "react";
 /**
  * Left-edge control rail for Materiał / Kolor / Parametry.
  * Empty state stays visually secondary so the dropzone keeps focus.
+ *
+ * On md+ the rail is absolutely positioned in the stage. A bottom inset
+ * matching --studio-quote-bar-clearance keeps the pill above the sticky
+ * quote bar instead of centering through it.
  */
 export default function StudioControlRail({
   empty = false,
@@ -14,11 +18,13 @@ export default function StudioControlRail({
     <aside
       aria-label="Materiał, kolor, parametry i skala modelu"
       aria-describedby={empty ? "studio-control-rail-hint" : undefined}
+      data-studio-control-rail
       data-empty={empty ? "true" : "false"}
-      className={`relative z-50 flex justify-center px-4 pt-2 md:pointer-events-none md:absolute md:left-3 md:top-1/2 md:bottom-auto md:-translate-y-1/2 md:px-0 md:pt-0 ${className}`}
+      className={`relative z-50 flex justify-center px-4 pt-2 md:pointer-events-none md:absolute md:left-3 md:top-3 md:bottom-[var(--studio-quote-bar-clearance)] md:max-h-full md:items-center md:px-0 md:pt-0 ${className}`}
     >
       <div
-        className={`md:pointer-events-auto flex flex-col items-center gap-2 transition ${
+        data-studio-control-rail-frame
+        className={`md:pointer-events-auto flex max-h-full flex-col items-center gap-2 overflow-y-auto transition ${
           framed
             ? `rounded-2xl px-3 py-2 ring-1 md:px-2.5 md:py-3 ${
                 empty
