@@ -5,8 +5,54 @@
 :root {
   --background: #ebe6dc;
   --foreground: #111111;
-  /* Shared inset so the left rail and 3D stage stay above the sticky quote bar. */
-  --studio-quote-bar-clearance: 4.5rem;
+  --studio-quote-bar-clearance: 5.75rem;
+}
+
+/* Stage and quote bar are sibling rows so the rail cannot paint through the bar.
+   Positioning is plain CSS — Tailwind CDN does not emit bottom-[var(--…)]. */
+.studio-surface {
+  display: flex;
+  flex-direction: column;
+}
+
+.studio-stage {
+  position: relative;
+  min-height: 420px;
+}
+
+@media (min-width: 1024px) {
+  .studio-stage {
+    min-height: 500px;
+  }
+}
+
+@media (min-width: 768px) {
+  [data-studio-control-rail] {
+    position: absolute;
+    left: 0.75rem;
+    top: 0.75rem;
+    bottom: 0.75rem;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    padding: 0;
+    transform: none;
+    max-height: none;
+  }
+
+  [data-studio-control-rail-frame] {
+    pointer-events: auto;
+    max-height: 100%;
+  }
+}
+
+[data-studio-quote-bar] {
+  position: sticky;
+  bottom: 0;
+  z-index: 40;
+  flex-shrink: 0;
 }
 
 body {

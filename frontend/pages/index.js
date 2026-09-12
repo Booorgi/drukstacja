@@ -806,9 +806,9 @@ endsolid fixture
         {/* Stage + quote bar share one surface so the sticky strip is not a fourth layer. */}
         <div
           data-studio-surface
-          className="relative mx-3 mb-3 rounded-2xl bg-[#E2E2E2] ring-1 ring-black/5 sm:mx-4"
+          className="studio-surface relative mx-3 mb-3 rounded-2xl bg-[#E2E2E2] ring-1 ring-black/5 sm:mx-4"
         >
-          <div className="relative w-full">
+          <div data-studio-stage className="studio-stage">
           <StudioControlRail empty={isEmptyStage} framed={!isLocked3mf}>
             {isLocked3mf ? (
               <StudioFileProfile
@@ -824,7 +824,7 @@ endsolid fixture
                   items={materialWheelItems}
                   value={selectedMaterial}
                   onChange={(item) => handleSelectMaterial(item.id)}
-                  size={isEmptyStage ? 46 : 58}
+                  size={isEmptyStage ? 42 : 48}
                   muted={isEmptyStage}
                   label="Materiał"
                 />
@@ -832,7 +832,7 @@ endsolid fixture
                   items={colorWheelItems}
                   value={selectedColor}
                   onChange={(item) => setSelectedColor(item.hex)}
-                  size={isEmptyStage ? 46 : 58}
+                  size={isEmptyStage ? 42 : 48}
                   muted={isEmptyStage}
                   label="Kolor"
                 />
@@ -843,7 +843,7 @@ endsolid fixture
                       setScaleOpen(false);
                       setPrintParamsOpen((open) => !open);
                     }}
-                    size={isEmptyStage ? 46 : 58}
+                    size={isEmptyStage ? 42 : 48}
                     muted={isEmptyStage}
                     label="Parametry"
                     caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
@@ -879,7 +879,7 @@ endsolid fixture
                       setPrintParamsOpen(false);
                       setScaleOpen((open) => !open);
                     }}
-                    size={isEmptyStage ? 46 : 58}
+                    size={isEmptyStage ? 42 : 48}
                     muted={isEmptyStage}
                     label="Skala"
                     caption={`${scalePercent}%`}
@@ -900,7 +900,7 @@ endsolid fixture
             )}
           </StudioControlRail>
 
-          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] pb-[var(--studio-quote-bar-clearance)] md:pl-[96px] lg:pr-[320px]">
+          <div className="relative flex min-h-[420px] w-full items-center justify-center md:pl-[96px] lg:min-h-[500px] lg:pr-[320px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
