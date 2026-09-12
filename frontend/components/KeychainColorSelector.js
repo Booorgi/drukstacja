@@ -137,6 +137,67 @@ export function FilamentPickerModal({
   );
 }
 
+export function AmsLayerSwatches({ layers = [], expanded = false, onToggleExpanded, onSelectLayer }) {
+  return (
+    <div data-ams-layers className="space-y-2.5 pt-2 border-t border-slate-200">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <span className="text-xs font-bold text-slate-800 block">
+            Kolory AMS ({layers.length})
+          </span>
+          <span className="text-[10px] text-slate-400 font-medium">
+            Kliknij próbkę, aby zmienić filament
+          </span>
+        </div>
+        <button
+          type="button"
+          data-ams-expand
+          onClick={onToggleExpanded}
+          className="text-[11px] font-bold text-slate-500 hover:text-slate-800 transition cursor-pointer"
+        >
+          {expanded ? "Zwiń" : "Szczegóły"}
+        </button>
+      </div>
+
+      <div data-ams-swatches className="flex flex-wrap items-center gap-2">
+        {layers.map((layer, idx) => {
+          const current = layer.filament;
+          return (
+            <button
+              key={layer.id || idx}
+              type="button"
+              title={`${layer.name} · ${current?.name || "filament"}`}
+              aria-label={`Kolor AMS ${idx + 1}: ${current?.name || layer.name}`}
+              onClick={() => onSelectLayer?.(layer, idx)}
+              className="relative flex h-10 w-10 items-center justify-center rounded-full border-2 border-white shadow-md ring-1 ring-slate-200 transition hover:ring-slate-400 cursor-pointer"
+              style={{ background: current?.gradient || current?.hex || "#cbd5e1" }}
+            >
+              <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-slate-900 text-[9px] font-bold text-white">
+                {idx + 1}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {expanded && (
+        <div data-ams-layer-details className="space-y-2">
+          {layers.map((layer, idx) => (
+            <FilamentPickerRow
+              key={layer.id || idx}
+              label={`Kolor grafiki ${idx + 1}`}
+              sublabel={`${layer.name} · ${layer.thickness} mm`}
+              filament={layer.filament}
+              buttonText="Zmień"
+              onClick={() => onSelectLayer?.(layer, idx)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function FilamentPickerRow({ label, sublabel, filament, buttonText, onClick }) {
   const current = filament || FILAMENTS[0];
   return (
