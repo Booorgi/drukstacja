@@ -2,7 +2,8 @@ import React from "react";
 
 /**
  * Sticky quote bar: price + quantity + CTA.
- * Empty / analyzing states stay secondary so upload remains the focus.
+ * Shares the studio surface color and radius so it reads as the stage floor,
+ * lifted by a light shadow instead of a contrasting white strip.
  */
 export default function StudioQuoteBar({
   isRfq = false,
@@ -28,8 +29,9 @@ export default function StudioQuoteBar({
     <div className="sticky bottom-0 z-40 px-3 pb-2 pt-1 sm:px-4">
       <div
         data-quote-state={quoteState}
+        data-quote-surface="studio"
         data-quantity-visible={showQuantity ? "true" : "false"}
-        className="relative z-30 mx-auto flex max-w-[1400px] items-center justify-between gap-3 rounded-full bg-white/95 px-3 py-1.5 shadow-sm ring-1 ring-black/5 md:ml-[108px] lg:mr-[300px]"
+        className="relative z-30 mx-auto flex max-w-[1400px] items-center justify-between gap-3 rounded-2xl bg-[#E2E2E2]/95 px-3 py-2 shadow-[0_-8px_24px_rgba(17,17,17,0.08)] ring-1 ring-black/5 backdrop-blur-md"
       >
         {isRfq ? (
           <div className="flex items-baseline gap-2">

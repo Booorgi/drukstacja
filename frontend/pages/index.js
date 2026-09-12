@@ -772,7 +772,12 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="relative w-full">
+        {/* Stage + quote bar share one surface so the sticky strip is not a fourth layer. */}
+        <div
+          data-studio-surface
+          className="relative mx-3 mb-3 rounded-2xl bg-[#E2E2E2] ring-1 ring-black/5 sm:mx-4"
+        >
+          <div className="relative w-full">
           <StudioControlRail empty={isEmptyStage} framed={!isLocked3mf}>
             {isLocked3mf ? (
               <StudioFileProfile
@@ -1020,6 +1025,7 @@ export default function Home() {
             }
             filamentLength={analysisData?.filament_length_m ? `${analysisData.filament_length_m} m` : null}
           />
+        </div>
       </section>
 
       <main className="max-w-7xl mx-auto px-4 py-10 space-y-8 w-full">
