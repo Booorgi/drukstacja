@@ -66,8 +66,10 @@ export default function Navbar({
   const isKontaktActive = activePage === "kontakt" || router.pathname.startsWith("/kontakt");
 
   const navLink = (active) =>
-    `px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
-      active ? "text-white" : "text-white/55 hover:text-white"
+    `relative px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] rounded-full transition-colors ${
+      active
+        ? "text-white bg-white/12"
+        : "text-white/40 hover:text-white/80 bg-transparent"
     }`;
 
   return (
@@ -83,8 +85,14 @@ export default function Navbar({
             />
           </Link>
 
-          <nav className="hidden lg:flex items-center gap-1">
-            <Link href="/" className={navLink(isWycenaActive)}>
+          <nav className="hidden lg:flex items-center gap-1" data-site-nav>
+            <Link
+              href="/"
+              aria-current={isWycenaActive ? "page" : undefined}
+              data-nav="wycena"
+              data-nav-active={isWycenaActive ? "true" : "false"}
+              className={navLink(isWycenaActive)}
+            >
               Wycena
             </Link>
 
@@ -94,7 +102,10 @@ export default function Navbar({
                 type="button"
                 onClick={() => setIsGeneratorsOpen((prev) => !prev)}
                 onMouseEnter={() => setIsGeneratorsOpen(true)}
-                className={`${navLink(isGeneratoryActive)} flex items-center gap-1 cursor-pointer bg-transparent border-0`}
+                aria-current={isGeneratoryActive ? "page" : undefined}
+                data-nav="generatory"
+                data-nav-active={isGeneratoryActive ? "true" : "false"}
+                className={`${navLink(isGeneratoryActive)} flex items-center gap-1 cursor-pointer border-0`}
               >
                 <span>Generatory</span>
                 <svg
@@ -191,14 +202,31 @@ export default function Navbar({
               )}
             </div>
 
-            <Link href="/sklep" className={navLink(isSklepActive)}>
+            <Link
+              href="/sklep"
+              aria-current={isSklepActive ? "page" : undefined}
+              data-nav="sklep"
+              data-nav-active={isSklepActive ? "true" : "false"}
+              className={navLink(isSklepActive)}
+            >
               Sklep
             </Link>
-            <Link href="/kontakt" className={navLink(isKontaktActive)}>
+            <Link
+              href="/kontakt"
+              aria-current={isKontaktActive ? "page" : undefined}
+              data-nav="kontakt"
+              data-nav-active={isKontaktActive ? "true" : "false"}
+              className={navLink(isKontaktActive)}
+            >
               Kontakt
             </Link>
-            <Link href="/#materialy" onClick={handleMaterialsClick} className={navLink(false)}>
-              Materiały
+            <Link
+              href="/#materialy"
+              onClick={handleMaterialsClick}
+              data-nav="katalog"
+              className={navLink(false)}
+            >
+              Katalog
             </Link>
           </nav>
         </div>
@@ -307,10 +335,13 @@ export default function Navbar({
             <Link
               href="/"
               onClick={() => setIsMobileMenuOpen(false)}
+              aria-current={isWycenaActive ? "page" : undefined}
+              data-nav="wycena"
+              data-nav-active={isWycenaActive ? "true" : "false"}
               className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
                 isWycenaActive
-                  ? "bg-white/10 text-white"
-                  : "text-white/70 hover:bg-white/5 hover:text-white"
+                  ? "bg-white/12 text-white"
+                  : "text-white/55 hover:bg-white/5 hover:text-white"
               }`}
             >
               <span>⚡</span>
@@ -395,10 +426,11 @@ export default function Navbar({
                   setIsMobileMenuOpen(false);
                   handleMaterialsClick(e);
                 }}
-                className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-white/70 hover:bg-white/5 hover:text-white transition"
+                data-nav="katalog"
+                className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold text-white/55 hover:bg-white/5 hover:text-white transition"
               >
                 <span>🧪</span>
-                <span>Baza Materiałów & DFM</span>
+                <span>Katalog materiałów</span>
               </Link>
             </div>
           </div>
