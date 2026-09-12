@@ -12,6 +12,7 @@ import StudioPrintSettings from "../components/StudioPrintSettings";
 import StudioPrintParams from "../components/StudioPrintParams";
 import StudioFileProfile from "../components/StudioFileProfile";
 import StudioEmptyDropzone from "../components/StudioEmptyDropzone";
+import StudioControlRail from "../components/StudioControlRail";
 import { STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -535,6 +536,7 @@ export default function Home() {
 
   // Weryfikacja wgranego modelu – ukrycie ceny i blokada koszyka przed analizą
   const hasModel = Boolean(analysisData && (analysisData.preview_stl_url || analysisData.file_key || analysisData.volume_cm3 != null));
+  const isEmptyStage = !selectedFile && !analysisData && !isAnalyzing;
   const MIN_ORDER_VALUE = 30.00;
   const isBelowMoq = hasModel && parseFloat(totalPrice) < MIN_ORDER_VALUE;
   const diffToMoq = (MIN_ORDER_VALUE - parseFloat(totalPrice)).toFixed(2);
@@ -742,42 +744,39 @@ export default function Home() {
         </div>
 
         <div className="relative w-full">
-          <aside className="relative z-50 flex flex-row flex-wrap justify-center gap-3 overflow-visible px-4 pt-2 md:pointer-events-none md:absolute md:left-0 md:top-2 md:bottom-[72px] lg:right-[320px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-2 md:px-[10%] md:pt-0">
+          <StudioControlRail empty={isEmptyStage} framed={!isLocked3mf}>
             {isLocked3mf ? (
-              <div className="md:pointer-events-auto">
-                <StudioFileProfile
-                  colours={fileProfile.filament_colours || analysisData?.filament_colours || []}
-                  filamentTypes={fileProfile.filament_types || []}
-                  layerHeight={fileProfile.layer_height || layerHeight}
-                  nozzleSize={fileProfile.nozzle_size || nozzleSize}
-                  infill={fileProfile.infill ?? infill}
-                />
-              </div>
+              <StudioFileProfile
+                colours={fileProfile.filament_colours || analysisData?.filament_colours || []}
+                filamentTypes={fileProfile.filament_types || []}
+                layerHeight={fileProfile.layer_height || layerHeight}
+                nozzleSize={fileProfile.nozzle_size || nozzleSize}
+                infill={fileProfile.infill ?? infill}
+              />
             ) : (
               <>
-                <div className="md:pointer-events-auto">
-                  <StudioWheel
-                    items={materialWheelItems}
-                    value={selectedMaterial}
-                    onChange={(item) => handleSelectMaterial(item.id)}
-                    size={58}
-                    label="Materiał"
-                  />
-                </div>
-                <div className="md:pointer-events-auto md:-ml-8">
-                  <StudioWheel
-                    items={colorWheelItems}
-                    value={selectedColor}
-                    onChange={(item) => setSelectedColor(item.hex)}
-                    size={58}
-                    label="Kolor"
-                  />
-                </div>
-                <div className="relative z-[80] overflow-visible md:pointer-events-auto" ref={printParamsRef}>
+                <StudioWheel
+                  items={materialWheelItems}
+                  value={selectedMaterial}
+                  onChange={(item) => handleSelectMaterial(item.id)}
+                  size={isEmptyStage ? 46 : 58}
+                  muted={isEmptyStage}
+                  label="Materiał"
+                />
+                <StudioWheel
+                  items={colorWheelItems}
+                  value={selectedColor}
+                  onChange={(item) => setSelectedColor(item.hex)}
+                  size={isEmptyStage ? 46 : 58}
+                  muted={isEmptyStage}
+                  label="Kolor"
+                />
+                <div className="relative z-[80] overflow-visible" ref={printParamsRef}>
                   <StudioWheel
                     items={printParamWheelItems}
                     onOpen={() => setPrintParamsOpen((open) => !open)}
-                    size={58}
+                    size={isEmptyStage ? 46 : 58}
+                    muted={isEmptyStage}
                     label="Parametry"
                     caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
                   />
@@ -799,9 +798,9 @@ export default function Home() {
                 </div>
               </>
             )}
-          </aside>
+          </StudioControlRail>
 
-          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] pb-[72px] md:pl-[28px] lg:pr-[320px]">
+          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] pb-[72px] md:pl-[96px] lg:pr-[320px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
@@ -930,7 +929,7 @@ export default function Home() {
           </div>
 
           <div className="sticky bottom-0 z-40 px-3 pb-2 pt-1 sm:px-4">
-            <div className="relative z-30 mx-auto flex max-w-[1400px] items-center justify-between gap-3 rounded-full bg-white/95 px-3 py-1.5 shadow-sm ring-1 ring-black/5 md:ml-[140px] lg:ml-[160px] lg:mr-[300px]">
+            <div className="relative z-30 mx-auto flex max-w-[1400px] items-center justify-between gap-3 rounded-full bg-white/95 px-3 py-1.5 shadow-sm ring-1 ring-black/5 md:ml-[108px] lg:mr-[300px]">
               {analysisData && analysisData.instant_pricing === false ? (
                 <div className="flex items-baseline gap-2">
                   <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-500">
