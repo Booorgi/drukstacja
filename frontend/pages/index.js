@@ -692,7 +692,7 @@ export default function Home() {
         onChange={handleFileUpload}
       />
 
-      <section id="configurator" className="relative scroll-mt-20 overflow-hidden bg-[#E2E2E2]">
+      <section id="configurator" className="relative scroll-mt-20 bg-[#E2E2E2]">
 
         <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 pt-3 sm:pt-4">
           <div className="flex items-start justify-between gap-4">
@@ -719,7 +719,7 @@ export default function Home() {
         </div>
 
         <div className="relative w-full">
-          <aside className="relative z-40 flex flex-row flex-wrap justify-center gap-3 px-4 pt-2 md:pointer-events-none md:absolute md:left-0 md:top-2 md:bottom-28 lg:right-[320px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-2 md:px-[10%] md:pt-0">
+          <aside className="relative z-40 flex flex-row flex-wrap justify-center gap-3 px-4 pt-2 md:pointer-events-none md:absolute md:left-0 md:top-2 md:bottom-4 lg:right-[320px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-2 md:px-[10%] md:pt-0">
             {isLocked3mf ? (
               <div className="md:pointer-events-auto">
                 <StudioFileProfile
@@ -873,32 +873,25 @@ export default function Home() {
                   showSupportsDefault={showSupports}
                 />
               ) : (
-                /* DROPZONE PRZED UPLOADEM */
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full max-w-lg mx-auto rounded-[2.5rem] bg-white/55 hover:bg-white/75 border border-white/70 shadow-sm flex flex-col items-center justify-center gap-4 p-10 cursor-pointer transition text-center"
+                  className="w-full max-w-[280px] mx-auto rounded-3xl bg-white/80 hover:bg-white border border-white/80 shadow-sm flex flex-col items-center justify-center gap-2.5 px-5 py-6 cursor-pointer transition text-center"
                 >
-                  <div className="w-16 h-16 rounded-full bg-[#111111] text-white flex items-center justify-center font-light text-4xl">
+                  <div className="w-11 h-11 rounded-full bg-[#111111] text-white flex items-center justify-center font-light text-2xl leading-none">
                     +
                   </div>
-                  <div>
-                    <span className="font-semibold text-neutral-900 text-xl sm:text-2xl block">
-                      Kliknij lub przeciągnij plik produkcyjny
+                  <span className="font-semibold text-neutral-900 text-base">
+                    Wgraj model
+                  </span>
+                  <div className="flex flex-wrap items-center justify-center gap-1.5">
+                    <span className="px-2 py-1 rounded-full bg-white text-[11px] font-medium text-neutral-700 shadow-sm">
+                      .stl .step .obj .3mf
                     </span>
-                    <span className="text-base text-neutral-700 block mt-2 leading-relaxed">
-                      Modele 3D, pliki CAD, płytki PCB, rysunki techniczne lub archiwa ZIP (do 100 MB)
+                    <span className="px-2 py-1 rounded-full bg-white text-[11px] font-medium text-neutral-700 shadow-sm">
+                      PCB
                     </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                    <span className="px-3.5 py-2 rounded-2xl bg-white text-neutral-800 text-sm font-medium shadow-sm">
-                      3D CAD (.step, .stl, .obj, .3mf)
-                    </span>
-                    <span className="px-3.5 py-2 rounded-2xl bg-white text-neutral-800 text-sm font-medium shadow-sm">
-                      PCB & Gerber
-                    </span>
-                    <span className="px-3.5 py-2 rounded-2xl bg-white text-neutral-800 text-sm font-medium shadow-sm">
-                      Rysunki 2D
+                    <span className="px-2 py-1 rounded-full bg-white text-[11px] font-medium text-neutral-700 shadow-sm">
+                      2D
                     </span>
                   </div>
                 </div>
@@ -929,8 +922,10 @@ export default function Home() {
                 userEmail={user?.email}
               />
             </aside>
+          </div>
 
-            <div className="relative z-30 mx-4 mb-4 lg:absolute lg:left-[180px] lg:right-[328px] lg:bottom-3 lg:mx-0 lg:mb-0 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 shadow-sm px-3 py-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+          <div className="sticky bottom-0 z-40 bg-gradient-to-t from-[#E2E2E2] via-[#E2E2E2]/95 to-transparent px-4 pb-3 pt-2 sm:px-6">
+            <div className="relative z-30 mx-auto max-w-[1400px] rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 shadow-sm px-3 py-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
               {analysisData && analysisData.instant_pricing === false ? (
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">
