@@ -5,6 +5,8 @@
 :root {
   --background: #ebe6dc;
   --foreground: #111111;
+  /* Shared inset so the left rail and 3D stage stay above the sticky quote bar. */
+  --studio-quote-bar-clearance: 4.5rem;
 }
 
 body {

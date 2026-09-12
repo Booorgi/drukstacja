@@ -616,6 +616,80 @@ def load_3mf_mesh(file_path: str) -> trimesh.Trimesh:
     return parse_3mf_safely(file_path)
 
 
+# glTF / GLB są zdefiniowane w metrach. Wyceniarka i slicer pracują w mm.
+# Część eksportów CAD zapisuje mimo to milimetry — wtedy nie mnożymy.
+_GLTF_EXTS = {".glb", ".gltf"}
+_METERISH_MESH_EXTS = {".glb", ".gltf", ".obj", ".3ds", ".off"}
+_MM_PER_METER = 1000.0
+_METERS_HEURISTIC_MAX = 2.5
+_MAX_PLAUSIBLE_PRINT_MM = 2000.0
+
+
+def _max_extent(obj) -> float:
+    try:
+        extents = getattr(obj, "extents", None)
+        if extents is None:
+            return 0.0
+        if len(extents) == 0:
+            return 0.0
+        return float(np.max(extents))
+    except Exception:
+        return 0.0
+
+
+def scale_factor_to_mm(max_extent: float, ext: str) -> float:
+    """Zwraca mnożnik, który sprowadza współrzędne pliku do milimetrów."""
+    suffix = (ext or "").lower()
+    if suffix and not suffix.startswith("."):
+        suffix = f".{suffix}"
+    if max_extent <= 0:
+        return 1.0
+    if suffix in _GLTF_EXTS:
+        as_mm = max_extent * _MM_PER_METER
+        if max_extent < _METERS_HEURISTIC_MAX and as_mm <= _MAX_PLAUSIBLE_PRINT_MM:
+            return _MM_PER_METER
+        return 1.0
+    if suffix in _METERISH_MESH_EXTS and max_extent < 2.0:
+        return _MM_PER_METER
+    return 1.0
+
+
+def _apply_uniform_scale(obj, factor: float):
+    if factor == 1.0:
+        return obj
+    matrix = np.eye(4, dtype=float)
+    matrix[0, 0] = matrix[1, 1] = matrix[2, 2] = float(factor)
+    obj.apply_transform(matrix)
+    return obj
+
+
+def _gltf_y_up_to_print_z_up(obj):
+    """glTF ma Y-up, stół druku i slicer mają Z-up: (x, y, z) → (x, -z, y)."""
+    rot = np.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        dtype=float,
+    )
+    obj.apply_transform(rot)
+    return obj
+
+
+def normalize_imported_mesh(loaded_obj, ext: str):
+    """Jednostki + osie pod wycenę FDM. Nie rusza 3MF/STL (już w mm, Z-up)."""
+    suffix = (ext or "").lower()
+    if suffix and not suffix.startswith("."):
+        suffix = f".{suffix}"
+    factor = scale_factor_to_mm(_max_extent(loaded_obj), suffix)
+    _apply_uniform_scale(loaded_obj, factor)
+    if suffix in _GLTF_EXTS:
+        _gltf_y_up_to_print_z_up(loaded_obj)
+    return loaded_obj
+
+
 def analyze_trimesh_geometry(loaded_obj) -> dict:
     """Wyciąga parametry geometryczne z obiektu Trimesh lub Scene z automatyczną naprawą bryły."""
     if isinstance(loaded_obj, trimesh.Scene):
@@ -721,6 +795,7 @@ def analyze_mesh_file(path: str, ext: str) -> dict:
         return geom
 
     loaded = trimesh.load(path)
+    loaded = normalize_imported_mesh(loaded, file_type)
     return analyze_trimesh_geometry(loaded)
 
 

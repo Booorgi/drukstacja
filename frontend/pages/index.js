@@ -11,6 +11,10 @@ import StudioWheel from "../components/StudioWheel";
 import StudioPrintSettings from "../components/StudioPrintSettings";
 import StudioPrintParams from "../components/StudioPrintParams";
 import StudioFileProfile from "../components/StudioFileProfile";
+import StudioEmptyDropzone from "../components/StudioEmptyDropzone";
+import StudioControlRail from "../components/StudioControlRail";
+import StudioQuoteBar from "../components/StudioQuoteBar";
+import StudioScale from "../components/StudioScale";
 import { STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -26,7 +30,7 @@ function resolveAssetUrl(url) {
 const CadViewer3D = dynamic(() => import("../components/CadViewer3D"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[520px] lg:h-[680px] bg-transparent animate-pulse flex items-center justify-center text-xs font-semibold text-neutral-700">
+    <div className="w-full h-[400px] lg:h-[480px] bg-transparent animate-pulse flex items-center justify-center text-xs font-semibold text-neutral-700">
       Ładowanie podglądu…
     </div>
   ),
@@ -146,8 +150,12 @@ export default function Home() {
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
   const [printParamsOpen, setPrintParamsOpen] = useState(false);
+  const [scaleOpen, setScaleOpen] = useState(false);
+  const [scalePercent, setScalePercent] = useState(100);
   const fileInputRef = useRef(null);
   const printParamsRef = useRef(null);
+  const scaleParamsRef = useRef(null);
+  const modelScale = Math.max(0.05, Math.min(2, scalePercent / 100));
 
   // Weryfikacja tworzywa PLA dla dyszy 0.2 mm
   const isPlaMaterial = useMemo(() => {
@@ -162,15 +170,18 @@ export default function Home() {
   }, [isPlaMaterial, nozzleSize]);
 
   useEffect(() => {
-    if (!printParamsOpen) return undefined;
+    if (!printParamsOpen && !scaleOpen) return undefined;
     function onDocClick(e) {
-      if (printParamsRef.current && !printParamsRef.current.contains(e.target)) {
+      if (printParamsOpen && printParamsRef.current && !printParamsRef.current.contains(e.target)) {
         setPrintParamsOpen(false);
+      }
+      if (scaleOpen && scaleParamsRef.current && !scaleParamsRef.current.contains(e.target)) {
+        setScaleOpen(false);
       }
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
-  }, [printParamsOpen]);
+  }, [printParamsOpen, scaleOpen]);
 
   // Dostępne wysokości warstwy dopasowane do wybranej średnicy dyszy
   const layerHeightOptions = useMemo(() => {
@@ -265,6 +276,37 @@ export default function Home() {
     }
   }
 
+  // Opt-in layout fixture so empty vs quoted rail/quote-bar overlap can be
+  // checked without the analyze API (`/?studioLayout=quoted`).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("studioLayout") !== "quoted") return;
+
+    const stl = `solid fixture
+facet normal 0 0 1
+  outer loop
+    vertex 0 0 0
+    vertex 10 0 0
+    vertex 0 10 0
+  endloop
+endfacet
+endsolid fixture
+`;
+    const file = new File([stl], "Watch case 1.stl", { type: "model/stl" });
+    setSelectedFile(file);
+    setModelPreviewUrl(URL.createObjectURL(file));
+    setAnalysisData({
+      instant_pricing: true,
+      volume_cm3: 8.8,
+      dimensions_mm: [40, 40, 10],
+      file_key: "layout-fixture",
+      print_time_formatted: "54m",
+      filament_weight_g: 8.8,
+      filament_length_m: 2.94,
+      price_breakdown: { unit_price_pln: 38 },
+    });
+  }, []);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const u = session?.user ?? null;
@@ -299,17 +341,30 @@ export default function Home() {
     };
   }, []);
 
-  async function handleFileUpload(e) {
+  function handleFileInputChange(e) {
     const file = e.target.files?.[0];
+    if (!file) return;
+    handleSelectedFile(file);
+  }
+
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
+  async function handleSelectedFile(file) {
     if (!file) return;
 
     setSelectedFile(file);
     setIsAnalyzing(true);
     setAnalysisData(null);
     setRfqSubmitted(false);
+    setScalePercent(100);
+    setScaleOpen(false);
 
-    const isDirectStl = file.name.toLowerCase().endsWith(".stl");
-    if (isDirectStl) {
+    const lowerName = file.name.toLowerCase();
+    const isDirectPreview =
+      lowerName.endsWith(".stl") || lowerName.endsWith(".glb") || lowerName.endsWith(".gltf");
+    if (isDirectPreview) {
       setModelPreviewUrl(URL.createObjectURL(file));
     } else {
       setModelPreviewUrl(null);
@@ -344,7 +399,12 @@ export default function Home() {
       if (!res.ok) {
         throw new Error(data.detail || data.message || "Błąd analizy modelu.");
       }
-      setAnalysisData(data);
+      setAnalysisData({
+        ...data,
+        source_dimensions_mm: data.dimensions_mm,
+        source_volume_cm3: data.volume_cm3,
+        source_surface_area_cm2: data.surface_area_cm2,
+      });
 
       if (data.file_profile) {
         const p = data.file_profile;
@@ -359,8 +419,12 @@ export default function Home() {
         }
       }
 
-      if (data.instant_pricing && (data.preview_glb_url || data.preview_stl_url)) {
-        setModelPreviewUrl(resolveAssetUrl(data.preview_glb_url || data.preview_stl_url));
+      const keepNativeGltf =
+        /\.(glb|gltf)$/i.test(file.name) && !data.has_file_colors;
+      if (data.instant_pricing && data.has_file_colors && data.preview_glb_url) {
+        setModelPreviewUrl(resolveAssetUrl(data.preview_glb_url));
+      } else if (data.instant_pricing && data.preview_stl_url && !keepNativeGltf) {
+        setModelPreviewUrl(resolveAssetUrl(data.preview_stl_url));
       } else if (!data.instant_pricing) {
         setModelPreviewUrl(null);
       }
@@ -425,6 +489,9 @@ export default function Home() {
     setAnalysisData(null);
     setModelPreviewUrl(null);
     setRfqSubmitted(false);
+    setQuantity(1);
+    setScalePercent(100);
+    setScaleOpen(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -456,10 +523,11 @@ export default function Home() {
             ),
             painted_ratio: Number(analysisData.painted_ratio) || 0,
             support_needed: true,
-            volume_cm3: analysisData.volume_cm3,
-            surface_area_cm2: analysisData.surface_area_cm2,
-            dimensions_mm: analysisData.dimensions_mm,
+            volume_cm3: analysisData.source_volume_cm3 ?? analysisData.volume_cm3,
+            surface_area_cm2: analysisData.source_surface_area_cm2 ?? analysisData.surface_area_cm2,
+            dimensions_mm: analysisData.source_dimensions_mm || analysisData.dimensions_mm,
             triangle_count: analysisData.triangle_count,
+            scale: modelScale,
           }),
         });
 
@@ -491,9 +559,9 @@ export default function Home() {
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [layerHeight, nozzleSize, infill, selectedMaterial, analysisData?.preview_stl_key, analysisData?.color_count, analysisData?.painted_ratio]);
+  }, [layerHeight, nozzleSize, infill, selectedMaterial, modelScale, analysisData?.preview_stl_key, analysisData?.color_count, analysisData?.painted_ratio]);
 
-  const volume = analysisData?.volume_cm3 || 32.5;
+  const volume = ((analysisData?.source_volume_cm3 ?? analysisData?.volume_cm3) || 32.5) * (modelScale ** 3);
   const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
   const activeColorObj = matConfig?.colors?.find((c) => c.hex === selectedColor) || matConfig?.colors?.[0];
   const isNozzle02 = Math.abs(nozzleSize - 0.2) < 0.05;
@@ -525,6 +593,7 @@ export default function Home() {
 
   // Weryfikacja wgranego modelu – ukrycie ceny i blokada koszyka przed analizą
   const hasModel = Boolean(analysisData && (analysisData.preview_stl_url || analysisData.file_key || analysisData.volume_cm3 != null));
+  const isEmptyStage = !selectedFile && !analysisData && !isAnalyzing;
   const MIN_ORDER_VALUE = 30.00;
   const isBelowMoq = hasModel && parseFloat(totalPrice) < MIN_ORDER_VALUE;
   const diffToMoq = (MIN_ORDER_VALUE - parseFloat(totalPrice)).toFixed(2);
@@ -596,14 +665,16 @@ export default function Home() {
               : `FDM Precision ${nozzleSize}mm`
           }${analysisData?.print_time_formatted ? ` | Czas: ${analysisData.print_time_formatted}` : ""}${
             analysisData?.filament_weight_g ? ` | Waga: ${analysisData.filament_weight_g}g` : ""
-          }`,
+          }${scalePercent !== 100 ? ` | Skala: ${scalePercent}%` : ""}`,
           layer_height: `${layerHeight} mm`,
           infill: infill,
           clean_supports: true,
           brass_inserts: false,
           quantity: quantity,
           total_price: parseFloat(totalPrice),
-          dimensions_mm: analysisData?.dimensions_mm || [60, 60, 40],
+          dimensions_mm: (analysisData?.source_dimensions_mm || analysisData?.dimensions_mm || [60, 60, 40]).map(
+            (v) => Number((Number(v) * modelScale).toFixed(2))
+          ),
           status: "in_cart",
         })
         .select()
@@ -625,6 +696,7 @@ export default function Home() {
             layer_height: parseFloat(String(layerHeight || "0.2").replace(/[^\d.]/g, "")) || 0.2,
             infill: parseInt(String(infill || "20").replace(/[^\d.]/g, "")) || 20,
             nozzle_size: parseFloat(String(nozzleSize || "0.4").replace(/[^\d.]/g, "")) || 0.4,
+            scale: modelScale,
           }),
         })
           .then(async (res) => {
@@ -689,20 +761,33 @@ export default function Home() {
         type="file"
         accept=".stl,.step,.stp,.obj,.3mf,.iges,.igs,.ply,.glb,.gltf,.off,.3ds,.dxf,.dwg,.pdf,.zip,.rar,.7z,.kicad_pcb,.pcbdoc,.brd,.gbr,.ger,.gtl,.gbl,.gts,.gbs,.drl,.fcstd,.ifc,.3dm,.png,.jpg,.jpeg"
         className="hidden"
-        onChange={handleFileUpload}
+        onChange={handleFileInputChange}
       />
 
-      <section id="configurator" className="relative scroll-mt-20 overflow-hidden bg-[#E2E2E2]">
+      <section
+        id="configurator"
+        className="relative scroll-mt-20 bg-[#E2E2E2]"
+        onDragOver={(e) => {
+          if (selectedFile || isAnalyzing || analysisData) return;
+          e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (selectedFile || isAnalyzing || analysisData) return;
+          e.preventDefault();
+          const file = e.dataTransfer?.files?.[0];
+          if (file) handleSelectedFile(file);
+        }}
+      >
 
-        <div className="relative max-w-[1400px] mx-auto px-4 sm:px-8 pt-5 sm:pt-6">
+        <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 pt-3 sm:pt-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-neutral-700">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-700">
                 {analysisData && analysisData.instant_pricing === false
                   ? "Wycena inżynierska"
                   : "Konfigurator druku"}
               </p>
-              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-neutral-900 mt-0.5">
+              <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-neutral-900 mt-0.5">
                 {selectedFile ? selectedFile.name : "Wgraj model do wyceny"}
               </h1>
             </div>
@@ -710,7 +795,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={handleResetFile}
-                className="rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-neutral-800 hover:bg-white"
+                className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-white"
               >
                 Zmień plik
               </button>
@@ -718,48 +803,53 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="relative w-full">
-          <aside className="relative z-40 flex flex-row flex-wrap justify-center gap-4 px-4 pt-3 md:pointer-events-none md:absolute md:left-0 md:top-4 md:bottom-36 lg:right-[400px] md:flex-col md:flex-nowrap md:items-start md:justify-evenly md:gap-3 md:px-[12%] md:pt-0">
+        {/* Stage + quote bar share one surface so the sticky strip is not a fourth layer. */}
+        <div
+          data-studio-surface
+          className="relative mx-3 mb-3 rounded-2xl bg-[#E2E2E2] ring-1 ring-black/5 sm:mx-4"
+        >
+          <div className="relative w-full">
+          <StudioControlRail empty={isEmptyStage} framed={!isLocked3mf}>
             {isLocked3mf ? (
-              <div className="md:pointer-events-auto">
-                <StudioFileProfile
-                  colours={fileProfile.filament_colours || analysisData?.filament_colours || []}
-                  filamentTypes={fileProfile.filament_types || []}
-                  layerHeight={fileProfile.layer_height || layerHeight}
-                  nozzleSize={fileProfile.nozzle_size || nozzleSize}
-                  infill={fileProfile.infill ?? infill}
-                />
-              </div>
+              <StudioFileProfile
+                colours={fileProfile.filament_colours || analysisData?.filament_colours || []}
+                filamentTypes={fileProfile.filament_types || []}
+                layerHeight={fileProfile.layer_height || layerHeight}
+                nozzleSize={fileProfile.nozzle_size || nozzleSize}
+                infill={fileProfile.infill ?? infill}
+              />
             ) : (
               <>
-                <div className="md:pointer-events-auto">
-                  <StudioWheel
-                    items={materialWheelItems}
-                    value={selectedMaterial}
-                    onChange={(item) => handleSelectMaterial(item.id)}
-                    size={78}
-                    label="Materiał"
-                  />
-                </div>
-                <div className="md:pointer-events-auto md:-ml-8">
-                  <StudioWheel
-                    items={colorWheelItems}
-                    value={selectedColor}
-                    onChange={(item) => setSelectedColor(item.hex)}
-                    size={78}
-                    label="Kolor"
-                  />
-                </div>
-                <div className="relative md:pointer-events-auto" ref={printParamsRef}>
+                <StudioWheel
+                  items={materialWheelItems}
+                  value={selectedMaterial}
+                  onChange={(item) => handleSelectMaterial(item.id)}
+                  size={isEmptyStage ? 46 : 58}
+                  muted={isEmptyStage}
+                  label="Materiał"
+                />
+                <StudioWheel
+                  items={colorWheelItems}
+                  value={selectedColor}
+                  onChange={(item) => setSelectedColor(item.hex)}
+                  size={isEmptyStage ? 46 : 58}
+                  muted={isEmptyStage}
+                  label="Kolor"
+                />
+                <div className="relative z-[80] overflow-visible" ref={printParamsRef}>
                   <StudioWheel
                     items={printParamWheelItems}
-                    onOpen={() => setPrintParamsOpen((open) => !open)}
-                    size={78}
+                    onOpen={() => {
+                      setScaleOpen(false);
+                      setPrintParamsOpen((open) => !open);
+                    }}
+                    size={isEmptyStage ? 46 : 58}
+                    muted={isEmptyStage}
                     label="Parametry"
                     caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
                   />
                   {printParamsOpen && (
-                    <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 md:top-0 md:left-full md:translate-x-0 md:ml-3 md:mt-0">
+                    <div className="absolute bottom-full left-1/2 z-[90] mb-2 -translate-x-1/2 md:bottom-0 md:left-full md:top-auto md:mb-0 md:ml-3 md:translate-x-0">
                       <StudioPrintParams
                         nozzleSize={nozzleSize}
                         setNozzleSize={setNozzleSize}
@@ -774,11 +864,43 @@ export default function Home() {
                     </div>
                   )}
                 </div>
+                <div className="relative z-[80] overflow-visible" ref={scaleParamsRef}>
+                  <StudioWheel
+                    items={[
+                      { id: "s10", hex: "#E5E5E5", name: "10%" },
+                      { id: "s25", hex: "#A3A3A3", name: "25%" },
+                      { id: "s50", hex: "#525252", name: "50%" },
+                      { id: "s100", hex: "#111111", name: "100%" },
+                    ]}
+                    value={
+                      scalePercent <= 17 ? "s10" : scalePercent <= 37 ? "s25" : scalePercent <= 75 ? "s50" : "s100"
+                    }
+                    onOpen={() => {
+                      setPrintParamsOpen(false);
+                      setScaleOpen((open) => !open);
+                    }}
+                    size={isEmptyStage ? 46 : 58}
+                    muted={isEmptyStage}
+                    label="Skala"
+                    caption={`${scalePercent}%`}
+                  />
+                  {scaleOpen && (
+                    <div className="absolute bottom-full left-1/2 z-[90] mb-2 -translate-x-1/2 md:bottom-0 md:left-full md:top-auto md:mb-0 md:ml-3 md:translate-x-0">
+                      <StudioScale
+                        scalePercent={scalePercent}
+                        setScalePercent={setScalePercent}
+                        sourceDimensionsMm={
+                          analysisData?.source_dimensions_mm || analysisData?.dimensions_mm || [0, 0, 0]
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
               </>
             )}
-          </aside>
+          </StudioControlRail>
 
-          <div className="relative w-full flex items-center justify-center min-h-[560px] lg:min-h-[700px] md:pl-[40px] lg:pr-[400px]">
+          <div className="relative w-full flex items-center justify-center min-h-[420px] lg:min-h-[500px] pb-[var(--studio-quote-bar-clearance)] md:pl-[96px] lg:pr-[320px]">
               {isAnalyzing ? (
                 <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
                   <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
@@ -871,43 +993,20 @@ export default function Home() {
                   materialConfig={matConfig}
                   availableColors={matConfig?.colors || []}
                   showSupportsDefault={showSupports}
+                  modelScale={modelScale}
                 />
               ) : (
-                /* DROPZONE PRZED UPLOADEM */
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full max-w-lg mx-auto rounded-[2.5rem] bg-white/55 hover:bg-white/75 border border-white/70 shadow-sm flex flex-col items-center justify-center gap-4 p-10 cursor-pointer transition text-center"
-                >
-                  <div className="w-16 h-16 rounded-full bg-[#111111] text-white flex items-center justify-center font-light text-4xl">
-                    +
-                  </div>
-                  <div>
-                    <span className="font-semibold text-neutral-900 text-xl sm:text-2xl block">
-                      Kliknij lub przeciągnij plik produkcyjny
-                    </span>
-                    <span className="text-base text-neutral-700 block mt-2 leading-relaxed">
-                      Modele 3D, pliki CAD, płytki PCB, rysunki techniczne lub archiwa ZIP (do 100 MB)
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                    <span className="px-3.5 py-2 rounded-2xl bg-white text-neutral-800 text-sm font-medium shadow-sm">
-                      3D CAD (.step, .stl, .obj, .3mf)
-                    </span>
-                    <span className="px-3.5 py-2 rounded-2xl bg-white text-neutral-800 text-sm font-medium shadow-sm">
-                      PCB & Gerber
-                    </span>
-                    <span className="px-3.5 py-2 rounded-2xl bg-white text-neutral-800 text-sm font-medium shadow-sm">
-                      Rysunki 2D
-                    </span>
-                  </div>
-                </div>
+                <StudioEmptyDropzone
+                  onBrowse={openFilePicker}
+                  onFileSelected={handleSelectedFile}
+                />
               )}
             </div>
 
-            <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-5 lg:top-8 lg:w-[400px] lg:px-0 lg:pb-0 lg:bottom-auto">
+            <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-4 lg:top-4 lg:w-[300px] lg:px-0 lg:pb-0 lg:bottom-auto">
               <StudioPrintSettings
                 isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
+                compact={isEmptyStage}
                 matConfig={matConfig}
                 recommendedApps={recommendedApps}
                 chemicalResistance={chemicalResistance}
@@ -929,96 +1028,35 @@ export default function Home() {
                 userEmail={user?.email}
               />
             </aside>
-
-            <div className="relative z-30 mx-4 mb-5 lg:absolute lg:left-[220px] lg:right-[420px] lg:bottom-5 lg:mx-0 lg:mb-0 rounded-2xl bg-white/90 backdrop-blur-md border border-white/70 shadow-sm px-4 py-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              {analysisData && analysisData.instant_pricing === false ? (
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">
-                    Status wyceny
-                  </span>
-                  <span className="text-2xl font-semibold text-neutral-900">Wycena inżynierska</span>
-                </div>
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 min-w-0">
-                    <div>
-                      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-800/70 block">
-                        Razem
-                      </span>
-                      <div className="flex items-baseline gap-2 mt-0.5">
-                        <span className="text-3xl sm:text-4xl font-semibold text-neutral-900 tracking-tight">
-                          {hasModel ? totalPrice : "—"}
-                        </span>
-                        <span className="text-sm font-medium text-neutral-700">PLN</span>
-                        {isReslicing ? <span className="text-sm text-neutral-500">przeliczam…</span> : null}
-                      </div>
-                      {isBelowMoq && hasModel && (
-                        <p className="text-xs text-neutral-800/80 mt-1">
-                          Min. zamówienie 30 PLN (jeszcze {diffToMoq} zł)
-                        </p>
-                      )}
-                    </div>
-
-                    {hasModel && analysisData && analysisData.instant_pricing !== false && (
-                      <div className="flex flex-wrap items-center gap-4 sm:gap-5">
-                        <div>
-                          <span className="text-xs uppercase font-semibold text-neutral-500 block">Czas druku</span>
-                          <span className="text-sm font-semibold text-neutral-900">
-                            {analysisData.print_time_formatted || (analysisData.print_time_hours ? `${analysisData.print_time_hours}h` : "—")}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-xs uppercase font-semibold text-neutral-500 block">Waga</span>
-                          <span className="text-sm font-semibold text-neutral-900">
-                            {analysisData.filament_weight_g ? `${analysisData.filament_weight_g} g` : `${Math.round(volume * 1.24 * (0.35 + (infill / 100) * 0.65))} g`}
-                          </span>
-                        </div>
-                        {analysisData.filament_length_m ? (
-                          <div>
-                            <span className="text-xs uppercase font-semibold text-neutral-500 block">Długość</span>
-                            <span className="text-sm font-semibold text-neutral-900">
-                              {analysisData.filament_length_m} m
-                            </span>
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="flex items-center bg-neutral-100 rounded-full px-2 py-1">
-                      <button
-                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        disabled={!hasModel}
-                        className="w-8 h-8 flex items-center justify-center text-neutral-800 font-medium hover:bg-white rounded-full disabled:opacity-40"
-                      >
-                        −
-                      </button>
-                      <span className="w-8 text-center font-semibold text-sm">{quantity}</span>
-                      <button
-                        onClick={() => setQuantity(quantity + 1)}
-                        disabled={!hasModel}
-                        className="w-8 h-8 flex items-center justify-center text-neutral-800 font-medium hover:bg-white rounded-full disabled:opacity-40"
-                      >
-                        +
-                      </button>
-                    </div>
-                    <button
-                      disabled={!hasModel || addingToCart || isAnalyzing}
-                      onClick={handleAddToCart}
-                      className={`px-6 py-3 rounded-full text-sm font-semibold transition ${
-                        !hasModel || addingToCart || isAnalyzing
-                          ? "bg-neutral-400 text-white/70 cursor-not-allowed"
-                          : "bg-[#111111] hover:bg-black text-white cursor-pointer"
-                      }`}
-                    >
-                      {addingToCart ? "Zapisuję…" : isAnalyzing ? "Analizuję…" : !hasModel ? "Wgraj model" : "Dodaj do koszyka"}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
           </div>
+
+          <StudioQuoteBar
+            isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
+            hasModel={hasModel}
+            isAnalyzing={isAnalyzing}
+            isReslicing={isReslicing}
+            isBelowMoq={isBelowMoq}
+            totalPrice={totalPrice}
+            quantity={quantity}
+            onDecreaseQuantity={() => setQuantity(Math.max(1, quantity - 1))}
+            onIncreaseQuantity={() => setQuantity(quantity + 1)}
+            onBrowse={openFilePicker}
+            onAddToCart={handleAddToCart}
+            addingToCart={addingToCart}
+            printTime={
+              analysisData?.print_time_formatted ||
+              (analysisData?.print_time_hours ? `${analysisData.print_time_hours}h` : null)
+            }
+            filamentWeight={
+              analysisData?.filament_weight_g
+                ? `${analysisData.filament_weight_g} g`
+                : hasModel
+                ? `${Math.round(volume * 1.24 * (0.35 + (infill / 100) * 0.65))} g`
+                : null
+            }
+            filamentLength={analysisData?.filament_length_m ? `${analysisData.filament_length_m} m` : null}
+          />
+        </div>
       </section>
 
       <main className="max-w-7xl mx-auto px-4 py-10 space-y-8 w-full">

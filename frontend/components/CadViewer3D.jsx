@@ -54,8 +54,8 @@ function CameraAndActions({ resetTrigger, onScreenshotReady, setControlsRef, cam
       <OrbitControls
         ref={controlsRef}
         makeDefault
-        minDistance={10}
-        maxDistance={500}
+        minDistance={1}
+        maxDistance={8000}
         dampingFactor={0.08}
         enableDamping
       />
@@ -76,7 +76,29 @@ function CameraAndActions({ resetTrigger, onScreenshotReady, setControlsRef, cam
 // -----------------------------------------------------------------------------
 function isGlbUrl(url) {
   if (!url) return false;
-  return /\.glb(\?|#|$)/i.test(url) || /_preview\.glb/i.test(url);
+  return /\.glb(\?|#|$)/i.test(url) || /\.gltf(\?|#|$)/i.test(url) || /_preview\.glb/i.test(url);
+}
+
+function isGltfFileName(fileName) {
+  return /\.(glb|gltf)$/i.test(fileName || "");
+}
+
+function isNativeGltfSource(url, fileName) {
+  if (/_preview\.glb/i.test(url || "") || /_preview\.glb/i.test(fileName || "")) {
+    return false;
+  }
+  return isGlbUrl(url) || isGltfFileName(fileName);
+}
+
+function applyGltfDisplayScale(object3d) {
+  object3d.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object3d);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  if (maxDim > 0 && maxDim < 2.5 && maxDim * 1000 <= 2000) {
+    object3d.scale.multiplyScalar(1000);
+  }
 }
 
 function centerOnBed(geo) {
@@ -140,6 +162,7 @@ function placeObjectOnBed(object3d) {
 
 function CadModelGeometry({
   url,
+  fileName,
   color,
   materialConfig,
   isWireframe,
@@ -147,6 +170,7 @@ function CadModelGeometry({
   showBBox,
   onGeometryLoaded,
   useFileColors = false,
+  displayScale = 1,
 }) {
   const [geometry, setGeometry] = useState(null);
   const [gltfRoot, setGltfRoot] = useState(null);
@@ -166,14 +190,19 @@ function CadModelGeometry({
       });
     };
 
-    if (isGlbUrl(url)) {
+    if (isGlbUrl(url) || isGltfFileName(fileName)) {
       const loader = new GLTFLoader();
       loader.load(
         url,
         (gltf) => {
           if (cancelled) return;
           const root = gltf.scene;
-          layObjectOnBed(root);
+          if (isNativeGltfSource(url, fileName)) {
+            applyGltfDisplayScale(root);
+            placeObjectOnBed(root);
+          } else {
+            layObjectOnBed(root);
+          }
 
           let triCount = 0;
           root.traverse((ch) => {
@@ -219,7 +248,7 @@ function CadModelGeometry({
     return () => {
       cancelled = true;
     };
-  }, [url, onGeometryLoaded]);
+  }, [url, fileName, onGeometryLoaded]);
 
   // Wyliczanie powierzchni podpór (nachylenie do stołu poniżej progu Bambu)
   const supportMeshGeometry = useMemo(() => {
@@ -361,10 +390,16 @@ function CadModelGeometry({
     if (!gltfRoot) return undefined;
     gltfRoot.traverse((ch) => {
       if (!ch.isMesh) return;
+      if (useFileColors) {
+        const mats = Array.isArray(ch.material) ? ch.material : [ch.material];
+        mats.forEach((mat) => {
+          if (mat) mat.wireframe = isWireframe;
+        });
+        return;
+      }
       const prev = ch.material;
       const next = new THREE.MeshPhysicalMaterial({
-        color: useFileColors ? "#ffffff" : color,
-        vertexColors: Boolean(useFileColors && ch.geometry?.attributes?.color),
+        color,
         roughness: materialProps.roughness,
         metalness: materialProps.metalness,
         clearcoat: materialProps.clearcoat,
@@ -430,11 +465,11 @@ function CadModelGeometry({
             distanceFactor={180}
           >
             <div className="bg-slate-900/90 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl shadow-xl border border-white/20 whitespace-nowrap backdrop-blur-md flex items-center gap-2 pointer-events-none">
-              <span className="text-blue-400">X: {bboxData.size.x.toFixed(1)}</span>
+              <span className="text-blue-400">X: {(bboxData.size.x * displayScale).toFixed(1)}</span>
               <span className="text-slate-500">|</span>
-              <span className="text-emerald-400">Y: {bboxData.size.y.toFixed(1)}</span>
+              <span className="text-emerald-400">Y: {(bboxData.size.y * displayScale).toFixed(1)}</span>
               <span className="text-slate-500">|</span>
-              <span className="text-amber-400">Z: {bboxData.size.z.toFixed(1)} mm</span>
+              <span className="text-amber-400">Z: {(bboxData.size.z * displayScale).toFixed(1)} mm</span>
             </div>
           </Html>
         </group>
@@ -456,6 +491,7 @@ export default function CadViewer3D({
   availableColors = [],
   showSupportsDefault = false,
   studio = false,
+  modelScale = 1,
 }) {
   // Stany narzędziowe CAD
   const [isWireframe, setIsWireframe] = useState(false);
@@ -484,17 +520,20 @@ export default function CadViewer3D({
   }, [volumeCm3, volumeUnit]);
 
   const dimensions = useMemo(() => {
+    const s = Number(modelScale) > 0 ? Number(modelScale) : 1;
     if (analysisData?.dimensions_mm && analysisData.dimensions_mm.length === 3) {
-      return analysisData.dimensions_mm;
+      return analysisData.dimensions_mm.map((v) => Number((Number(v) * s).toFixed(1)));
     }
     if (loadedDimensions?.size) {
-      return loadedDimensions.size.map((v) => Number(v.toFixed(1)));
+      return loadedDimensions.size.map((v) => Number((v * s).toFixed(1)));
     }
     return [0, 0, 0];
-  }, [analysisData, loadedDimensions]);
+  }, [analysisData, loadedDimensions, modelScale]);
 
   const hasFileColors = Boolean(
-    analysisData?.has_file_colors || analysisData?.preview_glb_url
+    analysisData?.has_file_colors ||
+      analysisData?.preview_glb_url ||
+      isGltfFileName(fileName)
   );
   const useFileColors = hasFileColors && !recolorToMaterial;
 
@@ -554,7 +593,7 @@ export default function CadViewer3D({
 
   return (
     <div className={studio
-      ? "relative w-full h-[520px] md:h-[600px] lg:h-[680px] overflow-hidden select-none bg-transparent"
+      ? "relative w-full h-[400px] md:h-[440px] lg:h-[480px] overflow-hidden select-none bg-transparent"
       : "relative w-full h-[520px] md:h-[580px] lg:h-[620px] rounded-3xl overflow-hidden select-none bg-[#F8FAFC] border border-slate-200/90 shadow-[0_15px_40px_rgba(0,0,0,0.06)]"
     }>
       
@@ -576,16 +615,20 @@ export default function CadViewer3D({
 
         {/* Model 3D */}
         <Bounds fit observe margin={1.85}>
-          <CadModelGeometry
-            url={modelUrl}
-            color={selectedColor}
-            materialConfig={materialConfig}
-            isWireframe={isWireframe}
-            showSupports={showSupports}
-            showBBox={showBBox}
-            onGeometryLoaded={setLoadedDimensions}
-            useFileColors={useFileColors}
-          />
+          <group scale={[modelScale, modelScale, modelScale]}>
+            <CadModelGeometry
+              url={modelUrl}
+              fileName={fileName}
+              color={selectedColor}
+              materialConfig={materialConfig}
+              isWireframe={isWireframe}
+              showSupports={showSupports}
+              showBBox={showBBox}
+              onGeometryLoaded={setLoadedDimensions}
+              useFileColors={useFileColors}
+              displayScale={modelScale}
+            />
+          </group>
         </Bounds>
 
         {/* Siatka pomiarowa stołu roboczego (260x260 mm) */}
@@ -909,12 +952,12 @@ export default function CadViewer3D({
       </div>}
 
       {studio && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
-          <div className="bg-[#111111]/85 backdrop-blur-xl border border-white/10 rounded-full px-2 py-1 shadow-lg flex items-center gap-1">
+        <div className="absolute top-2 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5 pointer-events-auto">
+          <div className="bg-[#111111]/85 backdrop-blur-xl border border-white/10 rounded-full px-1.5 py-0.5 shadow-lg flex items-center gap-0.5">
             <button
               type="button"
               onClick={() => setResetTrigger((prev) => prev + 1)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white/80 hover:text-white hover:bg-white/10 text-sm font-medium transition"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-white/80 hover:text-white hover:bg-white/10 text-xs font-medium transition"
               title="Wycentruj model"
             >
               Centrum
@@ -922,7 +965,7 @@ export default function CadViewer3D({
             <button
               type="button"
               onClick={() => setIsWireframe(!isWireframe)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
                 isWireframe ? "bg-white text-neutral-900" : "text-white/80 hover:text-white hover:bg-white/10"
               }`}
               title="Widok siatki CAD"
@@ -931,8 +974,18 @@ export default function CadViewer3D({
             </button>
             <button
               type="button"
+              onClick={() => setShowBBox(!showBBox)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
+                showBBox ? "bg-emerald-500 text-white" : "text-white/80 hover:text-white hover:bg-white/10"
+              }`}
+              title="Pokaż wymiary XYZ modelu"
+            >
+              Wymiary
+            </button>
+            <button
+              type="button"
               onClick={() => setShowSupports(!showSupports)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
                 showSupports ? "bg-[#EF4444] text-white" : "text-white/80 hover:text-white hover:bg-white/10"
               }`}
               title="Podświetl nawisy wymagające podpór"
@@ -940,6 +993,15 @@ export default function CadViewer3D({
               Podpory
             </button>
           </div>
+          {showBBox && dimensions.some((v) => v > 0) ? (
+            <div className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-neutral-800 shadow-sm border border-white/70">
+              <span className="text-blue-600">X {dimensions[0]}</span>
+              <span className="mx-1.5 text-neutral-400">·</span>
+              <span className="text-emerald-600">Y {dimensions[1]}</span>
+              <span className="mx-1.5 text-neutral-400">·</span>
+              <span className="text-amber-600">Z {dimensions[2]} mm</span>
+            </div>
+          ) : null}
         </div>
       )}
 
