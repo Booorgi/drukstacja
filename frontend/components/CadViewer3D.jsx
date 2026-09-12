@@ -54,8 +54,8 @@ function CameraAndActions({ resetTrigger, onScreenshotReady, setControlsRef, cam
       <OrbitControls
         ref={controlsRef}
         makeDefault
-        minDistance={10}
-        maxDistance={500}
+        minDistance={1}
+        maxDistance={8000}
         dampingFactor={0.08}
         enableDamping
       />
@@ -76,7 +76,29 @@ function CameraAndActions({ resetTrigger, onScreenshotReady, setControlsRef, cam
 // -----------------------------------------------------------------------------
 function isGlbUrl(url) {
   if (!url) return false;
-  return /\.glb(\?|#|$)/i.test(url) || /_preview\.glb/i.test(url);
+  return /\.glb(\?|#|$)/i.test(url) || /\.gltf(\?|#|$)/i.test(url) || /_preview\.glb/i.test(url);
+}
+
+function isGltfFileName(fileName) {
+  return /\.(glb|gltf)$/i.test(fileName || "");
+}
+
+function isNativeGltfSource(url, fileName) {
+  if (/_preview\.glb/i.test(url || "") || /_preview\.glb/i.test(fileName || "")) {
+    return false;
+  }
+  return isGlbUrl(url) || isGltfFileName(fileName);
+}
+
+function applyGltfDisplayScale(object3d) {
+  object3d.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object3d);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const maxDim = Math.max(size.x, size.y, size.z);
+  if (maxDim > 0 && maxDim < 2.5 && maxDim * 1000 <= 2000) {
+    object3d.scale.multiplyScalar(1000);
+  }
 }
 
 function centerOnBed(geo) {
@@ -140,6 +162,7 @@ function placeObjectOnBed(object3d) {
 
 function CadModelGeometry({
   url,
+  fileName,
   color,
   materialConfig,
   isWireframe,
@@ -166,14 +189,19 @@ function CadModelGeometry({
       });
     };
 
-    if (isGlbUrl(url)) {
+    if (isGlbUrl(url) || isGltfFileName(fileName)) {
       const loader = new GLTFLoader();
       loader.load(
         url,
         (gltf) => {
           if (cancelled) return;
           const root = gltf.scene;
-          layObjectOnBed(root);
+          if (isNativeGltfSource(url, fileName)) {
+            applyGltfDisplayScale(root);
+            placeObjectOnBed(root);
+          } else {
+            layObjectOnBed(root);
+          }
 
           let triCount = 0;
           root.traverse((ch) => {
@@ -219,7 +247,7 @@ function CadModelGeometry({
     return () => {
       cancelled = true;
     };
-  }, [url, onGeometryLoaded]);
+  }, [url, fileName, onGeometryLoaded]);
 
   // Wyliczanie powierzchni podpór (nachylenie do stołu poniżej progu Bambu)
   const supportMeshGeometry = useMemo(() => {
@@ -361,10 +389,16 @@ function CadModelGeometry({
     if (!gltfRoot) return undefined;
     gltfRoot.traverse((ch) => {
       if (!ch.isMesh) return;
+      if (useFileColors) {
+        const mats = Array.isArray(ch.material) ? ch.material : [ch.material];
+        mats.forEach((mat) => {
+          if (mat) mat.wireframe = isWireframe;
+        });
+        return;
+      }
       const prev = ch.material;
       const next = new THREE.MeshPhysicalMaterial({
-        color: useFileColors ? "#ffffff" : color,
-        vertexColors: Boolean(useFileColors && ch.geometry?.attributes?.color),
+        color,
         roughness: materialProps.roughness,
         metalness: materialProps.metalness,
         clearcoat: materialProps.clearcoat,
@@ -494,7 +528,9 @@ export default function CadViewer3D({
   }, [analysisData, loadedDimensions]);
 
   const hasFileColors = Boolean(
-    analysisData?.has_file_colors || analysisData?.preview_glb_url
+    analysisData?.has_file_colors ||
+      analysisData?.preview_glb_url ||
+      isGltfFileName(fileName)
   );
   const useFileColors = hasFileColors && !recolorToMaterial;
 
@@ -578,6 +614,7 @@ export default function CadViewer3D({
         <Bounds fit observe margin={1.85}>
           <CadModelGeometry
             url={modelUrl}
+            fileName={fileName}
             color={selectedColor}
             materialConfig={materialConfig}
             isWireframe={isWireframe}
