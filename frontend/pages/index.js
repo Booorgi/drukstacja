@@ -806,7 +806,7 @@ endsolid fixture
         {/* Stage + quote bar share one surface so the sticky strip is not a fourth layer. */}
         <div
           data-studio-surface
-          className="studio-surface relative mx-3 mb-3 rounded-2xl bg-[#E2E2E2] ring-1 ring-black/5 sm:mx-4"
+          className="studio-surface relative mx-3 mb-3 flex flex-col rounded-2xl bg-[#E2E2E2] ring-1 ring-black/5 sm:mx-4"
         >
           <div data-studio-stage className="studio-stage">
           <StudioControlRail empty={isEmptyStage} framed={!isLocked3mf}>

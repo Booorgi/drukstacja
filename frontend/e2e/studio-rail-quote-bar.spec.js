@@ -32,6 +32,7 @@ async function assertRailClearsQuoteBar(page) {
   });
   expect(railStyle.position, "desktop rail must be absolutely confined to the stage").toBe("absolute");
   expect(railStyle.bottom, "desktop rail must have a bottom inset").not.toBe("auto");
+  expect(railBox.y + railBox.height, "rail frame must end above the quote bar").toBeLessThanOrEqual(barBox.y + 0.5);
 
   expect(
     boxesOverlap(railBox, barBox),
