@@ -320,8 +320,10 @@ export default function Home() {
     setAnalysisData(null);
     setRfqSubmitted(false);
 
-    const isDirectStl = file.name.toLowerCase().endsWith(".stl");
-    if (isDirectStl) {
+    const lowerName = file.name.toLowerCase();
+    const isDirectPreview =
+      lowerName.endsWith(".stl") || lowerName.endsWith(".glb") || lowerName.endsWith(".gltf");
+    if (isDirectPreview) {
       setModelPreviewUrl(URL.createObjectURL(file));
     } else {
       setModelPreviewUrl(null);
@@ -371,8 +373,12 @@ export default function Home() {
         }
       }
 
-      if (data.instant_pricing && (data.preview_glb_url || data.preview_stl_url)) {
-        setModelPreviewUrl(resolveAssetUrl(data.preview_glb_url || data.preview_stl_url));
+      const keepNativeGltf =
+        /\.(glb|gltf)$/i.test(file.name) && !data.has_file_colors;
+      if (data.instant_pricing && data.has_file_colors && data.preview_glb_url) {
+        setModelPreviewUrl(resolveAssetUrl(data.preview_glb_url));
+      } else if (data.instant_pricing && data.preview_stl_url && !keepNativeGltf) {
+        setModelPreviewUrl(resolveAssetUrl(data.preview_stl_url));
       } else if (!data.instant_pricing) {
         setModelPreviewUrl(null);
       }
