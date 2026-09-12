@@ -277,6 +277,35 @@ export default function Home() {
   }
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("studioLayout") !== "quoted") return;
+
+    const stl = `solid fixture
+facet normal 0 0 1
+  outer loop
+    vertex 0 0 0
+    vertex 10 0 0
+    vertex 0 10 0
+  endloop
+endfacet
+endsolid fixture
+`;
+    const file = new File([stl], "Watch case 1.stl", { type: "model/stl" });
+    setSelectedFile(file);
+    setModelPreviewUrl(URL.createObjectURL(file));
+    setAnalysisData({
+      instant_pricing: true,
+      volume_cm3: 8.8,
+      dimensions_mm: [40, 40, 10],
+      file_key: "layout-fixture",
+      print_time_formatted: "54m",
+      filament_weight_g: 8.8,
+      filament_length_m: 2.94,
+      price_breakdown: { unit_price_pln: 38 },
+    });
+  }, []);
+
+  useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const u = session?.user ?? null;
       setUser(u);

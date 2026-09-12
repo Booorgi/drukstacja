@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@react-three/drei": "^9.106.0",
@@ -21,6 +22,7 @@
     "three-stdlib": "^2.36.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "autoprefixer": "^10.5.5",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3"
