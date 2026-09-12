@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 
 function SpecTile({ label, value }) {
   return (
@@ -9,8 +9,47 @@ function SpecTile({ label, value }) {
   );
 }
 
+function MaterialDetails({ matConfig, recommendedApps, chemicalResistance, groupLabel }) {
+  return (
+    <>
+      <p className="text-xs text-white/80 leading-relaxed">{matConfig?.desc}</p>
+
+      <div className="flex flex-wrap gap-1.5">
+        <span className="px-2 py-1 rounded-full bg-white/10 text-xs">{groupLabel}</span>
+        <span className="px-2 py-1 rounded-full bg-white/10 text-xs">FDM</span>
+        {matConfig?.badge ? (
+          <span className="px-2 py-1 rounded-full bg-white text-neutral-900 text-xs font-medium">
+            {matConfig.badge}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="grid grid-cols-2 gap-1.5">
+        <SpecTile label="Sztywność" value={matConfig?.tensileStrength || "Wysoka"} />
+        <SpecTile label="Chemia" value={chemicalResistance} />
+      </div>
+
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60 mb-1.5">Zastosowania</p>
+        <div className="flex flex-wrap gap-1.5">
+          {recommendedApps.slice(0, 3).map((app) => (
+            <div key={app} className="rounded-full bg-white/10 px-2 py-1 text-xs text-white/90">
+              {app}
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Right-hand selected-material card.
+ * Empty studio stays compact (name + key metrics + badge); full spec is one click away.
+ */
 export default function StudioPrintSettings({
   isRfq = false,
+  compact = false,
   matConfig,
   recommendedApps = [],
   chemicalResistance = "",
@@ -31,6 +70,12 @@ export default function StudioPrintSettings({
   selectedFileName,
   userEmail,
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(!compact);
+
+  useEffect(() => {
+    setDetailsOpen(!compact);
+  }, [compact]);
+
   if (isRfq) {
     return (
       <div className="rounded-3xl bg-[#2A2A2A] text-white p-5 space-y-4 w-full">
@@ -112,47 +157,69 @@ export default function StudioPrintSettings({
       ? "Elastyczny"
       : "Standard";
 
+  const showDetails = !compact || detailsOpen;
+  const panelState = compact && !detailsOpen ? "compact" : "full";
+
   return (
-    <div className="rounded-2xl bg-[#2A2A2A] text-white p-3.5 space-y-2.5 w-full">
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">Wybrany materiał</p>
-        <h2 className="text-lg font-semibold tracking-tight mt-0.5">{matConfig?.name}</h2>
-      </div>
-
-      <div className="grid grid-cols-2 gap-1.5">
-        <SpecTile label="Cena" value={`${(matConfig?.pricePerCm3 || 0).toFixed(2)} zł/cm³`} />
-        <SpecTile label="Gęstość" value={`${matConfig?.density || 1.24} g/cm³`} />
-        <SpecTile label="HDT" value={matConfig?.hdt || "55°C"} />
-        <SpecTile label="UV" value={matConfig?.uvResistance || "Średnia"} />
-      </div>
-
-      <p className="text-xs text-white/80 leading-relaxed">{matConfig?.desc}</p>
-
-      <div className="flex flex-wrap gap-1.5">
-        <span className="px-2 py-1 rounded-full bg-white/10 text-xs">{groupLabel}</span>
-        <span className="px-2 py-1 rounded-full bg-white/10 text-xs">FDM</span>
-        {matConfig?.badge ? (
-          <span className="px-2 py-1 rounded-full bg-white text-neutral-900 text-xs font-medium">
+    <div
+      data-material-panel={panelState}
+      data-compact={compact ? "true" : "false"}
+      className={`rounded-2xl bg-[#2A2A2A] text-white w-full ${
+        compact && !detailsOpen ? "p-3 space-y-2" : "p-3.5 space-y-2.5"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">Wybrany materiał</p>
+          <h2 className="text-lg font-semibold tracking-tight mt-0.5">{matConfig?.name}</h2>
+        </div>
+        {compact && !detailsOpen && matConfig?.badge ? (
+          <span className="shrink-0 mt-0.5 px-2 py-1 rounded-full bg-white text-neutral-900 text-xs font-medium">
             {matConfig.badge}
           </span>
         ) : null}
       </div>
 
       <div className="grid grid-cols-2 gap-1.5">
-        <SpecTile label="Sztywność" value={matConfig?.tensileStrength || "Wysoka"} />
-        <SpecTile label="Chemia" value={chemicalResistance} />
+        <SpecTile label="Cena" value={`${(matConfig?.pricePerCm3 || 0).toFixed(2)} zł/cm³`} />
+        <SpecTile label="Gęstość" value={`${matConfig?.density || 1.24} g/cm³`} />
+        {showDetails ? (
+          <>
+            <SpecTile label="HDT" value={matConfig?.hdt || "55°C"} />
+            <SpecTile label="UV" value={matConfig?.uvResistance || "Średnia"} />
+          </>
+        ) : null}
       </div>
 
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60 mb-1.5">Zastosowania</p>
-        <div className="flex flex-wrap gap-1.5">
-          {recommendedApps.slice(0, 3).map((app) => (
-            <div key={app} className="rounded-full bg-white/10 px-2 py-1 text-xs text-white/90">
-              {app}
-            </div>
-          ))}
+      {!showDetails ? (
+        <p className="text-[11px] text-white/65">
+          HDT {matConfig?.hdt || "55°C"}
+        </p>
+      ) : null}
+
+      {showDetails ? (
+        <div id="material-details" data-material-details>
+          <MaterialDetails
+            matConfig={matConfig}
+            recommendedApps={recommendedApps}
+            chemicalResistance={chemicalResistance}
+            groupLabel={groupLabel}
+          />
         </div>
-      </div>
+      ) : null}
+
+      {compact ? (
+        <button
+          type="button"
+          data-material-more
+          aria-expanded={detailsOpen}
+          aria-controls="material-details"
+          onClick={() => setDetailsOpen((open) => !open)}
+          className="w-full rounded-lg bg-white/8 py-1.5 text-[11px] font-semibold text-white/70 hover:bg-white/12 hover:text-white transition"
+        >
+          {detailsOpen ? "Mniej" : "Więcej"}
+        </button>
+      ) : null}
     </div>
   );
 }
