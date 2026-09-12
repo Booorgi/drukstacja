@@ -276,6 +276,8 @@ export default function Home() {
     }
   }
 
+  // Opt-in layout fixture so empty vs quoted rail/quote-bar overlap can be
+  // checked without the analyze API (`/?studioLayout=quoted`).
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (new URLSearchParams(window.location.search).get("studioLayout") !== "quoted") return;
