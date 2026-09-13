@@ -313,6 +313,9 @@ def test_dockerfile_runs_db_setup_before_uvicorn_and_keeps_port():
     start_sh = Path(__file__).with_name("start.sh").read_text()
     assert "python db_setup.py" in start_sh
     assert 'exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-8080}"' in start_sh
+    railway_toml = Path(__file__).with_name("railway.toml").read_text()
+    assert 'startCommand = "sh start.sh"' in railway_toml
+    assert "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}" not in railway_toml
 
 
 @pytest.mark.skipif(not _has_database(), reason="Brak DATABASE_URL / TEST_DATABASE_URL")
