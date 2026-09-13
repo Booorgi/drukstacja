@@ -263,7 +263,7 @@ def setup_database():
         conn.autocommit = True
         cur = conn.cursor()
 
-        print("[1/4] Tworzenie tabeli 'filaments'...")
+        print("[1/5] Tworzenie tabeli 'filaments'...")
         create_table_sql = """
         CREATE TABLE IF NOT EXISTS filaments (
             id VARCHAR(50) PRIMARY KEY,
@@ -282,7 +282,7 @@ def setup_database():
         cur.execute(create_table_sql)
         print("      ✓ Tabela 'filaments' istnieje / została utworzona.")
 
-        print("[2/4] Weryfikacja tabeli 'orders' (schemat koszyka / zleceń)...")
+        print("[2/5] Weryfikacja tabeli 'orders' (schemat koszyka / zleceń)...")
         cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
         orders_migration_sql = """
         CREATE TABLE IF NOT EXISTS orders (
@@ -319,7 +319,11 @@ def setup_database():
         cur.execute(orders_migration_sql)
         print("      ✓ Tabela 'orders' ma kolumny UI (w tym nozzle_size) i indeksy user/status.")
 
-        print("[3/4] Tworzenie tabeli 'products' i seed katalogu sklepu...")
+        print("[3/5] Weryfikacja tabeli 'checkouts' (nagłówki OMS)...")
+        apply_checkouts_schema(cur)
+        print("      ✓ Tabela 'checkouts' i kolumna orders.checkout_id gotowe.")
+
+        print("[4/5] Tworzenie tabeli 'products' i seed katalogu sklepu...")
         products_migration_sql = """
         CREATE TABLE IF NOT EXISTS products (
             id VARCHAR(50) PRIMARY KEY,
@@ -380,7 +384,7 @@ def setup_database():
         products_available = cur.fetchone()[0]
         print(f"      ✓ Tabela 'products' gotowa ({products_count} SKU, {products_available} aktywnych na stanie).")
 
-        print(f"[4/4] Seedowanie {len(SEED_FILAMENTS)} filamentów (ON CONFLICT DO NOTHING)...")
+        print(f"[5/5] Seedowanie {len(SEED_FILAMENTS)} filamentów (ON CONFLICT DO NOTHING)...")
         insert_sql = """
         INSERT INTO filaments (
             id, name, tier, type, category, hex, colors, price_per_cm3, in_stock, roughness, metalness
@@ -412,6 +416,98 @@ def setup_database():
     except Exception as e:
         print(f"\n[BŁĄD] Wystąpił problem z bazą: {e}")
         sys.exit(1)
+    finally:
+        if conn:
+            conn.close()
+
+
+CHECKOUTS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS checkouts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    shipping_name VARCHAR(255) NOT NULL,
+    shipping_phone VARCHAR(50) NOT NULL,
+    shipping_street TEXT NOT NULL,
+    shipping_city VARCHAR(255) NOT NULL,
+    shipping_postal_code VARCHAR(20) NOT NULL,
+    shipping_country VARCHAR(8) NOT NULL DEFAULT 'PL',
+    company VARCHAR(255),
+    nip VARCHAR(20),
+    subtotal NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    shipping NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    total NUMERIC(10, 2) NOT NULL DEFAULT 0,
+    payment_status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    production_status VARCHAR(50) NOT NULL DEFAULT 'pending_payment',
+    stripe_session_id VARCHAR(255),
+    stripe_payment_intent_id VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS shipping_name VARCHAR(255);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS shipping_phone VARCHAR(50);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS shipping_street TEXT;
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS shipping_city VARCHAR(255);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS shipping_postal_code VARCHAR(20);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS shipping_country VARCHAR(8);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS company VARCHAR(255);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS nip VARCHAR(20);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS subtotal NUMERIC(10, 2);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS shipping NUMERIC(10, 2);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS total NUMERIC(10, 2);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS production_status VARCHAR(50);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS stripe_session_id VARCHAR(255);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS stripe_payment_intent_id VARCHAR(255);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+CREATE INDEX IF NOT EXISTS idx_checkouts_user_created ON checkouts (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_checkouts_payment_prod ON checkouts (payment_status, production_status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_checkouts_stripe_session
+    ON checkouts (stripe_session_id) WHERE stripe_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_checkouts_stripe_pi
+    ON checkouts (stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS checkout_id UUID;
+CREATE INDEX IF NOT EXISTS idx_orders_checkout_id ON orders (checkout_id);
+"""
+
+
+def apply_checkouts_schema(cur):
+    """Idempotentny DDL nagłówków zamówień (OMS) + FK checkout_id."""
+    cur.execute(CHECKOUTS_SCHEMA_SQL)
+    cur.execute(
+        """
+        DO $$
+        BEGIN
+            ALTER TABLE orders
+                ADD CONSTRAINT orders_checkout_id_fkey
+                FOREIGN KEY (checkout_id) REFERENCES checkouts(id) ON DELETE SET NULL;
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+        END
+        $$;
+        """
+    )
+
+
+def ensure_oms_schema():
+    """
+    Start API: dopina schemat OMS gdy jest DATABASE_URL.
+    Nie zrywa procesu — błąd tylko logujemy.
+    """
+    if not os.getenv("DATABASE_URL"):
+        return False
+    conn = None
+    try:
+        conn = get_db_connection()
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+        apply_checkouts_schema(cur)
+        cur.close()
+        return True
+    except Exception as err:
+        print(f"[WARN] ensure_oms_schema: {err}")
+        return False
     finally:
         if conn:
             conn.close()

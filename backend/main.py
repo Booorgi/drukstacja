@@ -41,6 +41,8 @@ from packager_3mf import generate_production_3mf, sanitize_filename
 from db import get_db_connection
 from orders_api import router as orders_router, update_production_file_url
 from products_api import router as products_router
+from checkout_api import router as checkout_router, webhook_router
+from admin_api import router as admin_router
 
 # Katalog cache dla wygenerowanych i zorientowanych siatek STL do szybkiego ponownego cięcia
 MODELS_CACHE_DIR = os.path.join(tempfile.gettempdir(), "drukstacja_cache")
@@ -63,6 +65,19 @@ app.add_middleware(
 
 app.include_router(orders_router)
 app.include_router(products_router)
+app.include_router(checkout_router)
+app.include_router(webhook_router)
+app.include_router(admin_router)
+
+
+@app.on_event("startup")
+def _ensure_oms_schema():
+    try:
+        from db_setup import ensure_oms_schema
+
+        ensure_oms_schema()
+    except Exception as schema_err:
+        print(f"[WARN] Startup OMS schema: {schema_err}")
 
 MAX_FILE_SIZE_MB = 100
 ALLOWED_EXTENSIONS = ALL_SUPPORTED_EXTENSIONS

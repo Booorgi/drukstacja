@@ -1,6 +1,6 @@
 # Railway Postgres + Supabase Auth
 
-Railway Postgres jest jedynym źródłem prawdy dla danych biznesowych (`orders`, `filaments`, `products`).
+Railway Postgres jest jedynym źródłem prawdy dla danych biznesowych (`orders`, `checkouts`, `filaments`, `products`).
 Supabase zostaje wyłącznie do Auth (email / hasło) po stronie frontendu.
 
 ## Zmienne środowiskowe
@@ -15,6 +15,13 @@ Supabase zostaje wyłącznie do Auth (email / hasło) po stronie frontendu.
 | `SUPABASE_JWKS_URL` | opcjonalnie | Nadpisanie JWKS, domyślnie `{SUPABASE_URL}/auth/v1/.well-known/jwks.json`. |
 | `SUPABASE_JWT_AUDIENCE` | nie | Domyślnie `authenticated`. |
 | `ALLOWED_ORIGINS` | nie | CORS, lista po przecinku. Domyślnie `*`. |
+| `STRIPE_SECRET_KEY` | tak (kasa) | Secret key Stripe — tworzenie Checkout Session (PLN). |
+| `STRIPE_WEBHOOK_SECRET` | tak (kasa) | Signing secret endpointu `POST /api/webhooks/stripe`. |
+| `STRIPE_PUBLISHABLE_KEY` | nie | MVP nie używa Elements; opcjonalnie pod przyszły client. |
+| `NEXT_PUBLIC_SITE_URL` / `SITE_URL` | tak (kasa) | Publiczny URL frontendu — `success_url` / `cancel_url` Stripe. |
+| `ADMIN_EMAILS` | tak (admin) | E-maile staff po przecinku; muszą zgadzać się z `email` w JWT Supabase. |
+| `MIN_ORDER_PLN` | nie | Domyślnie `30`. |
+| `SHIPPING_AMOUNT_PLN` | nie | Placeholder wysyłki, domyślnie `0`. |
 | `R2_*` | jak dotychczas | Cloudflare R2 dla plików produkcyjnych. |
 | `PORT` | Railway | Port uvicorn (Dockerfile). |
 
@@ -25,6 +32,7 @@ Supabase zostaje wyłącznie do Auth (email / hasło) po stronie frontendu.
 | `NEXT_PUBLIC_API_URL` | tak | Publiczny URL backendu FastAPI (np. `https://drukstacja-api.up.railway.app`). Lokalnie: `http://localhost:8000` (default w `next.config.js`). |
 | `NEXT_PUBLIC_SUPABASE_URL` | tak | Tylko Auth (login / signup / sesja). |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | tak | Tylko Auth. Anon key **nie** jest używany do CRUD zleceń. |
+| `NEXT_PUBLIC_SITE_URL` | tak (kasa) | Ten sam origin co success/cancel Stripe (`/kasa/sukces`, `/kasa/anulowano`). |
 
 Frontend **nie** pisze już do tabeli Supabase `orders`. Klient Supabase (`frontend/lib/supabaseClient.js`) zostaje wyłącznie pod `supabase.auth`.
 
@@ -48,6 +56,12 @@ Frontend **nie** pisze już do tabeli Supabase `orders`. Klient Supabase (`front
 | `PATCH` | `/api/orders/{id}` | JWT | Aktualizacja pól technicznych / `production_file_url` / status `cancelled`. |
 | `DELETE` | `/api/orders/{id}` | JWT | Soft-cancel (`status=cancelled`). |
 | `POST` | `/api/orders/clear-cart` | JWT | Anuluje wszystkie `in_cart` użytkownika. |
+| `POST` | `/api/checkout` | JWT | Zamraża `in_cart` (print + `shop_sku`) w `checkouts`, status `pending_payment`, zwraca URL Stripe Checkout. |
+| `POST` | `/api/checkout/cancel` | JWT | Przywraca nieopłacone linie do koszyka. |
+| `GET` | `/api/checkout/{id}` | JWT | Własny nagłówek + linie. |
+| `POST` | `/api/webhooks/stripe` | podpis Stripe | `checkout.session.completed` / `payment_intent.succeeded` → `paid` + `in_queue` (idempotentnie). |
+| `GET` | `/api/admin/checkouts` | JWT + `ADMIN_EMAILS` | Lista opłaconych / w pipeline. |
+| `PATCH` | `/api/admin/checkouts/{id}` | JWT + `ADMIN_EMAILS` | `in_queue` → `in_production` → `post_processing` → `shipped`. |
 
 Istniejące endpointy silnika druku bez zmian kontraktu:
 
@@ -94,7 +108,31 @@ Nowe / uzupełnione kolumny względem starego `CREATE`:
 Statusy: `in_cart`, `pending_payment`, `in_queue`, `in_production`, `post_processing`, `shipped`, `rfq_pending`, `cancelled`.
 
 Klient może tworzyć tylko `in_cart` / `rfq_pending` i ustawiać status na `cancelled`.
-Kolejne statusy produkcyjne zostają na później (poza zakresem tej zmiany).
+Statusy produkcyjne po wpłacie ustawia webhook (`in_queue`) oraz panel `/admin`.
+Kolumna `checkout_id` spina linię z nagłówkiem `checkouts`.
+
+## Schemat `checkouts`
+
+Ta sama komenda `python db_setup.py` (oraz `ensure_oms_schema()` przy starcie API) tworzy tabelę nagłówka zamówienia.
+
+| Kolumna | Typ | Uwagi |
+|---------|-----|--------|
+| `id` | `UUID` PK | Nagłówek OMS. |
+| `user_id` | `UUID` | Z JWT `sub`. |
+| `shipping_*` | tekst | `name`, `phone`, `street`, `city`, `postal_code`, `country` (domyślnie `PL`). |
+| `company`, `nip` | opcjonalne | Dane firmowe / NIP. |
+| `subtotal`, `shipping`, `total` | `NUMERIC(10,2)` | Wysyłka placeholder (`SHIPPING_AMOUNT_PLN`, domyślnie 0). |
+| `payment_status` | `VARCHAR` | `pending` / `paid` / `cancelled` / `failed`. |
+| `production_status` | `VARCHAR` | `pending_payment` → `in_queue` → `in_production` → `post_processing` → `shipped`. |
+| `stripe_session_id`, `stripe_payment_intent_id` | tekst | Idempotencja webhooka. |
+| `created_at`, `updated_at` | `TIMESTAMPTZ` | |
+
+Stripe Dashboard → Webhooks → endpoint:
+
+`https://<RAILWAY_API_HOST>/api/webhooks/stripe`
+
+Zdarzenia: `checkout.session.completed`, `payment_intent.succeeded`.
+Szczegóły env: [CHECKOUT.md](CHECKOUT.md).
 
 ## Schemat `products`
 
