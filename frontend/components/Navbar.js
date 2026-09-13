@@ -64,6 +64,7 @@ export default function Navbar({
   const isGeneratoryActive = activePage === "breloki" || router.pathname.startsWith("/breloki");
   const isSklepActive = activePage === "sklep" || router.pathname.startsWith("/sklep");
   const isKontaktActive = activePage === "kontakt" || router.pathname.startsWith("/kontakt");
+  const isOrdersActive = activePage === "orders" || router.pathname.startsWith("/orders");
 
   const navLink = (active) =>
     `relative px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] rounded-full transition-colors ${
@@ -283,7 +284,12 @@ export default function Navbar({
                   <Link
                     href="/orders"
                     onClick={() => setIsUserMenuOpen(false)}
-                    className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition"
+                    aria-current={isOrdersActive ? "page" : undefined}
+                    className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold transition ${
+                      isOrdersActive
+                        ? "bg-slate-50 text-slate-900"
+                        : "text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                    }`}
                   >
                     <span>📦</span>
                     <span>Moje zlecenia</span>
@@ -432,6 +438,23 @@ export default function Navbar({
                 <span>🧪</span>
                 <span>Katalog materiałów</span>
               </Link>
+
+              {user && (
+                <Link
+                  href="/orders"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  aria-current={isOrdersActive ? "page" : undefined}
+                  data-nav="orders"
+                  className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition ${
+                    isOrdersActive
+                      ? "bg-white/20 text-white"
+                      : "text-white/70 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  <span>📦</span>
+                  <span>Moje zlecenia</span>
+                </Link>
+              )}
             </div>
           </div>
 
