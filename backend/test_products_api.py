@@ -3,6 +3,8 @@ Katalog sklepu + dodanie SKU do koszyka (orders.in_cart, technology=shop_sku).
 """
 import os
 import time
+from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import uuid4
 
 import jwt
@@ -256,3 +258,138 @@ def test_unknown_category_is_400(catalog_client):
     res = catalog_client.get("/api/products?category=litofany")
     assert res.status_code == 400
     assert "kategor" in res.json()["detail"].lower()
+
+
+def test_ensure_products_on_startup_without_db(monkeypatch):
+    monkeypatch.setattr("db.get_db_connection", lambda *args, **kwargs: None)
+    from db_setup import ensure_products_on_startup
+
+    assert ensure_products_on_startup() is False
+
+
+def test_ensure_products_on_startup_survives_errors(monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("postgres refused connection")
+
+    monkeypatch.setattr("db.get_db_connection", boom)
+    from db_setup import ensure_products_on_startup
+
+    assert ensure_products_on_startup() is False
+
+
+def test_lifespan_keeps_api_up_when_db_unavailable(monkeypatch):
+    monkeypatch.setattr("db.get_db_connection", lambda *args, **kwargs: None)
+    monkeypatch.setattr("products_api.get_db_connection", lambda *args, **kwargs: None)
+    from db_setup import ensure_products_on_startup
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from products_api import router
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        assert ensure_products_on_startup() is False
+        yield
+
+    app = FastAPI(lifespan=lifespan)
+    app.include_router(router)
+    with TestClient(app) as client:
+        res = client.get("/api/products")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["source"] == "fallback"
+        assert {item["sku"] for item in body["products"]} == {
+            "sku_brass_inserts",
+            "sku_pla_jet_black",
+            "sku_magigoo_original",
+            "sku_deburring_tool",
+        }
+
+
+def test_dockerfile_runs_db_setup_before_uvicorn_and_keeps_port():
+    dockerfile = Path(__file__).with_name("Dockerfile").read_text()
+    assert 'CMD ["sh", "start.sh"]' in dockerfile
+    assert "ENV PORT=8080" in dockerfile
+    assert "EXPOSE 8080" in dockerfile
+    start_sh = Path(__file__).with_name("start.sh").read_text()
+    assert "python db_setup.py" in start_sh
+    assert "exec uvicorn main:app --host 0.0.0.0 --port" in start_sh
+    assert "port=8080" in start_sh
+    railway_toml = Path(__file__).with_name("railway.toml").read_text()
+    assert 'startCommand = "sh start.sh"' in railway_toml
+
+
+@pytest.mark.skipif(not _has_database(), reason="Brak DATABASE_URL / TEST_DATABASE_URL")
+def test_ensure_products_then_catalog_source_is_database():
+    from db_setup import ensure_products_on_startup
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from products_api import router
+
+    assert ensure_products_on_startup() is True
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        assert ensure_products_on_startup() is True
+        yield
+
+    app = FastAPI(lifespan=lifespan)
+    app.include_router(router)
+    with TestClient(app) as client:
+        res = client.get("/api/products")
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["source"] == "database"
+        skus = {item["sku"] for item in body["products"]}
+        assert skus >= {
+            "sku_brass_inserts",
+            "sku_pla_jet_black",
+            "sku_magigoo_original",
+            "sku_deburring_tool",
+        }
+        categories = {item["sku"]: item["category"] for item in body["products"]}
+        assert categories["sku_brass_inserts"] == "hardware"
+        assert categories["sku_pla_jet_black"] == "materialy"
+        assert categories["sku_magigoo_original"] == "materialy"
+        assert categories["sku_deburring_tool"] == "narzedzia"
+        slugs = {item["slug"] for item in body["categories"]}
+        assert slugs == {"materialy", "hardware", "narzedzia", "gotowe-printy", "akcesoria"}
+
+        filtered = client.get("/api/products?category=hardware")
+        assert filtered.status_code == 200
+        assert {item["sku"] for item in filtered.json()["products"]} == {"sku_brass_inserts"}
+        assert filtered.json()["source"] == "database"
+
+
+@pytest.mark.skipif(not _has_database(), reason="Brak DATABASE_URL / TEST_DATABASE_URL")
+def test_ensure_products_is_idempotent_and_remaps_legacy_labels():
+    from db import get_db_connection
+    from db_setup import ensure_products_on_startup, ensure_products_schema
+
+    assert ensure_products_on_startup() is True
+    conn = get_db_connection()
+    assert conn is not None
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE products
+                SET category = 'Akcesoria DFM', updated_at = NOW()
+                WHERE sku = 'sku_brass_inserts'
+                """
+            )
+            first = ensure_products_schema(cur)
+            second = ensure_products_schema(cur)
+            cur.execute(
+                "SELECT category FROM products WHERE sku = %s",
+                ("sku_brass_inserts",),
+            )
+            row = cur.fetchone()
+            category = row["category"] if isinstance(row, dict) else row[0]
+    finally:
+        conn.close()
+
+    assert first["count"] >= 4
+    assert second["count"] == first["count"]
+    assert second["available"] == first["available"]
+    assert category == "hardware"

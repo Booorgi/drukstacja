@@ -1,0 +1,7 @@
+# Railpack does not run startCommand in a shell.
+# `python db_setup.py && uvicorn` → only db_setup runs (HTTP 502).
+# `uvicorn --port ${PORT:-8080}` → literal "${PORT:-8080}", uvicorn exits.
+# Always go through sh so PORT expands and uvicorn stays PID 1.
+
+[deploy]
+startCommand = "sh start.sh"

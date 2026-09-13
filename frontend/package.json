@@ -6,7 +6,6 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test components/printerLayersBandScrub.test.js",
     "test:e2e": "playwright test"
   },
   "dependencies": {
