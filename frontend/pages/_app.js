@@ -33,6 +33,9 @@ export default function MyApp({ Component, pageProps }) {
               padding: 0 !important;
               transform: none !important;
             }
+            [data-studio-control-rail][data-picker-open="true"] {
+              z-index: 86 !important;
+            }
             [data-studio-control-rail-frame] {
               pointer-events: auto;
               max-height: 100%;

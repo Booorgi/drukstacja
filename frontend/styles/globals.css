@@ -42,6 +42,10 @@
     max-height: none;
   }
 
+  [data-studio-control-rail][data-picker-open="true"] {
+    z-index: 86;
+  }
+
   [data-studio-control-rail-frame] {
     pointer-events: auto;
     max-height: 100%;
