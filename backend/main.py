@@ -223,9 +223,9 @@ def _ellipse_kernel(size: int):
 
 
 def _denoise_for_quantize(bgr: np.ndarray, filter_noise: int) -> np.ndarray:
-    """Bilateral (krawędzie) + median (sól/pieprz) zanim KMeans zobaczy ziarno zdjęcia."""
+    """Bilateral + median przed KMeans — gasi ziarno, bez ruszania epsilon konturów."""
     diameter = 5 if filter_noise < 4 else (7 if filter_noise < 8 else 9)
-    sigma = 18.0 + 12.0 * filter_noise  # Makerlab Filter Noise=5 → ~78
+    sigma = 16.0 + 10.0 * filter_noise  # Filter Noise=5 → ~66
     den = cv2.bilateralFilter(bgr, d=diameter, sigmaColor=sigma, sigmaSpace=sigma)
     if filter_noise >= 1:
         k = 3 if filter_noise < 4 else (5 if filter_noise < 8 else 7)
@@ -234,9 +234,9 @@ def _denoise_for_quantize(bgr: np.ndarray, filter_noise: int) -> np.ndarray:
 
 
 def _min_region_area(filter_noise: int, width: int, height: int) -> int:
-    """Minimalna powierzchnia wyspy w px roboczej rozdzielczości (~800). Filter Noise=5 ≈ 300px."""
+    """Minimalna powierzchnia wyspy w px (~800). Filter Noise=5 ≈ 90px, nie ~300px."""
     scale = (max(width, height) / 800.0) ** 2
-    return max(8, int((10.0 * (filter_noise ** 2.1)) * scale))
+    return max(8, int((5.0 * (filter_noise ** 1.8)) * scale))
 
 
 def count_label_islands(labels: np.ndarray, n_colors: int, max_area: int | None = None) -> int:
@@ -278,18 +278,30 @@ def _merge_small_regions(
     min_area: int,
     max_passes: int = 4,
 ) -> np.ndarray:
-    """Przypisz drobne wyspy do dominującego sąsiada (Makerlab-like Filter Noise)."""
+    """Przypisz drobne wyspy do dominującego sąsiada (Makerlab-like Filter Noise).
+
+    Próg bezwzględny + względny z capem: pepper znika, oko/ucho (~setki px) zostaje.
+    """
     cleaned = labels.copy()
     kernel = np.ones((3, 3), np.uint8)
     sil_bool = sil.astype(bool)
     min_area = max(1, int(min_area))
+    rel_cap = max(min_area, 220)
     for _ in range(max_passes):
         merged_any = False
+        largest = []
+        for c_idx in range(n_colors):
+            mask = ((cleaned == c_idx) & sil_bool).astype(np.uint8)
+            _n, _cc, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+            areas = [int(stats[i, cv2.CC_STAT_AREA]) for i in range(1, _n)]
+            largest.append(max(areas) if areas else 0)
         for c_idx in range(n_colors):
             mask = ((cleaned == c_idx) & sil_bool).astype(np.uint8)
             n_cc, cc, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+            rel_lim = min(rel_cap, max(min_area, int(0.02 * largest[c_idx])))
             for i in range(1, n_cc):
-                if int(stats[i, cv2.CC_STAT_AREA]) >= min_area:
+                area = int(stats[i, cv2.CC_STAT_AREA])
+                if area >= rel_lim:
                     continue
                 component = cc == i
                 ring = cv2.dilate(component.astype(np.uint8), kernel, iterations=1).astype(bool)
@@ -348,10 +360,25 @@ def _collapse_near_duplicate_clusters(
 
 
 def _approx_epsilon(contour, detail: int) -> float:
-    """Detail=10 (Makerlab max) — lekkie wygładzenie; niższy detail — mocniejsze uproszczenie."""
-    peri = cv2.arcLength(contour, True)
-    frac = 0.012 - (max(1, min(10, detail)) - 1) * 0.0010  # 10→0.003, 1→0.012
-    return max(0.75, frac * peri)
+    """Detail=10 = stary pipeline (0.0010 * peri). Niższy detail grubiej upraszcza, z capem w px."""
+    peri = float(cv2.arcLength(contour, True))
+    d = max(1, min(10, int(detail)))
+    frac = 0.0010 + (10 - d) * 0.0007  # 10→0.0010, 1→0.0073
+    cap = 1.15 + (10 - d) * 0.35  # 10→1.15px, żeby duże plamy nie stały się drzazgami
+    return min(cap, max(0.25, frac * peri))
+
+
+def _is_needle_polygon(pts: np.ndarray, min_area: int) -> bool:
+    """Odrzuć cienkie igły / drzazgi po approx, nie ruszając większych realnych kształtów."""
+    if len(pts) < 3:
+        return True
+    cnt = np.ascontiguousarray(pts.reshape(-1, 1, 2), dtype=np.float32)
+    area = float(cv2.contourArea(cnt))
+    peri = float(cv2.arcLength(cnt, True))
+    if peri <= 1e-6:
+        return True
+    compactness = (4.0 * np.pi * area) / (peri * peri)
+    return compactness < 0.06 and area < max(80.0, float(min_area) * 2.5)
 
 
 def image_to_quantized_svg(
@@ -368,7 +395,7 @@ def image_to_quantized_svg(
     2. Inteligentne domykanie wyłącznie wewnętrznych ubytków z zachowaniem otwartych przestrzeni między nogami.
     3. Denoise przed KMeans (bilateral + median) oraz scalanie drobnych wysp (Filter Noise).
     4. Gwarantowana minimalna grubość ścianek (dylatacja) – brak łamliwych, cienkich elementów pod dyszę 0.4mm.
-    5. Zagnieżdżone ścieżki SVG (fill-rule='evenodd') z lekkim approxPolyDP sterowanym Detail.
+    5. Ścieżki SVG (evenodd): Detail=10 = stary epsilon 0.0010*peri (cap ~1.15px), nie grube drzazgi.
     Domyślne Filter Noise=5 i Detail=10 odpowiadają suwakom Makerlab.
     """
     n_colors = max(2, min(6, n_colors))
@@ -489,9 +516,9 @@ def image_to_quantized_svg(
         remapped[labels == old_cluster] = new_idx
 
     remapped = _smooth_label_map(remapped, sil, filter_noise)
-    # Filter Noise=5 → ΔE_Lab ≈ 16: dwa niemal identyczne czernie stają się jedną warstwą
+    # Filter Noise=5 → ΔE_Lab ≈ 11: tylko niemal identyczne czernie, nie beż z brązem
     remapped = _collapse_near_duplicate_clusters(
-        centers, remapped, n_colors, max_lab_dist=10.0 + filter_noise * 1.2
+        centers, remapped, n_colors, max_lab_dist=8.0 + filter_noise * 0.6
     )
     min_area = _min_region_area(filter_noise, new_w, new_h)
     remapped = _merge_small_regions(remapped, sil, n_colors, min_area)
@@ -510,17 +537,13 @@ def image_to_quantized_svg(
     # 4. MASKI WARSTW Z GWARANTOWANĄ GRUBOŚCIĄ ŚCIANEK POD DYSZĘ 0.4MM (KAFELKOWANIE MOZAIKOWE):
     # Kernel dylatacji (poszerza cienkie paski o +1px promień, co zapewnia szczelne łączenie stykających się kolorów w druku FDM)
     kernel_wall = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    # Open zostaje mały — wyspy już zlał _merge_small_regions; mocniejszy open rwał krawędzie
-    open_size = 2 if filter_noise < 8 else 3
-    kernel_open = _ellipse_kernel(open_size)
-    kernel_close = _ellipse_kernel(3)
+    kernel_open = _ellipse_kernel(2)
     layer_masks = []
 
     for c_idx in range(n_colors):
         m = (remapped == c_idx).astype(np.uint8) * 255
-        # Open/close po scaleniu wysp — bez rozdymania mikroszumu dylatacją
+        # Tylko 2×2 open — close+mocny open rwał krawędzie w drzazgi
         m = cv2.morphologyEx(m, cv2.MORPH_OPEN, kernel_open)
-        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, kernel_close)
         # Pogrubienie ścianek i szczelne spasowanie sąsiadujących kolorów
         m = cv2.dilate(m, kernel_wall, iterations=1)
         # Ograniczenie do zewnętrznej sylwetki
@@ -557,14 +580,14 @@ def image_to_quantized_svg(
         if not np.any(mask):
             continue
 
-        contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_TC89_KCOS)
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
         if not contours or hierarchy is None:
             continue
 
         hier = hierarchy[0]
         compound_paths = []
-        min_contour = max(20, int(min_area * 0.45))
-        min_hole = max(8, int(min_area * 0.18))
+        min_contour = max(15, int(min_area * 0.25))
+        min_hole = max(6, int(min_area * 0.12))
 
         for i in range(len(contours)):
             if hier[i][3] != -1:
@@ -577,7 +600,7 @@ def image_to_quantized_svg(
 
             approx = cv2.approxPolyDP(cnt, _approx_epsilon(cnt, detail), True)
             pts = approx.reshape(-1, 2)
-            if len(pts) < 3:
+            if len(pts) < 3 or _is_needle_polygon(pts, min_area):
                 continue
 
             sx, sy = map_pt(pts[0])
@@ -594,7 +617,7 @@ def image_to_quantized_svg(
                 if cv2.contourArea(hole_cnt) >= min_hole:
                     hole_approx = cv2.approxPolyDP(hole_cnt, _approx_epsilon(hole_cnt, detail), True)
                     hole_pts = hole_approx.reshape(-1, 2)
-                    if len(hole_pts) >= 3:
+                    if len(hole_pts) >= 3 and not _is_needle_polygon(hole_pts, min_area):
                         hsx, hsy = map_pt(hole_pts[0])
                         d_str += f"M {hsx:.2f} {hsy:.2f} "
                         for hp in hole_pts[1:]:
