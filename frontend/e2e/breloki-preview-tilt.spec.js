@@ -3,6 +3,15 @@ const { test, expect } = require("@playwright/test");
 async function installIosOrientationMock(page, { permission = "granted" } = {}) {
   await page.addInitScript(({ permissionResult }) => {
     window.__orientPermCalls = 0;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      get: () =>
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+    });
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      get: () => "iPhone",
+    });
     const FakeDOE = function DeviceOrientationEvent(type, init) {
       const event = new Event(type);
       event.alpha = init && init.alpha != null ? init.alpha : 0;

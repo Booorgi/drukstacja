@@ -3,6 +3,8 @@ const assert = require("node:assert/strict");
 const {
   MAX_TILT,
   dampenTilt,
+  isIosDevice,
+  isIosOrientationGate,
   mapOrientationToTilt,
   needsOrientationPermission,
 } = require("./deviceTilt");
@@ -41,11 +43,27 @@ describe("deviceTilt", () => {
     assert.equal(stepped.z, -0.2);
   });
 
-  it("detects iOS permission gate only when requestPermission exists", () => {
+  it("detects iOS permission gate only on iOS + requestPermission", () => {
     assert.equal(needsOrientationPermission({}), false);
     assert.equal(needsOrientationPermission({ DeviceOrientationEvent: function DeviceOrientationEvent() {} }), false);
     const DOE = function DeviceOrientationEvent() {};
     DOE.requestPermission = async () => "granted";
-    assert.equal(needsOrientationPermission({ DeviceOrientationEvent: DOE }), true);
+    const desktop = {
+      DeviceOrientationEvent: DOE,
+      navigator: { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/120", platform: "MacIntel", maxTouchPoints: 0 },
+    };
+    const iphone = {
+      DeviceOrientationEvent: DOE,
+      navigator: {
+        userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1",
+        platform: "iPhone",
+        maxTouchPoints: 5,
+      },
+    };
+    assert.equal(needsOrientationPermission(desktop), true);
+    assert.equal(isIosDevice(desktop), false);
+    assert.equal(isIosOrientationGate(desktop), false);
+    assert.equal(isIosDevice(iphone), true);
+    assert.equal(isIosOrientationGate(iphone), true);
   });
 });

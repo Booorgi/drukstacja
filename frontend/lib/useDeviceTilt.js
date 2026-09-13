@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   dampenTilt,
+  isIosOrientationGate,
   isSecureOrientationContext,
   mapOrientationToTilt,
-  needsOrientationPermission,
   supportsDeviceOrientation,
 } from "./deviceTilt";
 
@@ -63,7 +63,7 @@ export default function useDeviceTilt() {
     }
 
     try {
-      if (needsOrientationPermission(window)) {
+      if (isIosOrientationGate(window)) {
         pendingRef.current = true;
         setTiltStatus("pending");
         const res = await window.DeviceOrientationEvent.requestPermission();
@@ -93,7 +93,7 @@ export default function useDeviceTilt() {
       return undefined;
     }
 
-    if (needsOrientationPermission(window)) {
+    if (isIosOrientationGate(window)) {
       setNeedsPrompt(true);
       return undefined;
     }

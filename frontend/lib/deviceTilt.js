@@ -19,11 +19,27 @@ function clamp(value, min, max) {
 }
 
 /**
- * True on iOS Safari 13+ where orientation is gated behind a user gesture.
+ * True when the orientation API exposes requestPermission (Safari 13+).
+ * Desktop Chromium may also define this; pair with isIosDevice() before prompting.
  */
 function needsOrientationPermission(globalObj = globalThis) {
   const DOE = globalObj && globalObj.DeviceOrientationEvent;
   return typeof DOE !== "undefined" && typeof DOE.requestPermission === "function";
+}
+
+/** iPhone / iPad / iPod, including iPadOS that reports as Macintosh + touch. */
+function isIosDevice(globalObj = globalThis) {
+  const nav = globalObj && globalObj.navigator;
+  if (!nav) return false;
+  const ua = nav.userAgent || "";
+  if (/iP(hone|ad|od)/.test(ua)) return true;
+  if (nav.platform === "MacIntel" && Number(nav.maxTouchPoints) > 1) return true;
+  return false;
+}
+
+/** iOS Safari 13+ — the only place we must prompt after a user gesture. */
+function isIosOrientationGate(globalObj = globalThis) {
+  return isIosDevice(globalObj) && needsOrientationPermission(globalObj);
 }
 
 function isSecureOrientationContext(globalObj = globalThis) {
@@ -62,6 +78,8 @@ module.exports = {
   degToRad,
   clamp,
   needsOrientationPermission,
+  isIosDevice,
+  isIosOrientationGate,
   isSecureOrientationContext,
   supportsDeviceOrientation,
   mapOrientationToTilt,
