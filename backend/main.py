@@ -223,6 +223,29 @@ def _clamp_int(value, lo: int, hi: int, default: int) -> int:
         return default
 
 
+def _clamp_float(value, lo: float, hi: float, default: float) -> float:
+    try:
+        return max(lo, min(hi, float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _working_dim(nozzle_mm: float) -> int:
+    """Rozdzielczość robocza: 0.4 mm → 800 px, 0.2 mm → 1600 px (max 2000)."""
+    n = _clamp_float(nozzle_mm, 0.15, 0.80, 0.2)
+    return int(np.clip(round(800.0 * (0.4 / n)), 800, 2000))
+
+
+def _wall_dilate_iterations(nozzle_mm: float, long_side: int | None = None) -> int:
+    """Bez dylatacji tylko gdy siatka jest gęsta (≈1600 px) i dysza ≤0.25 mm."""
+    n = _clamp_float(nozzle_mm, 0.15, 0.80, 0.2)
+    if n <= 0.25 and long_side is not None and long_side >= 1400:
+        return 0
+    if n <= 0.25 and long_side is None:
+        return 0
+    return 1
+
+
 def _ellipse_kernel(size: int):
     size = max(1, int(size))
     if size % 2 == 0:
@@ -241,10 +264,17 @@ def _denoise_for_quantize(bgr: np.ndarray, filter_noise: int) -> np.ndarray:
     return den
 
 
-def _min_region_area(filter_noise: int, width: int, height: int) -> int:
-    """Minimalna powierzchnia wyspy w px (~800). Filter Noise=5 ≈ 90px, nie ~300px."""
-    scale = (max(width, height) / 800.0) ** 2
-    return max(8, int((5.0 * (filter_noise ** 1.8)) * scale))
+def _min_region_area(
+    filter_noise: int, width: int, height: int, nozzle_mm: float = 0.2
+) -> int:
+    """Min. wyspa w px. FN=5 @800 ≈ 90 px. Przy faktycznych 1600 px i 0.2 mm też ≈ 90 px (mniej mm²)."""
+    long_side = max(width, height)
+    res_scale = (long_side / 800.0) ** 2
+    px_ref = 5.0 * (filter_noise ** 1.8)
+    # Cieńsza dysza zmniejsza próg tylko gdy naprawdę pracujemy na gęstszej siatce
+    if long_side >= 1400:
+        px_ref *= (_clamp_float(nozzle_mm, 0.15, 0.80, 0.2) / 0.4) ** 2
+    return max(8, int(px_ref * res_scale))
 
 
 def count_label_islands(labels: np.ndarray, n_colors: int, max_area: int | None = None) -> int:
@@ -269,6 +299,7 @@ def _smooth_label_map(labels: np.ndarray, sil: np.ndarray, filter_noise: int) ->
         out[~sil_bool] = -1
         return out
 
+    # 5×5 przy FN=5 jak w #29; na siatce 1600 px to i tak połowa „mm” względem 800 px
     k = 3 if filter_noise < 3 else (5 if filter_noise < 7 else 7)
     work = (labels + 1).astype(np.uint8)  # tło -1 → 0
     blurred = cv2.medianBlur(work, k)
@@ -294,7 +325,7 @@ def _merge_small_regions(
     kernel = np.ones((3, 3), np.uint8)
     sil_bool = sil.astype(bool)
     min_area = max(1, int(min_area))
-    rel_cap = max(min_area, 220)
+    rel_cap = max(min_area, int(min_area * 2.4))
     for _ in range(max_passes):
         merged_any = False
         largest = []
@@ -395,36 +426,47 @@ def image_to_quantized_svg(
     keep_bg: bool = False,
     filter_noise: int = 5,
     detail: int = 10,
+    nozzle_mm: float = 0.2,
     _debug: bool = False,
 ):
     """
-    Zaawansowany algorytm wektoryzacji w standardzie MakerWorld / Makerlab:
-    1. Precyzyjna segmentacja postaci AI (u2net/u2netp) w 800px z podwójnym zabezpieczeniem GrabCut.
-    2. Inteligentne domykanie wyłącznie wewnętrznych ubytków z zachowaniem otwartych przestrzeni między nogami.
-    3. Denoise przed KMeans (bilateral + median) oraz scalanie drobnych wysp (Filter Noise).
-    4. Gwarantowana minimalna grubość ścianek (dylatacja) – brak łamliwych, cienkich elementów pod dyszę 0.4mm.
-    5. Ścieżki SVG (evenodd): Detail=10 = stary epsilon 0.0010*peri (cap ~1.15px), nie grube drzazgi.
-    Domyślne Filter Noise=5 i Detail=10 odpowiadają suwakom Makerlab.
+    Wektoryzacja pod wielokolorowe breloki (Makerlab-like):
+    1. Segmentacja AI / GrabCut (bez zmian w logice wycinania).
+    2. Rozdzielczość robocza zależy od dyszy: 0.2 mm → 1600 px, 0.4 mm → 800 px.
+    3. Denoise + scalanie wysp (Filter Noise); próg w mm² maleje z cieńszą dyszą.
+    4. Brak dylatacji ścianek przy dyszy ≤0.25 mm (stary kernel 3×3 był pod 0.4 mm).
+    5. Detail=10 = 0.0010*peri z capem ~1.15 px (gęstsze ścieżki przy wyższym px).
     """
     n_colors = max(2, min(6, n_colors))
     filter_noise = _clamp_int(filter_noise, 0, 10, 5)
     detail = _clamp_int(detail, 1, 10, 10)
+    nozzle_mm = _clamp_float(nozzle_mm, 0.15, 0.80, 0.2)
 
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
     if img is None:
         raise ValueError("Błąd odczytu grafiki.")
 
-    target_dim = 800
     if len(img.shape) == 3 and img.shape[2] == 4:
         bgr = img[:, :, :3]
     else:
         bgr = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
     h, w = bgr.shape[:2]
-    scale = target_dim / max(h, w)
+    native = max(h, w)
+    wanted = _working_dim(nozzle_mm)
+    if native >= wanted:
+        target_dim = wanted
+    else:
+        target_dim = min(wanted, max(native * 2, 800))
+    scale = target_dim / native
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
-    bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    # AREA przy downscale i przy dużym upscale (sól/pieprz nie rośnie do wysp 90 px)
+    if scale < 1.0 or scale > 1.35:
+        interp = cv2.INTER_AREA
+    else:
+        interp = cv2.INTER_LINEAR
+    bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=interp)
 
     # 1. USUWANIE TŁA I SEGMENTACJA
     sil = None
@@ -509,7 +551,14 @@ def image_to_quantized_svg(
         sil = np.ones((new_h, new_w), dtype=bool)
         sil_u8 = np.full((new_h, new_w), 255, dtype=np.uint8)
 
-    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=5).fit(fg_pixels)
+    # Próbka tylko na gęstej siatce (~1600 px); 800 px zostaje pełny fit jak w #29
+    if len(fg_pixels) > 900_000:
+        sample_idx = np.random.RandomState(42).choice(len(fg_pixels), 280_000, replace=False)
+        kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=5).fit(fg_pixels[sample_idx])
+        fg_labels = kmeans.predict(fg_pixels)
+    else:
+        kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=5).fit(fg_pixels)
+        fg_labels = kmeans.labels_
     centers = kmeans.cluster_centers_.astype(int)
 
     # Sortowanie od najjaśniejszego (baza) do najciemniejszego (detale/źrenice)
@@ -518,7 +567,7 @@ def image_to_quantized_svg(
     centers = centers[sorted_order]
 
     labels = np.full((new_h, new_w), -1, dtype=int)
-    labels[sil] = kmeans.labels_
+    labels[sil] = fg_labels
     remapped = np.full((new_h, new_w), -1, dtype=int)
     for new_idx, old_cluster in enumerate(sorted_order):
         remapped[labels == old_cluster] = new_idx
@@ -528,7 +577,7 @@ def image_to_quantized_svg(
     remapped = _collapse_near_duplicate_clusters(
         centers, remapped, n_colors, max_lab_dist=8.0 + filter_noise * 0.6
     )
-    min_area = _min_region_area(filter_noise, new_w, new_h)
+    min_area = _min_region_area(filter_noise, new_w, new_h, nozzle_mm=nozzle_mm)
     remapped = _merge_small_regions(remapped, sil, n_colors, min_area)
 
     # Kolory z oczyszczonych regionów (puste klastry zachowują środek KMeans)
@@ -542,18 +591,18 @@ def image_to_quantized_svg(
         for i in range(n_colors)
     ]
 
-    # 4. MASKI WARSTW Z GWARANTOWANĄ GRUBOŚCIĄ ŚCIANEK POD DYSZĘ 0.4MM (KAFELKOWANIE MOZAIKOWE):
-    # Kernel dylatacji (poszerza cienkie paski o +1px promień, co zapewnia szczelne łączenie stykających się kolorów w druku FDM)
+    # 4. MASKI WARSTW: przy 0.2 mm bez dylatacji 0.4 mm (kernel 3×3 zjada oczy / krawędzie)
     kernel_wall = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     kernel_open = _ellipse_kernel(2)
+    dilate_iters = _wall_dilate_iterations(nozzle_mm, long_side=max(new_w, new_h))
     layer_masks = []
 
     for c_idx in range(n_colors):
         m = (remapped == c_idx).astype(np.uint8) * 255
         # Tylko 2×2 open — close+mocny open rwał krawędzie w drzazgi
         m = cv2.morphologyEx(m, cv2.MORPH_OPEN, kernel_open)
-        # Pogrubienie ścianek i szczelne spasowanie sąsiadujących kolorów
-        m = cv2.dilate(m, kernel_wall, iterations=1)
+        if dilate_iters > 0:
+            m = cv2.dilate(m, kernel_wall, iterations=dilate_iters)
         # Ograniczenie do zewnętrznej sylwetki
         m = cv2.bitwise_and(m, sil_u8)
         layer_masks.append(m)
@@ -653,6 +702,9 @@ def image_to_quantized_svg(
             "min_area": min_area,
             "islands": n_islands,
             "small_islands": n_small,
+            "working_dim": int(target_dim),
+            "nozzle_mm": float(nozzle_mm),
+            "wall_dilate": int(dilate_iters),
         }
     return svg, hex_colors
 
@@ -679,16 +731,19 @@ async def vectorize_image_ai(
     n_colors: str = Form("4"),
     filter_noise: str = Form("5"),
     detail: str = Form("10"),
+    nozzle_mm: str = Form("0.2"),
 ):
-    """Wektoryzacja konturów z obsługą AI cutout i doborem barw. Obsługuje 2-6 warstw kolorów.
+    """Wektoryzacja konturów pod breloki (domyślnie dysza 0.2 mm → 1600 px roboczych).
 
-    filter_noise (0-10) i detail (1-10) odpowiadają suwakom Makerlab (domyślnie 5 / 10).
+    filter_noise (0-10) i detail (1-10) jak Makerlab. nozzle_mm steruje rozdzielczością
+    i dylatacją ścianek (0.2 = bez pogrubiania pod 0.4 mm).
     """
     try:
         should_keep_bg = keep_bg.lower() in ("true", "1", "yes")
         num_colors = max(2, min(6, int(n_colors)))
         noise = _clamp_int(filter_noise, 0, 10, 5)
         det = _clamp_int(detail, 1, 10, 10)
+        nozzle = _clamp_float(nozzle_mm, 0.15, 0.80, 0.2)
         contents = await file.read()
         svg_result, detected_colors = image_to_quantized_svg(
             contents,
@@ -696,6 +751,7 @@ async def vectorize_image_ai(
             keep_bg=should_keep_bg,
             filter_noise=noise,
             detail=det,
+            nozzle_mm=nozzle,
         )
         return {
             "svg": svg_result,
