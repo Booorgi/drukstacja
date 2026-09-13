@@ -3,6 +3,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
+import { listOrders } from "../lib/ordersApi";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -33,20 +34,17 @@ export default function OrdersPage() {
         return;
       }
       setUser(session.user);
-      fetchOrders(session.user.id);
+      fetchOrders();
     });
   }, [router]);
 
-  async function fetchOrders(userId) {
+  async function fetchOrders() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
+    try {
+      const data = await listOrders();
       setOrders(data);
+    } catch (error) {
+      console.warn("Błąd pobierania zleceń:", error);
     }
     setLoading(false);
   }

@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import trimesh
 import cv2
 import numpy as np
@@ -38,6 +38,8 @@ from storage import upload_file_to_r2, get_file_url, download_file_from_r2, save
 from slicer import convert_step_to_stl, run_slicer, slice_result_from_bambu_stats
 from orientation import auto_orient_mesh
 from packager_3mf import generate_production_3mf, sanitize_filename
+from db import get_db_connection
+from orders_api import router as orders_router, update_production_file_url
 
 # Katalog cache dla wygenerowanych i zorientowanych siatek STL do szybkiego ponownego cięcia
 MODELS_CACHE_DIR = os.path.join(tempfile.gettempdir(), "drukstacja_cache")
@@ -57,6 +59,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(orders_router)
 
 MAX_FILE_SIZE_MB = 100
 ALLOWED_EXTENSIONS = ALL_SUPPORTED_EXTENSIONS
@@ -114,8 +118,10 @@ class ResliceRequest(BaseModel):
 
 
 class Generate3MFRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     preview_stl_key: str | None = None
     file_key: str | None = None
+    model_key: str | None = None
     order_id: str | None = None
     file_name: str | None = None
     layer_height: Any = 0.20
@@ -1084,22 +1090,6 @@ def reslice_model_endpoint(req: ResliceRequest):
     }
 
 
-def get_db_connection():
-    """Zwraca połączenie z bazą PostgreSQL jeśli skonfigurowano DATABASE_URL."""
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        return None
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-    try:
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
-        return psycopg2.connect(db_url, cursor_factory=RealDictCursor)
-    except Exception as e:
-        print(f"[WARN] Nie można połączyć z bazą PostgreSQL: {e}")
-        return None
-
-
 @app.get("/api/filaments")
 def get_filaments():
     """
@@ -1167,7 +1157,7 @@ def generate_3mf_endpoint(req: Generate3MFRequest):
     Generuje i zapisuje pakiet produkcyjny .3MF dla danego modelu i parametrów.
     Zwraca informację o pliku i URL do pobrania.
     """
-    key = req.preview_stl_key or req.file_key
+    key = req.preview_stl_key or req.file_key or req.model_key
     local_model = None
 
     if key:
@@ -1251,21 +1241,8 @@ def generate_3mf_endpoint(req: Generate3MFRequest):
     r2_key = f"production_packages/{target_3mf_name}"
     production_url = save_production_3mf_file(local_3mf_path, r2_key)
 
-    # Aktualizacja w bazie PostgreSQL jeśli order_id istnieje
     if req.order_id:
-        conn = get_db_connection()
-        if conn:
-            try:
-                with conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "UPDATE orders SET production_file_url = %s WHERE id::text = %s OR id::text LIKE %s",
-                            (production_url, str(req.order_id), f"{req.order_id}%")
-                        )
-            except Exception as db_err:
-                print(f"[WARN] Nie udało się zaktualizować orders w PostgreSQL: {db_err}")
-            finally:
-                conn.close()
+        update_production_file_url(req.order_id, production_url)
 
     return {
         "success": True,
@@ -1486,20 +1463,7 @@ async def upload_order_geometry_endpoint(
     except Exception as gen_err:
         print(f"[WARN] Błąd generowania 3MF przy uploadzie geometrii: {gen_err}")
 
-    # 4. Aktualizacja pola production_file_url w bazie PostgreSQL
-    conn = get_db_connection()
-    if conn:
-        try:
-            with conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "UPDATE orders SET production_file_url = %s WHERE id::text = %s OR id::text LIKE %s",
-                        (production_url, clean_order_id, f"{clean_order_id}%")
-                    )
-        except Exception as db_err:
-            print(f"[WARN] Błąd aktualizacji orders w PostgreSQL: {db_err}")
-        finally:
-            conn.close()
+    update_production_file_url(clean_order_id, production_url)
 
     return {
         "success": True,
@@ -1763,11 +1727,14 @@ def download_order_3mf(
             clean_infill = int(parse_clean_float(db_order.get("infill"), clean_infill))
         if db_order.get("layer_height"):
             clean_layer_height = parse_clean_float(db_order.get("layer_height"), clean_layer_height)
-        tech_raw = db_order.get("technology")
-        if tech_raw and "0.2mm" in str(tech_raw):
-            clean_nozzle_size = 0.2
-        elif tech_raw and "0.4mm" in str(tech_raw):
-            clean_nozzle_size = 0.4
+        if db_order.get("nozzle_size"):
+            clean_nozzle_size = parse_clean_float(db_order.get("nozzle_size"), clean_nozzle_size)
+        else:
+            tech_raw = db_order.get("technology")
+            if tech_raw and "0.2mm" in str(tech_raw):
+                clean_nozzle_size = 0.2
+            elif tech_raw and "0.4mm" in str(tech_raw):
+                clean_nozzle_size = 0.4
 
     # 1. Sprawdzenie czy dla tego zamówienia istnieją zapisane części wielomateriałowe (AMS)
     cached_parts = None

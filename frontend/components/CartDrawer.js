@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { cancelOrder, clearCart } from "../lib/ordersApi";
 
 function getDeletedIds() {
   if (typeof window === "undefined") return [];
@@ -57,10 +57,8 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
       onRemoveItem(id);
     }
 
-    // 4. Usunięcie / anulowanie w bazie Supabase
     try {
-      await supabase.from("orders").delete().eq("id", id);
-      await supabase.from("orders").update({ status: "cancelled" }).eq("id", id);
+      await cancelOrder(id);
     } catch (err) {
       console.warn("Błąd bazy podczas usuwania:", err);
     } finally {
@@ -82,10 +80,8 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
       ids.forEach((id) => onRemoveItem(id));
     }
 
-    // 3. Usuwanie w bazie
     try {
-      await supabase.from("orders").delete().in("id", ids);
-      await supabase.from("orders").update({ status: "cancelled" }).in("id", ids);
+      await clearCart();
     } catch (err) {
       console.warn("Błąd czyszczenia koszyka w bazie:", err);
     }

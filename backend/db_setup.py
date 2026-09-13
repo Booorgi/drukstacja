@@ -181,29 +181,42 @@ def setup_database():
         cur.execute(create_table_sql)
         print("      ✓ Tabela 'filaments' istnieje / została utworzona.")
 
-        print("[2/3] Weryfikacja tabeli 'orders' i kolumny 'production_file_url'...")
+        print("[2/3] Weryfikacja tabeli 'orders' (schemat koszyka / zleceń)...")
+        cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
         orders_migration_sql = """
         CREATE TABLE IF NOT EXISTS orders (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id UUID,
-            file_name VARCHAR(255),
-            material VARCHAR(100),
-            technology VARCHAR(255),
+            file_name TEXT,
+            material VARCHAR(255),
+            technology TEXT,
             layer_height VARCHAR(50),
             infill INT,
             clean_supports BOOLEAN DEFAULT true,
             brass_inserts BOOLEAN DEFAULT false,
             quantity INT DEFAULT 1,
             total_price NUMERIC(10, 2),
-            dimensions_mm INT[],
+            dimensions_mm DOUBLE PRECISION[],
             status VARCHAR(50) DEFAULT 'in_cart',
-            production_file_url VARCHAR(255),
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            production_file_url TEXT,
+            nozzle_size VARCHAR(50),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
-        ALTER TABLE orders ADD COLUMN IF NOT EXISTS production_file_url VARCHAR(255);
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS production_file_url TEXT;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS nozzle_size VARCHAR(50);
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+        ALTER TABLE orders ALTER COLUMN file_name TYPE TEXT;
+        ALTER TABLE orders ALTER COLUMN material TYPE VARCHAR(255);
+        ALTER TABLE orders ALTER COLUMN technology TYPE TEXT;
+        ALTER TABLE orders ALTER COLUMN production_file_url TYPE TEXT;
+        ALTER TABLE orders ALTER COLUMN dimensions_mm TYPE DOUBLE PRECISION[]
+            USING dimensions_mm::DOUBLE PRECISION[];
+        CREATE INDEX IF NOT EXISTS idx_orders_user_status ON orders (user_id, status);
+        CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders (created_at DESC);
         """
         cur.execute(orders_migration_sql)
-        print("      ✓ Tabela 'orders' z kolumną 'production_file_url' jest gotowa.")
+        print("      ✓ Tabela 'orders' ma kolumny UI (w tym nozzle_size) i indeksy user/status.")
 
         print(f"[3/3] Seedowanie {len(SEED_FILAMENTS)} filamentów (ON CONFLICT DO NOTHING)...")
         insert_sql = """

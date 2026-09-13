@@ -3,6 +3,7 @@ import Head from "next/head";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabaseClient";
+import { authHeaders, createOrder, fetchCartOrders } from "../lib/ordersApi";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
 import Navbar from "../components/Navbar";
@@ -2450,19 +2451,11 @@ export default function KeychainGenerator() {
 
   async function fetchCart(userId) {
     if (!userId) return;
-    const { data } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("status", "in_cart")
-      .order("created_at", { ascending: false });
-    if (data) {
-      try {
-        const deletedIds = JSON.parse(localStorage.getItem("deleted_order_ids") || "[]");
-        setCartItems(data.filter((it) => !deletedIds.includes(String(it.id))));
-      } catch {
-        setCartItems(data);
-      }
+    try {
+      const data = await fetchCartOrders();
+      setCartItems(data);
+    } catch (err) {
+      console.warn("Błąd koszyka:", err);
     }
   }
 
@@ -2538,9 +2531,8 @@ export default function KeychainGenerator() {
       const finishLabel = getPlaFinishLabel(baseFilament);
       const materialName = baseFilament?.name || "Standard";
 
-      // 1. Zapis zlecenia w Supabase (status: in_cart)
+      // 1. Zapis zlecenia w Railway Postgres (status: in_cart)
       const orderPayload = {
-        user_id: user.id,
         file_name: `Brelok [${shapeType.toUpperCase()}]: ${imageFileName} (${materialName})`,
         material: `${finishLabel} - ${materialName}`,
         technology: "FDM Multi-Color AMS",
@@ -2552,15 +2544,10 @@ export default function KeychainGenerator() {
         total_price: parseFloat(totalPrice),
         dimensions_mm: [dimX, dimY, totalThickness],
         status: "in_cart",
+        nozzle_size: String(nozzleSize || "0.4"),
       };
 
-      const { data: newOrders, error } = await supabase
-        .from("orders")
-        .insert(orderPayload)
-        .select();
-
-      if (error) throw error;
-      const createdOrder = Array.isArray(newOrders) ? newOrders[0] : newOrders;
+      const createdOrder = await createOrder(orderPayload);
       const orderId = createdOrder?.id;
 
       // 2. Eksport geometrii STL ze sceny Three.js i przesłanie na serwer (Multi-part AMS)
@@ -2603,18 +2590,13 @@ export default function KeychainGenerator() {
 
           const res = await fetch(`${API_URL || ""}/api/orders/upload-geometry`, {
             method: "POST",
+            headers: await authHeaders(),
             body: formData,
           });
 
           if (res.ok) {
-            const resData = await res.json();
-            const prodUrl = resData.production_file_url || resData.download_url;
-            if (prodUrl) {
-              await supabase
-                .from("orders")
-                .update({ production_file_url: prodUrl })
-                .eq("id", orderId);
-            }
+            // production_file_url zapisuje backend bezpośrednio w Railway Postgres
+            await res.json();
           } else {
             console.warn("Nie udało się zsynchronizować geometrii 3D breloka na backendzie:", await res.text());
           }
