@@ -1,12 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
+import scrubMath from "./printerLayersBandScrub";
+
+const { SEEK_EPSILON, clampScrubTime, heroScrollProgress, nextScrubTime } = scrubMath;
 
 const POSTER_SRC = "/videos/printer-layers-poster.jpg";
 const WEBM_SRC = "/videos/printer-layers-loop.webm";
 const MP4_SRC = "/videos/printer-layers-loop.mp4";
 const LOGO_SRC = "/logo-drukstacja.png?v=2";
 const VIDEO_ATMOSPHERE_OPACITY = 0.38;
-const LOOP_PLAYBACK_RATE = 0.55;
-const SEEK_EPSILON = 0.03;
+const LOOP_PLAYBACK_RATE = 0.85;
+const SEEK_WATCHDOG_MS = 90;
+const NAV_CLEARANCE_PX = 80;
 
 function prefersReducedMotion() {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -14,8 +18,6 @@ function prefersReducedMotion() {
   }
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
-
-const NAV_CLEARANCE_PX = 80;
 
 function isHeroOnScreen(section) {
   if (!section) return false;
@@ -31,27 +33,21 @@ function prefersAutoplayFallback() {
   return coarse && narrow;
 }
 
-/** 0 at the top of the hero, 1 after the user has scrolled through it. */
-export function heroScrollProgress(section, scrollY = 0) {
-  if (!section) return 0;
-  const top = typeof section.offsetTop === "number" ? section.offsetTop : 0;
-  const height = typeof section.offsetHeight === "number" ? section.offsetHeight : 0;
-  const start = Math.max(0, top);
-  const range = Math.max(1, height * 0.9);
-  return Math.min(1, Math.max(0, (scrollY - start) / range));
-}
-
 /**
  * Homepage hero: atmospheric printer loop behind the mark + short site copy.
  * Desktop scrubs currentTime from scroll progress through the hero.
  * Coarse/narrow viewports fall back to a slow muted loop while in view.
  * prefers-reduced-motion: poster only, no video.
+ *
+ * Scrub smoothness depends on a short GOP. Seeking mid-GOP hitchs because the
+ * decoder must walk from the last I-frame. Re-encode with
+ * `frontend/scripts/encode-printer-hero.sh` (x264 `-g 3 -bf 0`, ~0.6×, 30 fps).
  */
 export default function PrinterLayersBand() {
   const sectionRef = useRef(null);
   const videoRef = useRef(null);
   const seekingRef = useRef(false);
-  const pendingTimeRef = useRef(null);
+  const targetTimeRef = useRef(0);
   const [shouldLoad, setShouldLoad] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [mode, setMode] = useState("scrub");
@@ -103,17 +99,14 @@ export default function PrinterLayersBand() {
           setShouldLoad(true);
         }
         const video = videoRef.current;
-        if (video && !prefersReducedMotion()) {
-          if (prefersAutoplayFallback()) {
-            if (entry.isIntersecting) {
-              const playPromise = video.play();
-              if (playPromise && typeof playPromise.catch === "function") {
-                playPromise.catch(() => {});
-              }
-            } else {
-              video.pause();
+        if (!video || prefersReducedMotion()) return;
+        if (prefersAutoplayFallback()) {
+          if (entry.isIntersecting) {
+            const playPromise = video.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+              playPromise.catch(() => {});
             }
-          } else if (!entry.isIntersecting) {
+          } else {
             video.pause();
           }
         }
@@ -146,94 +139,108 @@ export default function PrinterLayersBand() {
     video.muted = true;
     video.defaultMuted = true;
     video.playsInline = true;
+    video.preload = "auto";
 
     let cancelled = false;
     let raf = 0;
+    let watchdog = 0;
+    let seekGen = 0;
 
-    const applyScrubTime = (time) => {
-      if (!video.duration || Number.isNaN(video.duration)) return;
-      const next = Math.min(Math.max(time, 0), Math.max(video.duration - 0.04, 0));
-      if (Math.abs(video.currentTime - next) < SEEK_EPSILON) return;
-      if (seekingRef.current) {
-        pendingTimeRef.current = next;
-        return;
+    const readTargetFromScroll = () => {
+      const section = sectionRef.current;
+      if (!section || !video.duration || Number.isNaN(video.duration)) return;
+      const progress = heroScrollProgress(section, window.scrollY || window.pageYOffset || 0);
+      targetTimeRef.current = clampScrubTime(progress * video.duration, video.duration);
+    };
+
+    const clearWatchdog = () => {
+      if (watchdog) {
+        window.clearTimeout(watchdog);
+        watchdog = 0;
       }
+    };
+
+    const finishSeek = (id) => {
+      if (id !== seekGen) return;
+      video.removeEventListener("seeked", onSeeked);
+      clearWatchdog();
+      seekingRef.current = false;
+    };
+
+    const onSeeked = () => {
+      finishSeek(seekGen);
+    };
+
+    const seekTo = (time) => {
+      const next = clampScrubTime(time, video.duration);
+      if (Math.abs(video.currentTime - next) < SEEK_EPSILON) return;
+      const id = ++seekGen;
       seekingRef.current = true;
-      const onSeeked = () => {
-        video.removeEventListener("seeked", onSeeked);
-        seekingRef.current = false;
-        if (pendingTimeRef.current != null) {
-          const queued = pendingTimeRef.current;
-          pendingTimeRef.current = null;
-          applyScrubTime(queued);
-        }
-      };
       video.addEventListener("seeked", onSeeked);
+      clearWatchdog();
+      watchdog = window.setTimeout(() => finishSeek(id), SEEK_WATCHDOG_MS);
       try {
         video.currentTime = next;
       } catch {
-        seekingRef.current = false;
+        finishSeek(id);
       }
     };
 
-    const scrubFromScroll = () => {
+    const tick = () => {
+      raf = window.requestAnimationFrame(tick);
       if (cancelled || prefersReducedMotion() || prefersAutoplayFallback()) return;
-      const section = sectionRef.current;
-      if (!section || !video.duration) return;
-      const progress = heroScrollProgress(section, window.scrollY || window.pageYOffset || 0);
-      applyScrubTime(progress * video.duration);
+      if (!video.duration || Number.isNaN(video.duration)) return;
+
+      readTargetFromScroll();
+      if (seekingRef.current) return;
+      if (!isHeroOnScreen(sectionRef.current)) return;
+
+      const target = targetTimeRef.current;
+      const next = nextScrubTime(video.currentTime, target);
+      seekTo(next);
     };
 
-    const onScroll = () => {
-      if (raf) return;
-      raf = window.requestAnimationFrame(() => {
-        raf = 0;
-        scrubFromScroll();
-      });
+    const startLoop = () => {
+      video.loop = true;
+      video.playbackRate = LOOP_PLAYBACK_RATE;
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {
+          if (!cancelled && mode === "scrub") setMode("loop");
+        });
+      }
     };
 
-    const start = async () => {
-      try {
-        const playPromise = video.play();
-        if (playPromise) await playPromise;
-      } catch {
-        if (mode === "scrub") {
-          setMode("loop");
-        }
-        return;
-      }
-      if (cancelled) return;
-
-      if (prefersAutoplayFallback()) {
-        video.loop = true;
-        video.playbackRate = LOOP_PLAYBACK_RATE;
-        return;
-      }
-
+    const startScrub = () => {
+      // Stay paused — do not play()/pause() just to unlock seeking.
       video.pause();
       video.loop = false;
       video.playbackRate = 1;
-      scrubFromScroll();
+      readTargetFromScroll();
+      seekTo(targetTimeRef.current);
+      if (!raf) raf = window.requestAnimationFrame(tick);
     };
 
-    const onMeta = () => {
-      if (!cancelled) start();
+    const start = () => {
+      if (cancelled) return;
+      if (prefersAutoplayFallback()) {
+        startLoop();
+        return;
+      }
+      startScrub();
     };
 
     if (video.readyState >= 1) {
       start();
     } else {
-      video.addEventListener("loadedmetadata", onMeta);
+      video.addEventListener("loadedmetadata", start);
     }
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
 
     return () => {
       cancelled = true;
-      video.removeEventListener("loadedmetadata", onMeta);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
+      video.removeEventListener("loadedmetadata", start);
+      video.removeEventListener("seeked", onSeeked);
+      clearWatchdog();
       if (raf) window.cancelAnimationFrame(raf);
     };
   }, [shouldLoad, reduceMotion, mode]);
