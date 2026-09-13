@@ -15,6 +15,13 @@ function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+const NAV_CLEARANCE_PX = 80;
+
+function isHeroOnScreen(section) {
+  if (!section) return false;
+  return section.getBoundingClientRect().bottom > NAV_CLEARANCE_PX;
+}
+
 function prefersAutoplayFallback() {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return false;
@@ -81,29 +88,34 @@ export default function PrinterLayersBand() {
       };
     }
 
+    const setHeroActive = (active) => {
+      document.documentElement.toggleAttribute("data-printer-hero-active", Boolean(active));
+    };
+
+    const syncHeroActive = () => setHeroActive(isHeroOnScreen(section));
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry) return;
         if (prefersReducedMotion()) {
           setShouldLoad(false);
-          return;
-        }
-        if (entry.isIntersecting) {
+        } else if (entry.isIntersecting) {
           setShouldLoad(true);
         }
         const video = videoRef.current;
-        if (!video) return;
-        if (prefersAutoplayFallback()) {
-          if (entry.isIntersecting) {
-            const playPromise = video.play();
-            if (playPromise && typeof playPromise.catch === "function") {
-              playPromise.catch(() => {});
+        if (video && !prefersReducedMotion()) {
+          if (prefersAutoplayFallback()) {
+            if (entry.isIntersecting) {
+              const playPromise = video.play();
+              if (playPromise && typeof playPromise.catch === "function") {
+                playPromise.catch(() => {});
+              }
+            } else {
+              video.pause();
             }
-          } else {
+          } else if (!entry.isIntersecting) {
             video.pause();
           }
-        } else if (!entry.isIntersecting) {
-          video.pause();
         }
       },
       {
@@ -113,8 +125,14 @@ export default function PrinterLayersBand() {
     );
 
     observer.observe(section);
+    syncHeroActive();
+    window.addEventListener("scroll", syncHeroActive, { passive: true });
+    window.addEventListener("resize", syncHeroActive);
     return () => {
       observer.disconnect();
+      window.removeEventListener("scroll", syncHeroActive);
+      window.removeEventListener("resize", syncHeroActive);
+      setHeroActive(false);
       motionMq.removeEventListener("change", syncPrefs);
       coarseMq.removeEventListener("change", syncPrefs);
       narrowMq.removeEventListener("change", syncPrefs);
@@ -231,7 +249,7 @@ export default function PrinterLayersBand() {
       aria-labelledby="printer-layers-heading"
       className="relative isolate overflow-hidden bg-[#111111]"
     >
-      <div className="relative min-h-[68vh] sm:min-h-[72vh]">
+      <div className="relative min-h-[calc(100dvh-4rem)] sm:min-h-[calc(100dvh-4.5rem)]">
         <img
           src={POSTER_SRC}
           alt=""
@@ -267,7 +285,7 @@ export default function PrinterLayersBand() {
           aria-hidden="true"
         />
 
-        <div className="relative z-10 flex min-h-[68vh] sm:min-h-[72vh] items-center">
+        <div className="relative z-10 flex min-h-[calc(100dvh-4rem)] sm:min-h-[calc(100dvh-4.5rem)] items-center">
           <div className="w-full max-w-[1400px] mx-auto px-4 sm:px-6 py-14 sm:py-16">
             <img
               src={LOGO_SRC}

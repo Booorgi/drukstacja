@@ -39,6 +39,12 @@ test.describe("homepage printer layers hero", () => {
       studioBox.y + 1
     );
 
+    const quoteBarBox = await page.locator("[data-studio-quote-bar]").boundingBox();
+    expect(quoteBarBox, "quote bar should have a box").toBeTruthy();
+    expect(quoteBarBox.y, "quote bar must stay below the hero while it is on screen").toBeGreaterThanOrEqual(
+      heroBox.y + heroBox.height - 1
+    );
+
     const mode = await hero.getAttribute("data-printer-mode");
     if (mode === "scrub") {
       const t0 = await video.evaluate((el) => el.currentTime);

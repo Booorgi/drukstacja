@@ -55,6 +55,11 @@
   flex-shrink: 0;
 }
 
+/* Hero above the studio must not pull the sticky bar over the rail. */
+html[data-printer-hero-active] [data-studio-quote-bar] {
+  position: relative;
+}
+
 body {
   color: var(--foreground);
   background: var(--background);
