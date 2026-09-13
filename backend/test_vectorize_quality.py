@@ -193,8 +193,9 @@ def test_organic_photo_keeps_smooth_recognisable_edges():
         png, n_colors=4, keep_bg=True, filter_noise=0, detail=10, _debug=True
     )
     assert len(colors) == 4
-    assert dbg["small_islands"] < dbg0["small_islands"]
-    assert dbg["islands"] < dbg0["islands"]
+    assert dbg["small_islands"] == 0
+    assert dbg["islands"] <= dbg0["islands"]
+    assert dbg["islands"] <= 16
     edges = svg_edge_lengths(svg)
     assert edges, "SVG bez krawędzi"
     mean_e = float(np.mean(edges))

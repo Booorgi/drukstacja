@@ -223,12 +223,12 @@ def _ellipse_kernel(size: int):
 
 
 def _denoise_for_quantize(bgr: np.ndarray, filter_noise: int) -> np.ndarray:
-    """Lekki bilateral + median — gasi ziarno, nie zamienia zdjęcia w plakat."""
-    diameter = 5 if filter_noise < 6 else (7 if filter_noise < 9 else 9)
-    sigma = 14.0 + 8.0 * filter_noise  # Filter Noise=5 → ~54
+    """Bilateral + median przed KMeans — gasi ziarno, bez ruszania epsilon konturów."""
+    diameter = 5 if filter_noise < 4 else (7 if filter_noise < 8 else 9)
+    sigma = 16.0 + 10.0 * filter_noise  # Filter Noise=5 → ~66
     den = cv2.bilateralFilter(bgr, d=diameter, sigmaColor=sigma, sigmaSpace=sigma)
     if filter_noise >= 1:
-        k = 3 if filter_noise < 7 else 5
+        k = 3 if filter_noise < 4 else (5 if filter_noise < 8 else 7)
         den = cv2.medianBlur(den, k)
     return den
 
@@ -261,7 +261,7 @@ def _smooth_label_map(labels: np.ndarray, sil: np.ndarray, filter_noise: int) ->
         out[~sil_bool] = -1
         return out
 
-    k = 3 if filter_noise < 6 else (5 if filter_noise < 9 else 7)
+    k = 3 if filter_noise < 3 else (5 if filter_noise < 7 else 7)
     work = (labels + 1).astype(np.uint8)  # tło -1 → 0
     blurred = cv2.medianBlur(work, k)
     out = labels.copy()
@@ -278,18 +278,30 @@ def _merge_small_regions(
     min_area: int,
     max_passes: int = 4,
 ) -> np.ndarray:
-    """Przypisz drobne wyspy do dominującego sąsiada (Makerlab-like Filter Noise)."""
+    """Przypisz drobne wyspy do dominującego sąsiada (Makerlab-like Filter Noise).
+
+    Próg bezwzględny + względny z capem: pepper znika, oko/ucho (~setki px) zostaje.
+    """
     cleaned = labels.copy()
     kernel = np.ones((3, 3), np.uint8)
     sil_bool = sil.astype(bool)
     min_area = max(1, int(min_area))
+    rel_cap = max(min_area, 220)
     for _ in range(max_passes):
         merged_any = False
+        largest = []
+        for c_idx in range(n_colors):
+            mask = ((cleaned == c_idx) & sil_bool).astype(np.uint8)
+            _n, _cc, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+            areas = [int(stats[i, cv2.CC_STAT_AREA]) for i in range(1, _n)]
+            largest.append(max(areas) if areas else 0)
         for c_idx in range(n_colors):
             mask = ((cleaned == c_idx) & sil_bool).astype(np.uint8)
             n_cc, cc, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+            rel_lim = min(rel_cap, max(min_area, int(0.02 * largest[c_idx])))
             for i in range(1, n_cc):
-                if int(stats[i, cv2.CC_STAT_AREA]) >= min_area:
+                area = int(stats[i, cv2.CC_STAT_AREA])
+                if area >= rel_lim:
                     continue
                 component = cc == i
                 ring = cv2.dilate(component.astype(np.uint8), kernel, iterations=1).astype(bool)
