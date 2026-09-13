@@ -1,6 +1,6 @@
 """
 Wspólne połączenie z Railway Postgres (DATABASE_URL).
-Używane przez filamenty, zlecenia i pakiety produkcyjne .3MF.
+Używane przez filamenty, produkty sklepu, zlecenia i pakiety produkcyjne .3MF.
 """
 import os
 

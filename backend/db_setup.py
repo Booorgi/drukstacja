@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Drukstacja - Skrypt migracyjny i seedujący bazę PostgreSQL (Railway)
-Tworzy tabelę 'filaments' i wypełnia ją początkowym katalogiem materiałów i kolorów.
+Tworzy tabele 'filaments', 'orders', 'products' i seeduje katalog materiałów oraz sklepu.
 """
 import os
 import sys
@@ -131,6 +131,73 @@ SEED_FILAMENTS = [
 ]
 
 
+# --------------------------------------------------------------------------
+# SKLEP — KATALOG PRODUKTÓW (wcześniejszy mock /sklep)
+# --------------------------------------------------------------------------
+SEED_PRODUCTS = [
+    {
+        "id": "sku_brass_inserts",
+        "sku": "sku_brass_inserts",
+        "name": "Zestaw Wkładek Gwintowanych M3 / M4 (Brass Inserts 100 szt.)",
+        "description": "Wytrzymałe wkładki mosiężne do zgrzewania w druku 3D.",
+        "category": "Akcesoria DFM",
+        "badge": "Bestseller",
+        "icon": "🔩",
+        "price": 49.00,
+        "currency": "PLN",
+        "image_url": None,
+        "stock": 80,
+        "in_stock": True,
+        "active": True,
+    },
+    {
+        "id": "sku_pla_jet_black",
+        "sku": "sku_pla_jet_black",
+        "name": "Filament PLA Drukstacja Precision 1.75mm (1kg - Jet Black)",
+        "description": "Zoptymalizowany filament pod szybki druk o wysokiej precyzji.",
+        "category": "Filamenty",
+        "badge": "High Flow",
+        "icon": "🧵",
+        "price": 79.00,
+        "currency": "PLN",
+        "image_url": None,
+        "stock": 40,
+        "in_stock": True,
+        "active": True,
+    },
+    {
+        "id": "sku_magigoo_original",
+        "sku": "sku_magigoo_original",
+        "name": "Klej adhezyjny Magigoo 3D (Original 50ml)",
+        "description": "Profesjonalny podkład zapobiegający odklejaniu wydruków.",
+        "category": "Chemia warsztatowa",
+        "badge": "Pro",
+        "icon": "🧪",
+        "price": 65.00,
+        "currency": "PLN",
+        "image_url": None,
+        "stock": 25,
+        "in_stock": True,
+        "active": True,
+    },
+    {
+        "id": "sku_deburring_tool",
+        "sku": "sku_deburring_tool",
+        "name": "Precyzyjny nożyk deburring tool do obróbki krawędzi",
+        "description": "Ostrze obrotowe do szybkiego usuwania gratu z tworzywa.",
+        "category": "Narzędzia",
+        "badge": "Niezbędnik",
+        "icon": "🔪",
+        "price": 35.00,
+        "currency": "PLN",
+        "image_url": None,
+        "stock": 60,
+        "in_stock": True,
+        "active": True,
+    },
+]
+
+
 def get_db_connection():
     """Tworzy połączenie z PostgreSQL za pomocą DATABASE_URL."""
     db_url = os.getenv("DATABASE_URL")
@@ -162,7 +229,7 @@ def setup_database():
         conn.autocommit = True
         cur = conn.cursor()
 
-        print("[1/3] Tworzenie tabeli 'filaments'...")
+        print("[1/4] Tworzenie tabeli 'filaments'...")
         create_table_sql = """
         CREATE TABLE IF NOT EXISTS filaments (
             id VARCHAR(50) PRIMARY KEY,
@@ -181,7 +248,7 @@ def setup_database():
         cur.execute(create_table_sql)
         print("      ✓ Tabela 'filaments' istnieje / została utworzona.")
 
-        print("[2/3] Weryfikacja tabeli 'orders' (schemat koszyka / zleceń)...")
+        print("[2/4] Weryfikacja tabeli 'orders' (schemat koszyka / zleceń)...")
         cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
         orders_migration_sql = """
         CREATE TABLE IF NOT EXISTS orders (
@@ -218,7 +285,63 @@ def setup_database():
         cur.execute(orders_migration_sql)
         print("      ✓ Tabela 'orders' ma kolumny UI (w tym nozzle_size) i indeksy user/status.")
 
-        print(f"[3/3] Seedowanie {len(SEED_FILAMENTS)} filamentów (ON CONFLICT DO NOTHING)...")
+        print("[3/4] Tworzenie tabeli 'products' i seed katalogu sklepu...")
+        products_migration_sql = """
+        CREATE TABLE IF NOT EXISTS products (
+            id VARCHAR(50) PRIMARY KEY,
+            sku VARCHAR(50) NOT NULL UNIQUE,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            category VARCHAR(100),
+            badge VARCHAR(50),
+            icon VARCHAR(16),
+            price NUMERIC(10, 2) NOT NULL,
+            currency VARCHAR(8) NOT NULL DEFAULT 'PLN',
+            image_url TEXT,
+            stock INT NOT NULL DEFAULT 0,
+            in_stock BOOLEAN NOT NULL DEFAULT true,
+            active BOOLEAN NOT NULL DEFAULT true,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS sku VARCHAR(50);
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT;
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS badge VARCHAR(50);
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS icon VARCHAR(16);
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS price NUMERIC(10, 2);
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS currency VARCHAR(8);
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS stock INT;
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS in_stock BOOLEAN;
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS active BOOLEAN;
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+        ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+        CREATE INDEX IF NOT EXISTS idx_products_active_stock ON products (active, in_stock);
+        CREATE INDEX IF NOT EXISTS idx_products_sku ON products (sku);
+        """
+        cur.execute(products_migration_sql)
+
+        insert_product_sql = """
+        INSERT INTO products (
+            id, sku, name, description, category, badge, icon,
+            price, currency, image_url, stock, in_stock, active, created_at, updated_at
+        ) VALUES (
+            %(id)s, %(sku)s, %(name)s, %(description)s, %(category)s, %(badge)s, %(icon)s,
+            %(price)s, %(currency)s, %(image_url)s, %(stock)s, %(in_stock)s, %(active)s, NOW(), NOW()
+        )
+        ON CONFLICT (id) DO NOTHING;
+        """
+        for item in SEED_PRODUCTS:
+            cur.execute(insert_product_sql, item)
+
+        cur.execute("SELECT COUNT(*) FROM products;")
+        products_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM products WHERE active = true AND in_stock = true;")
+        products_available = cur.fetchone()[0]
+        print(f"      ✓ Tabela 'products' gotowa ({products_count} SKU, {products_available} aktywnych na stanie).")
+
+        print(f"[4/4] Seedowanie {len(SEED_FILAMENTS)} filamentów (ON CONFLICT DO NOTHING)...")
         insert_sql = """
         INSERT INTO filaments (
             id, name, tier, type, category, hex, colors, price_per_cm3, in_stock, roughness, metalness

@@ -1,6 +1,6 @@
 # Railway Postgres + Supabase Auth
 
-Railway Postgres jest jedynym źródłem prawdy dla danych biznesowych (`orders`, `filaments`).
+Railway Postgres jest jedynym źródłem prawdy dla danych biznesowych (`orders`, `filaments`, `products`).
 Supabase zostaje wyłącznie do Auth (email / hasło) po stronie frontendu.
 
 ## Zmienne środowiskowe
@@ -56,6 +56,24 @@ Istniejące endpointy silnika druku bez zmian kontraktu:
 - `POST /api/orders/upload-geometry`, `GET /api/orders/{id}/download-3mf`
 - `GET /api/filaments` — ten sam `DATABASE_URL`
 
+## API sklepu
+
+Cena i stan zawsze z tabeli `products`. Klient nie ustawia `total_price`.
+
+| Metoda | Ścieżka | Auth | Działanie |
+|--------|---------|------|-----------|
+| `GET` | `/api/products` | publiczne | Aktywne SKU (`source`: `database` albo `fallback` z seedu). |
+| `GET` | `/api/products/{id}` | publiczne | Detal po `id` albo `sku`. |
+| `POST` | `/api/products/{id}/cart` | JWT | Linia `orders` `in_cart` typu `shop_sku`. Ponowne dodanie zwiększa ilość. |
+
+Linia sklepowa używa istniejących kolumn `orders` (bez nowej tabeli koszyka):
+
+- `technology` = `shop_sku` (odróżnia od wydruku / breloka)
+- `file_name` = nazwa produktu
+- `material` = kategoria
+- `layer_height` = sku
+- `total_price` = `price * quantity` z magazynu
+
 ## Schemat `orders`
 
 Uruchom na Railway (albo lokalnie) po deployu:
@@ -77,6 +95,23 @@ Statusy: `in_cart`, `pending_payment`, `in_queue`, `in_production`, `post_proces
 
 Klient może tworzyć tylko `in_cart` / `rfq_pending` i ustawiać status na `cancelled`.
 Kolejne statusy produkcyjne zostają na później (poza zakresem tej zmiany).
+
+## Schemat `products`
+
+Ta sama komenda `python db_setup.py` tworzy tabelę i seeduje 4 SKU z poprzedniego mocka `/sklep` (`ON CONFLICT DO NOTHING`).
+
+| Kolumna | Typ | Uwagi |
+|---------|-----|--------|
+| `id` | `VARCHAR(50)` PK | To samo co sku w seedzie. |
+| `sku` | `VARCHAR(50)` UNIQUE | Identyfikator magazynowy. |
+| `name`, `description` | tekst | Karta sklepu. |
+| `category`, `badge`, `icon` | opcjonalne | UI `/sklep` (ikona gdy brak `image_url`). |
+| `price` | `NUMERIC(10,2)` | Cena jednostkowa. |
+| `currency` | `VARCHAR(8)` | Domyślnie `PLN`. |
+| `image_url` | `TEXT` | Opcjonalne zdjęcie. |
+| `stock` | `INT` | Stan; `0` albo `in_stock=false` blokuje Dodaj. |
+| `in_stock`, `active` | `BOOLEAN` | Katalog pokazuje tylko `active`. |
+| `created_at`, `updated_at` | `TIMESTAMPTZ` | |
 
 ## Migracja starych wierszy z Supabase
 

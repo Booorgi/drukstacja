@@ -40,6 +40,7 @@ from orientation import auto_orient_mesh
 from packager_3mf import generate_production_3mf, sanitize_filename
 from db import get_db_connection
 from orders_api import router as orders_router, update_production_file_url
+from products_api import router as products_router
 
 # Katalog cache dla wygenerowanych i zorientowanych siatek STL do szybkiego ponownego cięcia
 MODELS_CACHE_DIR = os.path.join(tempfile.gettempdir(), "drukstacja_cache")
@@ -61,6 +62,7 @@ app.add_middleware(
 )
 
 app.include_router(orders_router)
+app.include_router(products_router)
 
 MAX_FILE_SIZE_MB = 100
 ALLOWED_EXTENSIONS = ALL_SUPPORTED_EXTENSIONS

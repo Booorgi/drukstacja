@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { cancelOrder, clearCart } from "../lib/ordersApi";
+import { cartLineSubtitle, isShopSkuLine } from "../lib/orderLine";
 
 function getDeletedIds() {
   if (typeof window === "undefined") return [];
@@ -129,7 +130,7 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
               <div className="text-center py-20 text-slate-400 text-sm space-y-2">
                 <div className="text-3xl">🛒</div>
                 <p className="font-semibold text-slate-600">Twój koszyk jest obecnie pusty.</p>
-                <p className="text-xs text-slate-400">Dodaj wyceniony model 3D lub zaprojektowany brelok.</p>
+                <p className="text-xs text-slate-400">Dodaj wyceniony model 3D, brelok albo produkt ze sklepu.</p>
               </div>
             ) : (
               localItems.map((item) => (
@@ -138,11 +139,19 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
                   className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 hover:border-slate-300 flex items-center justify-between transition-all gap-3"
                 >
                   <div className="max-w-[210px] min-w-0">
+                    {isShopSkuLine(item) && (
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#EF4444] block mb-0.5">
+                        Sklep
+                      </span>
+                    )}
                     <span className="text-xs font-bold text-slate-900 block truncate" title={item.file_name}>
                       {item.file_name}
                     </span>
-                    <span className="text-[11px] text-slate-500 block truncate mt-0.5" title={item.material}>
-                      {item.material}
+                    <span
+                      className="text-[11px] text-slate-500 block truncate mt-0.5"
+                      title={cartLineSubtitle(item)}
+                    >
+                      {cartLineSubtitle(item)}
                     </span>
                     <span className="text-[10px] font-semibold text-slate-400 block mt-0.5">
                       Ilość: {item.quantity} szt.
