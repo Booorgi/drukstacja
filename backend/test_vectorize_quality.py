@@ -373,6 +373,12 @@ def test_real_dog_photo_keeps_muzzle_if_present():
     assert darkest <= 0.32, f"Pies: za dużo czerni {darkest:.2f}"
     assert pair <= 0.58, f"Pies: dwie ciemne {pair:.2f}"
     assert dbg["layer_fracs"][0] >= 0.16
+    # #44 zostawiło alokację, ale zjadało kępki (~52 mid). Makerlab ma drobniejsze wyspy.
+    mid = count_midsize_components(dbg["remapped"], 40, 1500)
+    assert dbg["rebalanced"] is True
+    assert mid >= 80, f"Za mało kępek sierści (mid 40–1500): {mid}"
+    speckle = count_midsize_components(dbg["remapped"], 1, 23)
+    assert speckle <= 12, f"Sól/pieprz wrócił (<24 px): {speckle}"
 
 
 def test_vectorize_ai_accepts_makerlab_params():
