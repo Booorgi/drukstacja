@@ -17,6 +17,7 @@ import {
   getPlaFinishLabel,
 } from "../lib/filament";
 import KeychainColorSelector, {
+  AmsLayerSwatches,
   FilamentPickerModal,
   FilamentPickerRow,
 } from "../components/KeychainColorSelector";
@@ -2085,6 +2086,9 @@ export default function KeychainGenerator() {
   const exportHandlerRef = useRef(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isExporting3MF, setIsExporting3MF] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [amsLayersExpanded, setAmsLayersExpanded] = useState(false);
+  const exportMenuRef = useRef(null);
   const layerHeight = PRINT_LAYER_HEIGHT;
   const infill = PRINT_INFILL;
   const nozzleSize = PRINT_NOZZLE_SIZE;
@@ -2166,6 +2170,25 @@ export default function KeychainGenerator() {
       : (Math.PI * Math.pow(baseDiameter / 2, 2)) / 100;
   const unitPrice = Math.max(19, 14 + areaCm2 * 0.45).toFixed(2);
   const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
+  const hasTextContent = textContent.trim().length > 0;
+
+  useEffect(() => {
+    if (!exportMenuOpen) return undefined;
+    const onPointerDown = (event) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+        setExportMenuOpen(false);
+      }
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setExportMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [exportMenuOpen]);
 
   // Animacja Layer View
   useEffect(() => {
@@ -2618,12 +2641,12 @@ export default function KeychainGenerator() {
 
       {/* GŁÓWNY MODUŁ */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 md:px-6 pb-10 flex items-center justify-center">
-        <div className="bg-white rounded-[32px] border border-slate-200/80 shadow-[0_25px_70px_rgba(0,0,0,0.06)] w-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-[640px]">
+        <div className="bg-white rounded-[32px] border border-slate-200/80 shadow-[0_25px_70px_rgba(0,0,0,0.06)] w-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden min-h-[640px] lg:h-[min(720px,calc(100vh-6.5rem))]">
 
           {/* LEWA STRONA: 3D VIEWPORT */}
-          <div className="lg:col-span-7 bg-gradient-to-b from-[#F8FAFC] to-[#EDF2F7] relative flex flex-col justify-between p-6 md:p-8">
-            <div className="flex items-center justify-between z-10">
-              <div>
+          <div className="lg:col-span-7 bg-gradient-to-b from-[#F8FAFC] to-[#EDF2F7] relative flex flex-col min-h-0 p-6 md:p-8">
+            <div className="flex items-start justify-between gap-3 z-10 shrink-0">
+              <div className="min-w-0">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-[#EF4444] block">
                   Studio Multi-Color AMS
                 </span>
@@ -2638,51 +2661,77 @@ export default function KeychainGenerator() {
                 </h1>
               </div>
 
-              {/* Layer View toggle + Export */}
-              <div className="flex items-center gap-2">
+              <div className="relative shrink-0" ref={exportMenuRef}>
                 <button
                   type="button"
-                  onClick={() => setLayerViewEnabled(!layerViewEnabled)}
-                  className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border shadow-sm transition cursor-pointer ${layerViewEnabled
-                    ? "bg-[#EF4444] text-white border-red-400"
-                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
-                    }`}
+                  data-keychain-export-menu
+                  aria-haspopup="menu"
+                  aria-expanded={exportMenuOpen}
+                  aria-label="Eksport i widok warstw"
+                  onClick={() => setExportMenuOpen((open) => !open)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-500 shadow-sm transition hover:border-slate-300 hover:bg-white hover:text-slate-800 cursor-pointer"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="5" r="1.6" />
+                    <circle cx="12" cy="12" r="1.6" />
+                    <circle cx="12" cy="19" r="1.6" />
                   </svg>
-                  {layerViewEnabled ? "Złóż" : "Warstwy"}
                 </button>
-
-                <button
-                  type="button"
-                  onClick={handleExportSTL}
-                  disabled={isExporting}
-                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-slate-900 text-white border border-slate-700 hover:bg-slate-800 shadow-sm transition cursor-pointer disabled:opacity-50"
-                  title="Pobierz model jako pojedynczy plik STL"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  {isExporting ? "..." : "STL"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleExport3MF}
-                  disabled={isExporting3MF}
-                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 shadow-sm transition cursor-pointer disabled:opacity-50"
-                  title="Pobierz gotowy projekt wielokolorowy AMS"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  {isExporting3MF ? "..." : ".3MF"}
-                </button>
+                {exportMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full z-30 mt-2 w-60 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-900/10"
+                  >
+                    <p className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Widok i eksport
+                    </p>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setLayerViewEnabled(!layerViewEnabled);
+                        setExportMenuOpen(false);
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                    >
+                      <span>{layerViewEnabled ? "Złóż warstwy" : "Widok warstw"}</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${layerViewEnabled ? "text-[#EF4444]" : "text-slate-400"}`}>
+                        {layerViewEnabled ? "Włączone" : "Warstwy"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        handleExportSTL();
+                      }}
+                      disabled={isExporting}
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                    >
+                      <span>{isExporting ? "Przygotowuję STL…" : "Pobierz STL"}</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">STL</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        handleExport3MF();
+                      }}
+                      disabled={isExporting3MF}
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                    >
+                      <span>{isExporting3MF ? "Przygotowuję .3MF…" : "Pobierz projekt AMS"}</span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">.3MF</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="relative w-full h-[380px] md:h-[430px] my-auto">
+            <div className="relative w-full flex-1 min-h-[280px] md:min-h-[320px] my-3">
+              <div className="absolute inset-0">
               <KeychainViewer3D
                 ref={viewerRef}
                 scaleContext={scaleContext}
@@ -2716,6 +2765,7 @@ export default function KeychainGenerator() {
                 textThickness={textThickness}
                 outlineMargin={outlineMargin}
               />
+              </div>
 
               <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center rounded-2xl border border-slate-200/80 bg-white/90 px-2 py-1.5 shadow-lg shadow-slate-900/5 backdrop-blur-md">
                 <button
@@ -2737,38 +2787,52 @@ export default function KeychainGenerator() {
               </div>
 
               {layerViewEnabled && (
-                <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur-sm">
+                <button
+                  type="button"
+                  onClick={() => setLayerViewEnabled(false)}
+                  className="absolute left-3 top-3 z-20 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur-sm cursor-pointer"
+                >
                   <span className="h-2 w-2 animate-pulse rounded-full bg-[#EF4444]" />
                   Widok warstw druku
-                </div>
+                </button>
               )}
             </div>
 
-            <div className="flex items-end justify-between z-10 pt-4 border-t border-slate-200/70">
-              <div>
-                <span className="text-[11px] font-bold uppercase text-slate-400 block tracking-wider">
-                  Cena za sztukę
+            <div
+              data-keychain-quote-bar
+              className="z-10 shrink-0 pt-3 border-t border-slate-200/70 flex items-center justify-between gap-3"
+            >
+              <div className="min-w-0">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 block">
+                  Razem
                 </span>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-black text-slate-900 tracking-tight">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black text-slate-900 tracking-tight">
                     {totalPrice}
                   </span>
-                  <span className="text-sm font-bold text-slate-500">PLN</span>
+                  <span className="text-xs font-bold text-slate-500">PLN</span>
                 </div>
+                <span className="text-[11px] text-slate-400">
+                  {unitPrice} zł / szt.
+                </span>
               </div>
 
-              <div className="flex items-center gap-3">
-                <div className="flex items-center bg-white border border-slate-200 rounded-full px-2 py-1 shadow-sm">
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center bg-white border border-slate-200 rounded-full px-1 py-0.5 shadow-sm">
                   <button
+                    type="button"
+                    aria-label="Zmniejsz ilość"
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
                     className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition"
                   >
-                    -
+                    −
                   </button>
-                  <span className="w-8 text-center font-bold text-sm text-slate-800">
+                  <span className="w-7 text-center font-bold text-sm text-slate-800">
                     {quantity}
                   </span>
                   <button
+                    type="button"
+                    aria-label="Zwiększ ilość"
                     onClick={() => setQuantity(quantity + 1)}
                     className="w-7 h-7 flex items-center justify-center text-slate-600 font-bold hover:bg-slate-100 rounded-full transition"
                   >
@@ -2777,19 +2841,20 @@ export default function KeychainGenerator() {
                 </div>
 
                 <button
+                  type="button"
                   disabled={addingToCart || isProcessingImg}
                   onClick={handleAddToCart}
-                  className="px-6 py-3.5 rounded-full bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25 transition cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-full bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-500/25 transition cursor-pointer disabled:opacity-50"
                 >
-                  {addingToCart ? "Zapisuję..." : "Dodaj do koszyka +"}
+                  {addingToCart ? "Zapisuję…" : "Do koszyka"}
                 </button>
               </div>
             </div>
           </div>
 
           {/* PRAWA STRONA: MODUŁ PARAMETRÓW */}
-          <div className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-white border-l border-slate-100">
-            <div className="space-y-4">
+          <div className="lg:col-span-5 p-6 md:p-8 flex flex-col justify-between bg-white border-l border-slate-100 min-h-0">
+            <div className="space-y-4 min-h-0 flex-1 flex flex-col">
 
               {/* Taby konfiguracji — 3 główne zakładki */}
               <div>
@@ -2817,7 +2882,7 @@ export default function KeychainGenerator() {
 
               {/* TAB 1: KSZTAŁT, WYMIARY I MATERIAŁY BAZY */}
               {activeTab === "shape" && (
-                <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
+                <div className="space-y-3.5 flex-1 overflow-y-auto pr-1">
                   {/* Wybór kształtu */}
                   <div>
                     <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
@@ -3067,7 +3132,7 @@ export default function KeychainGenerator() {
 
               {/* TAB 2: GRAFIKA & MULTI-COLOR (DO 4 KOLORÓW) */}
               {activeTab === "graphic" && (
-                <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
+                <div className="space-y-3.5 flex-1 overflow-y-auto pr-1">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -3148,42 +3213,25 @@ export default function KeychainGenerator() {
                     </div>
                   </div>
 
-                  {/* MULTI-COLOR: Lista wykrytych warstw kolorystycznych grafiki */}
-                  <div className="space-y-2.5 pt-2 border-t border-slate-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-800">
-                        Wykryte warstwy kolorystyczne ({layersConfig.length})
-                      </span>
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                        AMS
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {layersConfig.map((layer, idx) => (
-                        <FilamentPickerRow
-                          key={layer.id || idx}
-                          label={`Kolor grafiki ${idx + 1}`}
-                          sublabel={`${layer.name} · ${layer.thickness} mm`}
-                          filament={layer.filament}
-                          buttonText="Zmień"
-                          onClick={() =>
-                            setPickerTarget({
-                              type: "graphic_layer",
-                              index: idx,
-                              title: `Wybierz filament dla Warstwy ${idx + 1} (${layer.name})`,
-                              current: layer.filament,
-                            })
-                          }
-                        />
-                      ))}
-                    </div>
-                  </div>
+                  <AmsLayerSwatches
+                    layers={layersConfig}
+                    expanded={amsLayersExpanded}
+                    onToggleExpanded={() => setAmsLayersExpanded((open) => !open)}
+                    onSelectLayer={(layer, idx) =>
+                      setPickerTarget({
+                        type: "graphic_layer",
+                        index: idx,
+                        title: `Wybierz filament dla Warstwy ${idx + 1} (${layer.name})`,
+                        current: layer.filament,
+                      })
+                    }
+                  />
                 </div>
               )}
 
               {/* TAB 3: TEKST NA BRELOKU */}
               {activeTab === "text" && (
-                <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
+                <div className="space-y-3.5 flex-1 overflow-y-auto pr-1">
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
                     <div>
                       <span className="text-xs font-bold text-slate-800 block mb-1">Treść napisu</span>
@@ -3193,13 +3241,22 @@ export default function KeychainGenerator() {
                         onChange={(e) => setTextContent(e.target.value)}
                         placeholder="Wpisz tekst (np. imię)..."
                         maxLength={30}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF4444]/30 focus:border-[#EF4444] placeholder:text-slate-400"
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF4444]/30 focus:border-[#EF4444] placeholder:text-slate-400"
                       />
-                      <span className="text-[10px] text-slate-400 mt-0.5 block text-right">
-                        {textContent.length}/30
-                      </span>
+                      <div className="mt-1 flex items-center justify-between gap-3">
+                        <span className="text-[11px] text-slate-500">
+                          {hasTextContent
+                            ? "Dostosuj font, rozmiar i pozycję poniżej."
+                            : "Najpierw wpisz treść — wygląd ustawisz w następnym kroku."}
+                        </span>
+                        <span className="text-[10px] text-slate-400 shrink-0">
+                          {textContent.length}/30
+                        </span>
+                      </div>
                     </div>
 
+                    {hasTextContent && (
+                    <div data-text-style-controls className="space-y-3 pt-1 border-t border-slate-200/80">
                     {/* Wybór fontu */}
                     <div>
                       <span className="text-xs font-bold text-slate-800 block mb-1.5">Font</span>
@@ -3331,9 +3388,11 @@ export default function KeychainGenerator() {
                         </div>
                       </div>
                     </div>
+                    </div>
+                    )}
                   </div>
 
-                  {/* WYBÓR: Kolor Tekstu */}
+                  {hasTextContent && (
                   <div>
                     <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
                       Kolor Tekstu
@@ -3352,6 +3411,7 @@ export default function KeychainGenerator() {
                       }
                     />
                   </div>
+                  )}
                 </div>
               )}
             </div>
