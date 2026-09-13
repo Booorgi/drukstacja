@@ -465,7 +465,7 @@ endsolid fixture
 
       const keepNativeGltf =
         /\.(glb|gltf)$/i.test(file.name) && !data.has_file_colors;
-      if (data.instant_pricing && data.has_file_colors && data.preview_glb_url) {
+      if (data.instant_pricing && data.preview_glb_url) {
         setModelPreviewUrl(resolveAssetUrl(data.preview_glb_url));
       } else if (data.instant_pricing && data.preview_stl_url && !keepNativeGltf) {
         setModelPreviewUrl(resolveAssetUrl(data.preview_stl_url));

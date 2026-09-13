@@ -87,6 +87,97 @@ def _hex_to_rgba(hex_color: str) -> np.ndarray:
     return np.array([r, g, b, a], dtype=np.uint8)
 
 
+def _rgba_to_pbr_factor(rgba) -> List[float]:
+    arr = np.asarray(rgba, dtype=float).reshape(-1)
+    if len(arr) < 3:
+        return [0.53, 0.53, 0.53, 1.0]
+    rgb = [float(arr[0]) / 255.0, float(arr[1]) / 255.0, float(arr[2]) / 255.0]
+    alpha = float(arr[3]) / 255.0 if len(arr) > 3 else 1.0
+    return rgb + [alpha]
+
+
+def _ensure_vertex_normals(mesh: trimesh.Trimesh) -> None:
+    """
+    Three.js MeshStandardMaterial bez atrybutu NORMAL traktuje normalne jako (0,0,0)
+    i renderuje całą bryłę jako czarną sylwetkę — nawet gdy COLOR_0 jest w GLB.
+    """
+    try:
+        normals = getattr(mesh, "vertex_normals", None)
+        if normals is not None and len(normals) == len(mesh.vertices):
+            return
+    except Exception:
+        pass
+    try:
+        mesh.fix_normals()
+    except Exception:
+        pass
+
+
+def _colored_mesh_to_preview_scene(mesh: trimesh.Trimesh) -> "trimesh.Scene":
+    """
+    Dzieli pomalowaną siatkę na grupy AMS (unikalny RGB ścianki) i nadaje każdej
+    materiał PBR. Gdy podział się nie uda, zostaje jedna siatka z COLOR_0.
+    """
+    from trimesh.visual.material import PBRMaterial
+
+    scene = trimesh.Scene()
+    face_colors = None
+    try:
+        face_colors = np.asarray(mesh.visual.face_colors)
+    except Exception:
+        face_colors = None
+
+    if face_colors is not None and len(face_colors) == len(mesh.faces):
+        rgb = np.asarray(face_colors[:, :3], dtype=np.uint8)
+        unique = np.unique(rgb, axis=0)
+        if len(unique) >= 2:
+            try:
+                added = 0
+                for i, color in enumerate(unique):
+                    mask = np.all(rgb == color, axis=1)
+                    face_idx = np.nonzero(mask)[0]
+                    if len(face_idx) == 0:
+                        continue
+                    part = mesh.submesh(
+                        [face_idx],
+                        append=True,
+                        repair=False,
+                        only_watertight=False,
+                    )
+                    if part is None or len(getattr(part, "faces", [])) == 0:
+                        continue
+                    _ensure_vertex_normals(part)
+                    rgba = np.array([int(color[0]), int(color[1]), int(color[2]), 255], dtype=np.uint8)
+                    part.visual.face_colors = rgba
+                    part.visual.material = PBRMaterial(
+                        name=f"ams_{i}",
+                        baseColorFactor=_rgba_to_pbr_factor(rgba),
+                        metallicFactor=0.08,
+                        roughnessFactor=0.45,
+                    )
+                    scene.add_geometry(part, geom_name=f"ams_{i}")
+                    added += 1
+                if added >= 2:
+                    return scene
+            except Exception as err:
+                print(f"[WARN] Podział podglądu 3MF na kolory AMS nie powiódł się: {err}")
+
+    _ensure_vertex_normals(mesh)
+    scene = trimesh.Scene()
+    scene.add_geometry(mesh, geom_name="ams_preview")
+    return scene
+
+
+def export_colored_preview_glb(mesh: trimesh.Trimesh, output_path: str) -> None:
+    """
+    Eksportuje kolorowy podgląd .glb tak, żeby Three.js miał i barwy, i normalne.
+    """
+    preview = mesh.copy()
+    _ensure_vertex_normals(preview)
+    scene = _colored_mesh_to_preview_scene(preview)
+    scene.export(output_path, file_type="glb")
+
+
 # Kody malowania wielokolorowego: Bambu Studio / OrcaSlicer zapisuja je w atrybucie
 # paint_color trojkata, PrusaSlicer w slic3rpe:mmu_segmentation (ten sam format).
 # Pozycja na liscie + 1 = numer slotu AMS, czyli indeks w filament_colour + 1.
