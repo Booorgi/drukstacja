@@ -8,8 +8,8 @@ const GROUP_LABEL = {
 };
 
 /**
- * Material list for the mobile Materiał sheet. Desktop keeps wheel-slice
- * selection; 42px slices are not usable on a phone.
+ * Material list for the Materiał wheel. Mobile uses a bottom sheet; desktop
+ * uses the same opaque popover pattern as Kolor / Parametry / Skala.
  */
 export default function StudioMaterialPicker({
   materials = [],
@@ -25,7 +25,7 @@ export default function StudioMaterialPicker({
       data-studio-material-picker-surface={surface}
       role="dialog"
       aria-label="Wybierz materiał"
-      className="w-full rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10"
+      className="w-full rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10 md:w-[280px]"
     >
       <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-neutral-200 md:hidden" aria-hidden />
       <div className="mb-3">
@@ -36,7 +36,7 @@ export default function StudioMaterialPicker({
         </p>
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex max-h-[min(52vh,380px)] flex-col gap-1.5 overflow-y-auto overscroll-contain">
         {materials.map((mat) => {
           const active = String(mat.id) === String(value);
           const swatch = mat.colors?.[0]?.hex || mat.hex || "#d4d4d4";

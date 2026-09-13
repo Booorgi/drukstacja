@@ -20,7 +20,7 @@ async function openQuotedStudio(page) {
 }
 
 test.describe("studio color picker", () => {
-  test("desktop: Kolor opens a popover; Materiał and Parametry stay unchanged", async ({ page }) => {
+  test("desktop: Kolor opens a popover; Materiał and Parametry stay exclusive", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openQuotedStudio(page);
 
@@ -32,7 +32,7 @@ test.describe("studio color picker", () => {
     await expect(colorWheel).toBeVisible();
     await expect(colorWheel).toHaveAttribute("aria-haspopup", "dialog");
     await expect(colorWheel).toHaveAttribute("aria-expanded", "false");
-    await expect(materialWheel).not.toHaveAttribute("aria-haspopup");
+    await expect(materialWheel).toHaveAttribute("aria-haspopup", "dialog");
     await expect(rail.locator("span").filter({ hasText: "Głęboka Czerń" })).toBeVisible();
 
     await colorWheel.click();
@@ -51,10 +51,14 @@ test.describe("studio color picker", () => {
     await expect(picker).toHaveCount(0);
     await expect(rail.locator("span").filter({ hasText: "Czysta Biel" })).toBeVisible();
 
-    await materialWheel.locator("path").filter({ hasText: "PLA Matte / Satin" }).click();
-    await expect(rail.locator("span").filter({ hasText: "PLA Matte / Satin" })).toBeVisible();
+    await materialWheel.click();
+    const materials = page.locator('[data-studio-material-picker-surface="popover"]');
+    await expect(materials).toBeVisible();
     await expect(page.locator("[data-studio-color-picker]")).toHaveCount(0);
     await expect(page.getByText("Parametry druku")).toHaveCount(0);
+    await materials.getByRole("button", { name: /PLA Matte/ }).click();
+    await expect(materials).toHaveCount(0);
+    await expect(rail.locator("span").filter({ hasText: "PLA Matte / Satin" })).toBeVisible();
 
     await paramsWheel.click();
     await expect(page.getByText("Parametry druku")).toBeVisible();

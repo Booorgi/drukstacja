@@ -860,26 +860,25 @@ endsolid fixture
                   <StudioWheel
                     items={materialWheelItems}
                     value={selectedMaterial}
-                    onChange={(item) => handleSelectMaterial(item.id)}
                     expanded={materialPickerOpen}
+                    onOpen={() => {
+                      closeOtherStudioPickers("material");
+                      setMaterialPickerOpen((open) => !open);
+                    }}
                     size={isEmptyStage ? 42 : 48}
                     muted={isEmptyStage}
                     label="Materiał"
                   />
-                  <button
-                    type="button"
-                    data-studio-material-open
-                    aria-label="Wybierz materiał"
-                    aria-haspopup="dialog"
-                    aria-expanded={materialPickerOpen}
-                    className={`absolute left-1/2 top-0 z-[1] -translate-x-1/2 rounded-full md:hidden ${
-                      isEmptyStage ? "h-[42px] w-[42px]" : "h-12 w-12"
-                    }`}
-                    onClick={() => {
-                      closeOtherStudioPickers("material");
-                      setMaterialPickerOpen((open) => !open);
-                    }}
-                  />
+                  {materialPickerOpen && isMdUp ? (
+                    <div className="absolute bottom-0 left-full z-[90] ml-3">
+                      <StudioMaterialPicker
+                        materials={filteredMaterials}
+                        value={selectedMaterial}
+                        surface="popover"
+                        onSelect={handleSelectMaterialFromPicker}
+                      />
+                    </div>
+                  ) : null}
                   <StudioMobileSheet
                     open={materialPickerOpen && !isMdUp}
                     onClose={() => setMaterialPickerOpen(false)}
