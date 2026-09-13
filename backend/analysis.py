@@ -171,7 +171,13 @@ def _colored_mesh_to_preview_scene(mesh: trimesh.Trimesh) -> "trimesh.Scene":
 def export_colored_preview_glb(mesh: trimesh.Trimesh, output_path: str) -> None:
     """
     Eksportuje kolorowy podgląd .glb tak, żeby Three.js miał i barwy, i normalne.
+    Na gęstych siatkach (Jaguar) rzuca ValueError — wycena ma iść dalej bez GLB.
     """
+    n_faces = int(len(getattr(mesh, "faces", [])) or 0)
+    if n_faces >= COLORED_PREVIEW_FACE_LIMIT:
+        raise ValueError(
+            f"Pomijam kolorowy GLB: {n_faces} ścianek >= {COLORED_PREVIEW_FACE_LIMIT}"
+        )
     preview = mesh.copy()
     _ensure_vertex_normals(preview)
     scene = _colored_mesh_to_preview_scene(preview)
@@ -188,6 +194,54 @@ PAINT_SLOT_CODES = [
 
 # Awaryjna paleta, gdy plik ma malowanie, ale nie niesie listy filament_colour.
 DEFAULT_AMS_PALETTE = ["#1A1A1A", "#F5F5F5", "#D32F2F", "#1976D2"]
+
+# Progi dla plików Bambu klasy Jaguar: zip bywa < 12 MB, ale XML ma dziesiątki MB
+# i pędzel na każdym trójkącie zjada limit proxy (Failed to fetch po stronie przeglądarki).
+PAINT_ZIP_BYTES = 12_000_000
+PAINT_MODEL_UNCOMPRESSED_BYTES = 8_000_000
+SKIP_MESH_ZIP_BYTES = 25_000_000
+SKIP_MESH_MODEL_UNCOMPRESSED_BYTES = 80_000_000
+COLORED_PREVIEW_FACE_LIMIT = 180_000
+COLORED_PREVIEW_ZIP_BYTES = 12_000_000
+COLORED_PREVIEW_MODEL_UNCOMPRESSED_BYTES = 40_000_000
+
+
+def _max_model_uncompressed_bytes(zf: zipfile.ZipFile) -> int:
+    sizes = [
+        int(info.file_size or 0)
+        for info in zf.infolist()
+        if (info.filename or "").lower().endswith(".model")
+    ]
+    return max(sizes) if sizes else 0
+
+
+def should_decode_3mf_paint(zip_bytes: int, max_model_uncompressed: int) -> bool:
+    """Pędzel paint_color tylko na małych .model — Jaguar ma go na milionach ścianek."""
+    return (
+        int(zip_bytes or 0) < PAINT_ZIP_BYTES
+        and int(max_model_uncompressed or 0) < PAINT_MODEL_UNCOMPRESSED_BYTES
+    )
+
+
+def should_parse_3mf_mesh(zip_bytes: int, max_model_uncompressed: int) -> bool:
+    """Pełny XML siatki pomijamy tylko przy naprawdę ogromnych obiektach + slice_info."""
+    return (
+        int(zip_bytes or 0) < SKIP_MESH_ZIP_BYTES
+        and int(max_model_uncompressed or 0) < SKIP_MESH_MODEL_UNCOMPRESSED_BYTES
+    )
+
+
+def should_build_colored_preview(
+    zip_bytes: int,
+    max_model_uncompressed: int,
+    face_count: int,
+) -> bool:
+    """Podgląd GLB (#48) nie może zablokować wyceny gęstego 3MF."""
+    return (
+        int(face_count or 0) < COLORED_PREVIEW_FACE_LIMIT
+        and int(zip_bytes or 0) < COLORED_PREVIEW_ZIP_BYTES
+        and int(max_model_uncompressed or 0) < COLORED_PREVIEW_MODEL_UNCOMPRESSED_BYTES
+    )
 
 
 def decode_paint_slot(code: str) -> int:
@@ -566,9 +620,30 @@ def _extract_3mf_color_metadata(zf: zipfile.ZipFile) -> Tuple[List[str], Dict[st
     return colours, extruders, print_profile
 
 
+def _empty_3mf_bundle(file_profile: dict, slice_stats: dict, skipped_paint: bool) -> dict:
+    profile_colours = list((file_profile or {}).get("filament_colours") or [])
+    color_count = max(len(profile_colours), int((slice_stats or {}).get("color_count") or 0), 1)
+    painted_ratio = 0.66 if (skipped_paint and len(profile_colours) >= 2) else 0.0
+    return {
+        "mesh": None,
+        "colored_mesh": None,
+        "filament_colours": profile_colours if len(profile_colours) >= 2 else [],
+        "part_count": 0,
+        "has_file_colors": False,
+        "color_count": int(color_count),
+        "painted_ratio": painted_ratio,
+        "file_profile": file_profile,
+        "skipped_paint": skipped_paint,
+        "skipped_colored_preview": True,
+        "skipped_geometry": True,
+    }
+
+
 def load_3mf_bundle(file_input) -> dict:
     """
     Wczytuje .3MF: geometrię do slicera oraz opcjonalną siatkę z kolorami AMS (podgląd GLB).
+    Na plikach klasy Jaguar najpierw zbiera profil/AMS/slice_info, a pędzel i GLB
+    pomija, żeby /api/analyze-model zdążył wrócić zanim proxy zerwie połączenie.
     """
     file_bytes = _read_file_bytes(file_input)
     objects: List[dict] = []
@@ -576,10 +651,16 @@ def load_3mf_bundle(file_input) -> dict:
     part_extruder: Dict[str, int] = {}
     print_profile: dict = {}
     skipped_paint = False
+    skipped_geometry = False
     slice_stats: dict = {}
+    max_model_uncompressed = 0
 
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as z:
+            max_model_uncompressed = _max_model_uncompressed_bytes(z)
+            filament_colours, part_extruder, print_profile = _extract_3mf_color_metadata(z)
+            slice_stats = _extract_3mf_slice_info(z)
+
             names = z.namelist()
             object_models = [
                 f for f in names if "3d/objects/" in f.lower() and f.lower().endswith(".model")
@@ -587,22 +668,43 @@ def load_3mf_bundle(file_input) -> dict:
             all_models = [f for f in names if f.lower().endswith(".model")]
             target_models = object_models if object_models else all_models
 
-            read_paint = len(file_bytes) < 12_000_000
+            read_paint = should_decode_3mf_paint(len(file_bytes), max_model_uncompressed)
             skipped_paint = not read_paint
             if skipped_paint:
-                print(f"[INFO] Duży .3MF ({len(file_bytes)} B) — pomijam dekodowanie pędzla AMS.")
-            for mf in target_models:
-                try:
-                    objects.extend(parse_model_xml_objects(z.read(mf), read_paint=read_paint))
-                except Exception as parse_err:
-                    print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
+                print(
+                    f"[INFO] Duży .3MF (zip={len(file_bytes)} B, model={max_model_uncompressed} B) "
+                    "— pomijam dekodowanie pędzla AMS."
+                )
 
-            filament_colours, part_extruder, print_profile = _extract_3mf_color_metadata(z)
-            slice_stats = _extract_3mf_slice_info(z)
+            parse_mesh = should_parse_3mf_mesh(len(file_bytes), max_model_uncompressed)
+            if not parse_mesh and (slice_stats or print_profile):
+                skipped_geometry = True
+                print(
+                    f"[INFO] Ogromny .3MF (zip={len(file_bytes)} B, model={max_model_uncompressed} B) "
+                    "— pomijam pełny XML siatki, zostawiam profil i slice_info."
+                )
+            else:
+                for mf in target_models:
+                    try:
+                        objects.extend(parse_model_xml_objects(z.read(mf), read_paint=read_paint))
+                    except Exception as parse_err:
+                        print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
     except Exception as zip_err:
         print(f"[WARN] Błąd inspekcji kontenera ZIP .3MF: {zip_err}")
 
+    file_profile = dict(print_profile or {})
+    if slice_stats:
+        file_profile["slice_stats"] = slice_stats
+
+    if skipped_geometry:
+        if not file_profile.get("filament_colours") and filament_colours:
+            file_profile["filament_colours"] = list(filament_colours)
+        return _empty_3mf_bundle(file_profile, slice_stats, skipped_paint)
+
     if not objects:
+        if file_profile.get("filament_colours") or slice_stats:
+            print("[WARN] Brak siatki 3MF — zwracam profil AMS / slice_info bez geometrii.")
+            return _empty_3mf_bundle(file_profile, slice_stats, skipped_paint)
         raise ValueError("Nie udało się odczytać geometrii 3D z pliku .3MF.")
 
     meshes = [o["mesh"] for o in objects]
@@ -640,8 +742,11 @@ def load_3mf_bundle(file_input) -> dict:
     painted_ratio = (painted_faces / total_faces) if total_faces else 0.0
     color_count = max(len(slot_hex), len(used_hex), 1)
 
+    skipped_colored_preview = not should_build_colored_preview(
+        len(file_bytes), max_model_uncompressed, total_faces
+    )
     colored_mesh = None
-    if has_file_colors:
+    if has_file_colors and not skipped_colored_preview:
         painted = []
         for obj, slots in zip(objects, face_slots_per_object):
             part = obj["mesh"]
@@ -659,10 +764,14 @@ def load_3mf_bundle(file_input) -> dict:
                 colored_mesh.invert()
         except Exception:
             pass
+    elif has_file_colors and skipped_colored_preview:
+        print(
+            f"[INFO] Pomijam kolorowy mesh podglądu ({total_faces} ścianek, "
+            f"zip={len(file_bytes)} B) — wycena i lista AMS zostają."
+        )
 
     used_hex_list = [slot_hex[s] for s in used_slots if s in slot_hex]
     profile_colours = list((print_profile or {}).get("filament_colours") or [])
-    file_profile = dict(print_profile or {})
     if len(used_hex_list) >= 2:
         file_profile["filament_colours"] = used_hex_list
     elif profile_colours:
@@ -678,18 +787,19 @@ def load_3mf_bundle(file_input) -> dict:
             painted_ratio = 0.66
     if slice_stats.get("color_count"):
         color_count = max(color_count, int(slice_stats["color_count"]))
-    if slice_stats:
-        file_profile["slice_stats"] = slice_stats
 
     return {
         "mesh": mesh,
         "colored_mesh": colored_mesh,
-        "filament_colours": used_hex_list if has_file_colors else [],
+        "filament_colours": used_hex_list if has_file_colors else (profile_colours if len(profile_colours) >= 2 else []),
         "part_count": len(objects),
-        "has_file_colors": has_file_colors,
+        "has_file_colors": bool(has_file_colors and colored_mesh is not None),
         "color_count": int(color_count),
         "painted_ratio": round(float(painted_ratio), 4),
         "file_profile": file_profile,
+        "skipped_paint": skipped_paint,
+        "skipped_colored_preview": bool(skipped_colored_preview or colored_mesh is None),
+        "skipped_geometry": False,
     }
 
 
@@ -875,7 +985,18 @@ def analyze_mesh_file(path: str, ext: str) -> dict:
     file_type = ext.lstrip(".").lower()
     if file_type == "3mf":
         bundle = load_3mf_bundle(path)
-        geom = analyze_trimesh_geometry(bundle["mesh"])
+        mesh = bundle.get("mesh")
+        if mesh is None:
+            geom = {
+                "volume_cm3": 0.0,
+                "dimensions_mm": [0.0, 0.0, 0.0],
+                "surface_area_cm2": 0.0,
+                "watertight": True,
+                "triangle_count": None,
+                "mesh_object": None,
+            }
+        else:
+            geom = analyze_trimesh_geometry(mesh)
         geom["colored_mesh"] = bundle.get("colored_mesh")
         geom["filament_colours"] = bundle.get("filament_colours") or []
         geom["part_count"] = bundle.get("part_count") or 1
@@ -883,6 +1004,8 @@ def analyze_mesh_file(path: str, ext: str) -> dict:
         geom["color_count"] = int(bundle.get("color_count") or len(geom["filament_colours"]) or 1)
         geom["painted_ratio"] = float(bundle.get("painted_ratio") or 0.0)
         geom["file_profile"] = bundle.get("file_profile") or {}
+        geom["skipped_colored_preview"] = bool(bundle.get("skipped_colored_preview"))
+        geom["skipped_geometry"] = bool(bundle.get("skipped_geometry"))
         return geom
 
     loaded = trimesh.load(path)

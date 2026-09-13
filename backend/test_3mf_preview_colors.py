@@ -10,10 +10,14 @@ import numpy as np
 import trimesh
 
 from analysis import (
+    COLORED_PREVIEW_FACE_LIMIT,
     DEFAULT_AMS_PALETTE,
     decode_paint_slot,
     export_colored_preview_glb,
     load_3mf_bundle,
+    should_build_colored_preview,
+    should_decode_3mf_paint,
+    should_parse_3mf_mesh,
 )
 from orientation import SUPPORT_THRESHOLD_ANGLE_DEG, _support_score, auto_orient_mesh
 
@@ -312,6 +316,75 @@ def test_preview_glb_has_normals_and_part_colors():
             assert "NORMAL" in prim["attributes"]
     assert _preview_has_ams_colors(gltf)
     assert len(gltf["meshes"]) >= 1
+
+
+def test_size_gates_keep_keychain_preview_and_skip_jaguar():
+    """Keychain (~5 MB zip / 34 MB XML / 156k ścianek) zostaje w podglądzie."""
+    assert should_decode_3mf_paint(5_500_000, 34_000_000) is False
+    assert should_parse_3mf_mesh(5_500_000, 34_000_000) is True
+    assert should_build_colored_preview(5_500_000, 34_000_000, 156_000) is True
+    # Jaguar: ogromny XML i/lub setki tysięcy ścianek — bez pędzla i bez GLB.
+    assert should_decode_3mf_paint(11_000_000, 90_000_000) is False
+    assert should_parse_3mf_mesh(11_000_000, 90_000_000) is False
+    assert should_build_colored_preview(11_000_000, 90_000_000, 400_000) is False
+    assert should_build_colored_preview(5_000_000, 10_000_000, COLORED_PREVIEW_FACE_LIMIT) is False
+
+
+def test_huge_3mf_skips_geometry_but_keeps_ams_and_slice_stats():
+    """Przy >80 MB uncompressed .model nie parsujemy XML — zostaje profil i slice_info."""
+    padding = " " * 80_000_001
+    path = os.path.join(tempfile.mkdtemp(), "jaguar_class.3mf")
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "3D/3dmodel.model",
+            '<?xml version="1.0"?><model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
+            "<resources></resources><build></build></model>",
+        )
+        zf.writestr("3D/Objects/object-7607.model", padding)
+        zf.writestr(
+            "Metadata/project_settings.config",
+            json.dumps({
+                "filament_colour": ["#080504", "#854A22", "#C4864F", "#DFDFDE"],
+                "layer_height": 0.2,
+                "nozzle_diameter": ["0.4"],
+                "sparse_infill_density": "20%",
+            }),
+        )
+        zf.writestr(
+            "Metadata/slice_info.config",
+            """<?xml version="1.0"?>
+<config>
+  <plate>
+    <metadata key="prediction" value="99600"/>
+    <metadata key="weight" value="518.08"/>
+    <filament id="1" type="PLA" color="#080504" used_m="94.99" used_g="301.59"/>
+    <filament id="2" type="PLA" color="#854A22" used_m="65.12" used_g="206.74"/>
+  </plate>
+</config>""",
+        )
+    bundle = load_3mf_bundle(path)
+    assert bundle["skipped_geometry"] is True
+    assert bundle["mesh"] is None
+    assert bundle["colored_mesh"] is None
+    assert bundle["has_file_colors"] is False
+    assert bundle["file_profile"]["filament_colours"] == ["#080504", "#854A22", "#C4864F", "#DFDFDE"]
+    assert bundle["file_profile"]["slice_stats"]["filament_weight_g"] > 500
+    assert bundle["color_count"] >= 2
+    assert bundle["filament_colours"] == ["#080504", "#854A22", "#C4864F", "#DFDFDE"]
+
+
+def test_export_colored_glb_refuses_jaguar_face_count():
+    mesh = trimesh.Trimesh(
+        vertices=[[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+        faces=[[0, 1, 2]] * (COLORED_PREVIEW_FACE_LIMIT + 1),
+        process=False,
+    )
+    out = os.path.join(tempfile.mkdtemp(), "too_dense.glb")
+    try:
+        export_colored_preview_glb(mesh, out)
+        raise AssertionError("oczekiwano ValueError dla gęstej siatki")
+    except ValueError as err:
+        assert "Pomijam kolorowy GLB" in str(err)
 
 
 if __name__ == "__main__":
