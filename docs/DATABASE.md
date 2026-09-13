@@ -62,7 +62,7 @@ Cena i stan zawsze z tabeli `products`. Klient nie ustawia `total_price`.
 
 | Metoda | Ścieżka | Auth | Działanie |
 |--------|---------|------|-----------|
-| `GET` | `/api/products` | publiczne | Aktywne SKU (`source`: `database` albo `fallback` z seedu). |
+| `GET` | `/api/products` | publiczne | Aktywne SKU (`source`: `database` albo `fallback`). `?category=hardware` filtruje po slugu. Odpowiedź zawiera `categories` (slug, label, hint, count). |
 | `GET` | `/api/products/{id}` | publiczne | Detal po `id` albo `sku`. |
 | `POST` | `/api/products/{id}/cart` | JWT | Linia `orders` `in_cart` typu `shop_sku`. Ponowne dodanie zwiększa ilość. |
 
@@ -70,7 +70,7 @@ Linia sklepowa używa istniejących kolumn `orders` (bez nowej tabeli koszyka):
 
 - `technology` = `shop_sku` (odróżnia od wydruku / breloka)
 - `file_name` = nazwa produktu
-- `material` = kategoria
+- `material` = slug kategorii (`hardware`, `materialy`, …)
 - `layer_height` = sku
 - `total_price` = `price * quantity` z magazynu
 
@@ -98,14 +98,15 @@ Kolejne statusy produkcyjne zostają na później (poza zakresem tej zmiany).
 
 ## Schemat `products`
 
-Ta sama komenda `python db_setup.py` tworzy tabelę i seeduje 4 SKU z poprzedniego mocka `/sklep` (`ON CONFLICT DO NOTHING`).
+Ta sama komenda `python db_setup.py` tworzy tabelę i seeduje 4 SKU z poprzedniego mocka `/sklep` (`ON CONFLICT DO NOTHING`), a potem **normalizuje** `category` do slugów. Gotowe printy (`gotowe-printy`) zostają puste — tylko zabawki użytkowe, bez litofanów i ozdób.
 
 | Kolumna | Typ | Uwagi |
 |---------|-----|--------|
 | `id` | `VARCHAR(50)` PK | To samo co sku w seedzie. |
 | `sku` | `VARCHAR(50)` UNIQUE | Identyfikator magazynowy. |
 | `name`, `description` | tekst | Karta sklepu. |
-| `category`, `badge`, `icon` | opcjonalne | UI `/sklep` (ikona gdy brak `image_url`). |
+| `category` | `VARCHAR(100)` | Stabilny slug: `materialy`, `hardware`, `narzedzia`, `gotowe-printy`, `akcesoria`. `db_setup.py` remapuje stare etykiety (Filamenty, Akcesoria DFM, …). |
+| `badge`, `icon` | opcjonalne | Odznaka (BESTSELLER / NOWY / PROMO albo seed) jest osobna od kategorii. Ikona gdy brak `image_url`. |
 | `price` | `NUMERIC(10,2)` | Cena jednostkowa. |
 | `currency` | `VARCHAR(8)` | Domyślnie `PLN`. |
 | `image_url` | `TEXT` | Opcjonalne zdjęcie. |

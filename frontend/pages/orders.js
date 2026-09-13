@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 import { listOrders } from "../lib/ordersApi";
 import { isShopSkuLine } from "../lib/orderLine";
+import { shopCategoryLabel } from "../lib/shopCategories";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -180,7 +181,7 @@ export default function OrdersPage() {
                       </div>
                       <div>
                         <span className="text-[10px] text-[#94A3B8] block">Kategoria</span>
-                        <strong className="text-[#00E5FF]">{order.material || "Sklep"}</strong>
+                        <strong className="text-[#00E5FF]">{shopCategoryLabel(order.material)}</strong>
                       </div>
                       <div>
                         <span className="text-[10px] text-[#94A3B8] block">SKU</span>

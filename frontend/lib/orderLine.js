@@ -1,3 +1,5 @@
+import { shopCategoryLabel } from "./shopCategories";
+
 export const SHOP_SKU_TECHNOLOGY = "shop_sku";
 
 export function isShopSkuLine(item) {
@@ -7,7 +9,7 @@ export function isShopSkuLine(item) {
 export function cartLineSubtitle(item) {
   if (!item) return "";
   if (isShopSkuLine(item)) {
-    return item.material || "Sklep";
+    return shopCategoryLabel(item.material) || "Sklep";
   }
   return item.material || "";
 }
