@@ -765,8 +765,6 @@ endsolid fixture
         onChange={handleFileInputChange}
       />
 
-      <PrinterLayersBand />
-
       <section
         id="configurator"
         className="relative scroll-mt-20 bg-[#E2E2E2]"
@@ -1061,6 +1059,8 @@ endsolid fixture
           />
         </div>
       </section>
+
+      <PrinterLayersBand />
 
       <main className="max-w-7xl mx-auto px-4 py-10 space-y-8 w-full">
         <div id="materialy" className="w-full">

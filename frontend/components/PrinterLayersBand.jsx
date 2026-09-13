@@ -15,7 +15,7 @@ function prefersReducedMotion() {
  * Cinematic FDM marketing band for the homepage.
  * Lazy-loads the loop when near the viewport, ties play/pause + opacity
  * to IntersectionObserver, and falls back to the poster when the user
- * prefers reduced motion. Sits above the studio — never over it.
+ * prefers reduced motion. Sits below the studio — never over it.
  */
 export default function PrinterLayersBand() {
   const sectionRef = useRef(null);
@@ -148,12 +148,6 @@ export default function PrinterLayersBand() {
             <p className="mt-2 max-w-md text-sm sm:text-[15px] leading-relaxed text-white/75">
               Warstwa po warstwie — od ścieżki filamentu do gotowego detalu.
             </p>
-            <a
-              href="#configurator"
-              className="mt-4 inline-flex text-xs font-semibold uppercase tracking-[0.14em] text-white/80 hover:text-white"
-            >
-              Przejdź do wyceny
-            </a>
           </div>
         </div>
       </div>

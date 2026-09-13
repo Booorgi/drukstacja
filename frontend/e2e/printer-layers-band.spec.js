@@ -5,13 +5,14 @@ test.describe("homepage printer layers band", () => {
     await page.goto("/");
 
     const band = page.locator("[data-printer-layers-band]");
+    await expect(band).toBeAttached();
+    await band.scrollIntoViewIfNeeded();
     await expect(band).toBeVisible();
     await expect(band.getByRole("heading", { name: "Druk warstwami" })).toBeVisible();
 
     const video = page.locator("[data-printer-layers-video]");
     await expect(video).toBeAttached();
     await expect(video).toHaveAttribute("poster", "/videos/printer-layers-poster.jpg");
-    await expect(video).toHaveAttribute("muted", "");
     await expect(video).toHaveAttribute("loop", "");
     await expect(video).toHaveAttribute("playsinline", "");
     await expect(video.locator('source[type="video/webm"]')).toHaveAttribute(
@@ -22,6 +23,9 @@ test.describe("homepage printer layers band", () => {
       "src",
       "/videos/printer-layers-loop.mp4"
     );
+    await expect
+      .poll(async () => video.evaluate((el) => el.muted === true && el.loop === true))
+      .toBe(true);
 
     const configurator = page.locator("#configurator");
     await expect(configurator).toBeVisible();
@@ -31,8 +35,8 @@ test.describe("homepage printer layers band", () => {
     const studioBox = await page.locator("[data-studio-surface]").boundingBox();
     expect(bandBox, "video band should have a box").toBeTruthy();
     expect(studioBox, "studio surface should have a box").toBeTruthy();
-    expect(bandBox.y + bandBox.height, "video band must sit above the studio").toBeLessThanOrEqual(
-      studioBox.y + 1
+    expect(studioBox.y + studioBox.height, "video band must sit below the studio").toBeLessThanOrEqual(
+      bandBox.y + 1
     );
   });
 
