@@ -132,7 +132,9 @@ SEED_FILAMENTS = [
 
 
 # --------------------------------------------------------------------------
-# SKLEP — KATALOG PRODUKTÓW (wcześniejszy mock /sklep)
+# SKLEP — KATALOG PRODUKTÓW (slug kategorii, nie etykieta UI)
+# brass inserts → hardware, PLA + Magigoo → materialy, deburring → narzedzia
+# gotowe-printy / akcesoria: puste (gotowe-printy = tylko zabawki użytkowe)
 # --------------------------------------------------------------------------
 SEED_PRODUCTS = [
     {
@@ -140,7 +142,7 @@ SEED_PRODUCTS = [
         "sku": "sku_brass_inserts",
         "name": "Zestaw Wkładek Gwintowanych M3 / M4 (Brass Inserts 100 szt.)",
         "description": "Wytrzymałe wkładki mosiężne do zgrzewania w druku 3D.",
-        "category": "Akcesoria DFM",
+        "category": "hardware",
         "badge": "Bestseller",
         "icon": "🔩",
         "price": 49.00,
@@ -155,7 +157,7 @@ SEED_PRODUCTS = [
         "sku": "sku_pla_jet_black",
         "name": "Filament PLA Drukstacja Precision 1.75mm (1kg - Jet Black)",
         "description": "Zoptymalizowany filament pod szybki druk o wysokiej precyzji.",
-        "category": "Filamenty",
+        "category": "materialy",
         "badge": "High Flow",
         "icon": "🧵",
         "price": 79.00,
@@ -170,7 +172,7 @@ SEED_PRODUCTS = [
         "sku": "sku_magigoo_original",
         "name": "Klej adhezyjny Magigoo 3D (Original 50ml)",
         "description": "Profesjonalny podkład zapobiegający odklejaniu wydruków.",
-        "category": "Chemia warsztatowa",
+        "category": "materialy",
         "badge": "Pro",
         "icon": "🧪",
         "price": 65.00,
@@ -185,7 +187,7 @@ SEED_PRODUCTS = [
         "sku": "sku_deburring_tool",
         "name": "Precyzyjny nożyk deburring tool do obróbki krawędzi",
         "description": "Ostrze obrotowe do szybkiego usuwania gratu z tworzywa.",
-        "category": "Narzędzia",
+        "category": "narzedzia",
         "badge": "Niezbędnik",
         "icon": "🔪",
         "price": 35.00,
@@ -196,6 +198,38 @@ SEED_PRODUCTS = [
         "active": True,
     },
 ]
+
+
+def normalize_product_categories(cur):
+    """
+    Przepina istniejące SKU i stare etykiety UI na stabilne slugi.
+    ON CONFLICT DO NOTHING nie aktualizuje już wstawionych wierszy.
+    """
+    from shop_categories import CATEGORY_ALIASES, SKU_CATEGORY
+
+    remapped = 0
+    for sku, slug in SKU_CATEGORY.items():
+        cur.execute(
+            """
+            UPDATE products
+            SET category = %s, updated_at = NOW()
+            WHERE sku = %s AND category IS DISTINCT FROM %s
+            """,
+            (slug, sku, slug),
+        )
+        remapped += cur.rowcount or 0
+
+    for alias, slug in CATEGORY_ALIASES.items():
+        cur.execute(
+            """
+            UPDATE products
+            SET category = %s, updated_at = NOW()
+            WHERE lower(btrim(category)) = %s AND category IS DISTINCT FROM %s
+            """,
+            (slug, alias, slug),
+        )
+        remapped += cur.rowcount or 0
+    return remapped
 
 
 def get_db_connection():
@@ -319,6 +353,7 @@ def setup_database():
         ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
         CREATE INDEX IF NOT EXISTS idx_products_active_stock ON products (active, in_stock);
         CREATE INDEX IF NOT EXISTS idx_products_sku ON products (sku);
+        CREATE INDEX IF NOT EXISTS idx_products_category ON products (category);
         """
         cur.execute(products_migration_sql)
 
@@ -334,6 +369,10 @@ def setup_database():
         """
         for item in SEED_PRODUCTS:
             cur.execute(insert_product_sql, item)
+
+        remapped = normalize_product_categories(cur)
+        if remapped:
+            print(f"      ✓ Znormalizowano kategorie sklepu ({remapped} wierszy → slug).")
 
         cur.execute("SELECT COUNT(*) FROM products;")
         products_count = cur.fetchone()[0]

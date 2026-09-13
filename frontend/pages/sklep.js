@@ -1,25 +1,50 @@
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import Navbar from "../components/Navbar";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
 import { supabase } from "../lib/supabaseClient";
 import { fetchCartOrders } from "../lib/ordersApi";
 import { addProductToCart, listProducts } from "../lib/productsApi";
+import {
+  SHOP_CATEGORIES,
+  emptyCategoryCopy,
+  normalizeShopCategory,
+  shopCategoryLabel,
+  shopCategoryMeta,
+} from "../lib/shopCategories";
 
 function productPurchasable(prod) {
   return Boolean(prod?.active) && Boolean(prod?.in_stock) && Number(prod?.stock) > 0;
 }
 
+function mergeCategoryCounts(apiCategories, products) {
+  const fromApi = {};
+  (apiCategories || []).forEach((item) => {
+    if (item?.slug) fromApi[item.slug] = Number(item.count || 0);
+  });
+  return SHOP_CATEGORIES.map((meta) => ({
+    ...meta,
+    count:
+      fromApi[meta.slug] != null
+        ? fromApi[meta.slug]
+        : products.filter((prod) => prod.category === meta.slug).length,
+  }));
+}
+
 export default function ShopPage() {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState([]);
   const [products, setProducts] = useState([]);
+  const [apiCategories, setApiCategories] = useState([]);
   const [catalogState, setCatalogState] = useState("loading");
   const [addingId, setAddingId] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -36,19 +61,26 @@ export default function ShopPage() {
   }, []);
 
   useEffect(() => {
+    if (!router.isReady) return;
+    setSelectedCategory(normalizeShopCategory(router.query.kategoria));
+  }, [router.isReady, router.query.kategoria]);
+
+  useEffect(() => {
     let cancelled = false;
     async function loadCatalog() {
       setCatalogState("loading");
       try {
-        const items = await listProducts();
+        const data = await listProducts();
         if (!cancelled) {
-          setProducts(items);
+          setProducts(data.products || []);
+          setApiCategories(data.categories || []);
           setCatalogState("ready");
         }
       } catch (err) {
         console.warn("Błąd katalogu sklepu:", err);
         if (!cancelled) {
           setProducts([]);
+          setApiCategories([]);
           setCatalogState("error");
         }
       }
@@ -58,6 +90,26 @@ export default function ShopPage() {
       cancelled = true;
     };
   }, []);
+
+  const categories = useMemo(
+    () => mergeCategoryCounts(apiCategories, products),
+    [apiCategories, products]
+  );
+
+  const visibleProducts = useMemo(() => {
+    if (!selectedCategory) return products;
+    return products.filter((prod) => prod.category === selectedCategory);
+  }, [products, selectedCategory]);
+
+  const selectedMeta = shopCategoryMeta(selectedCategory);
+  const emptyCopy = selectedCategory ? emptyCategoryCopy(selectedCategory) : null;
+
+  function selectCategory(slug) {
+    const next = slug || null;
+    setSelectedCategory(next);
+    const query = next ? { kategoria: next } : {};
+    router.replace({ pathname: "/sklep", query }, undefined, { shallow: true });
+  }
 
   async function fetchCart(userId) {
     if (!userId) return;
@@ -124,10 +176,18 @@ export default function ShopPage() {
         </div>
 
         <div>
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">
             <div>
-              <h2 className="text-xl font-bold text-slate-900">Polecane artykuły warsztatowe</h2>
-              <p className="text-xs text-slate-500">Dostawa w 24h z magazynu Drukstacja</p>
+              <h2 className="text-xl font-bold text-slate-900">
+                {selectedMeta ? selectedMeta.label : "Polecane artykuły warsztatowe"}
+              </h2>
+              <p className="text-xs text-slate-500">
+                {selectedCategory === "gotowe-printy"
+                  ? "Zabawki użytkowe — praktyczne printy na co dzień, bez ozdób i litofanów."
+                  : selectedMeta
+                    ? selectedMeta.hint
+                    : "Dostawa w 24h z magazynu Drukstacja"}
+              </p>
             </div>
             <Link
               href="/"
@@ -135,6 +195,54 @@ export default function ShopPage() {
             >
               Potrzebujesz wydruku na wymiar? Wycena 3D →
             </Link>
+          </div>
+
+          <div
+            className="flex flex-wrap gap-2 mb-6"
+            role="tablist"
+            aria-label="Kategorie sklepu"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={!selectedCategory}
+              data-shop-category="all"
+              onClick={() => selectCategory(null)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition ${
+                !selectedCategory
+                  ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:text-slate-900"
+              }`}
+            >
+              Wszystkie
+              <span className={`ml-1.5 font-semibold ${!selectedCategory ? "text-white/70" : "text-slate-400"}`}>
+                {products.length}
+              </span>
+            </button>
+            {categories.map((cat) => {
+              const active = selectedCategory === cat.slug;
+              return (
+                <button
+                  key={cat.slug}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  data-shop-category={cat.slug}
+                  title={cat.hint}
+                  onClick={() => selectCategory(cat.slug)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition ${
+                    active
+                      ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:text-slate-900"
+                  }`}
+                >
+                  {cat.label}
+                  <span className={`ml-1.5 font-semibold ${active ? "text-white/70" : "text-slate-400"}`}>
+                    {cat.count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {catalogState === "loading" ? (
@@ -150,15 +258,24 @@ export default function ShopPage() {
             <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-12 text-center text-sm text-slate-500">
               Katalog jest chwilowo pusty.
             </div>
+          ) : visibleProducts.length === 0 ? (
+            <div
+              data-shop-empty-category={selectedCategory || "all"}
+              className="rounded-2xl border border-dashed border-slate-200 bg-white p-12 text-center space-y-2"
+            >
+              <p className="text-sm font-semibold text-slate-800">{emptyCopy?.title}</p>
+              <p className="text-xs text-slate-500 max-w-lg mx-auto">{emptyCopy?.body}</p>
+            </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {products.map((prod) => {
+              {visibleProducts.map((prod) => {
                 const available = productPurchasable(prod);
                 const price = Number(prod.price || 0);
                 return (
                   <div
                     key={prod.id}
                     data-shop-product={prod.sku || prod.id}
+                    data-shop-product-category={prod.category || ""}
                     className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group"
                   >
                     <div>
@@ -175,7 +292,7 @@ export default function ShopPage() {
                       </div>
                       <div className="flex items-center justify-between gap-2 mb-1.5">
                         <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                          {prod.category || "Sklep"}
+                          {prod.category_label || shopCategoryLabel(prod.category)}
                         </span>
                         {prod.badge ? (
                           <span className="text-[10px] font-bold bg-red-50 text-[#EF4444] px-2 py-0.5 rounded-full border border-red-100">

@@ -85,6 +85,25 @@ def test_public_catalog_uses_seed_without_db(catalog_client):
     assert brass["price"] == 49.0
     assert brass["currency"] == "PLN"
     assert brass["in_stock"] is True
+    assert brass["category"] == "hardware"
+    assert brass["category_label"] == "Hardware"
+    assert brass["badge"] == "Bestseller"
+    pla = next(item for item in body["products"] if item["sku"] == "sku_pla_jet_black")
+    magigoo = next(item for item in body["products"] if item["sku"] == "sku_magigoo_original")
+    tool = next(item for item in body["products"] if item["sku"] == "sku_deburring_tool")
+    assert pla["category"] == "materialy"
+    assert magigoo["category"] == "materialy"
+    assert tool["category"] == "narzedzia"
+    slugs = {item["slug"] for item in body["categories"]}
+    assert slugs == {"materialy", "hardware", "narzedzia", "gotowe-printy", "akcesoria"}
+    counts = {item["slug"]: item["count"] for item in body["categories"]}
+    assert counts["hardware"] == 1
+    assert counts["materialy"] == 2
+    assert counts["narzedzia"] == 1
+    assert counts["gotowe-printy"] == 0
+    assert counts["akcesoria"] == 0
+    gotowe = next(item for item in body["categories"] if item["slug"] == "gotowe-printy")
+    assert gotowe["hint"] == "zabawki użytkowe"
 
 
 def test_public_product_get_by_sku(catalog_client):
@@ -117,7 +136,7 @@ def test_add_to_cart_creates_shop_sku_line(db_client, user_headers):
     assert order["status"] == "in_cart"
     assert order["technology"] == "shop_sku"
     assert order["file_name"].startswith("Zestaw Wkładek")
-    assert order["material"] == "Akcesoria DFM"
+    assert order["material"] == "hardware"
     assert order["layer_height"] == "sku_brass_inserts"
     assert order["quantity"] == 2
     assert order["total_price"] == 98.0
@@ -199,3 +218,41 @@ def test_shop_line_does_not_break_print_line_list(db_client, user_headers):
     kinds = {row["technology"] for row in cart}
     assert "shop_sku" in kinds
     assert "FDM Precision 0.4mm" in kinds
+
+
+def test_filter_by_category_hardware(catalog_client):
+    res = catalog_client.get("/api/products?category=hardware")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["category"] == "hardware"
+    assert {item["sku"] for item in body["products"]} == {"sku_brass_inserts"}
+    assert body["products"][0]["badge"] == "Bestseller"
+    counts = {item["slug"]: item["count"] for item in body["categories"]}
+    assert counts["hardware"] == 1
+    assert counts["materialy"] == 2
+
+
+def test_filter_by_legacy_label_narzedzia(catalog_client):
+    res = catalog_client.get("/api/products?category=Narzędzia")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["category"] == "narzedzia"
+    assert {item["sku"] for item in body["products"]} == {"sku_deburring_tool"}
+
+
+def test_filter_gotowe_printy_is_empty(catalog_client):
+    res = catalog_client.get("/api/products?category=gotowe-printy")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["category"] == "gotowe-printy"
+    assert body["products"] == []
+    gotowe = next(item for item in body["categories"] if item["slug"] == "gotowe-printy")
+    assert gotowe["count"] == 0
+    assert gotowe["label"] == "Gotowe printy"
+    assert gotowe["hint"] == "zabawki użytkowe"
+
+
+def test_unknown_category_is_400(catalog_client):
+    res = catalog_client.get("/api/products?category=litofany")
+    assert res.status_code == 400
+    assert "kategor" in res.json()["detail"].lower()

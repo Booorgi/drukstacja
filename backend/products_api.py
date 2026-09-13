@@ -12,12 +12,18 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from auth import AuthUser, get_current_user
 from db import get_db_connection
 from orders_api import require_db, serialize_order
+from shop_categories import (
+    build_category_counts,
+    category_label,
+    normalize_category_slug,
+    parse_category_filter,
+)
 
 router = APIRouter(prefix="/api/products", tags=["products"])
 
@@ -47,7 +53,25 @@ def serialize_product(row: Any) -> dict:
     if item.get("stock") is None:
         item["stock"] = 0
     item["stock"] = int(item["stock"])
+    slug = normalize_category_slug(item.get("category"), sku=item.get("sku"))
+    item["category"] = slug
+    item["category_label"] = category_label(slug)
     return item
+
+
+def catalog_payload(items: list[dict], source: str, requested: str | None = None) -> dict:
+    active = [item for item in items if item.get("active")]
+    categories = build_category_counts(active)
+    products = [
+        item for item in active if not requested or item.get("category") == requested
+    ]
+    return {
+        "success": True,
+        "source": source,
+        "category": requested,
+        "products": products,
+        "categories": categories,
+    }
 
 
 def _seed_products() -> list[dict]:
@@ -77,8 +101,13 @@ def _lookup_seed_product(product_id: str) -> dict | None:
 
 
 @router.get("")
-def list_products():
-    """Aktywne produkty sklepu. Bez JWT. Fallback do seedu gdy brak DATABASE_URL."""
+def list_products(category: str | None = Query(default=None)):
+    """Aktywne produkty sklepu. Bez JWT. `?category=hardware` filtruje po slugu."""
+    try:
+        requested = parse_category_filter(category)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Nieznana kategoria sklepu.")
+
     conn = get_db_connection()
     if conn:
         try:
@@ -93,21 +122,17 @@ def list_products():
                         """
                     )
                     rows = cur.fetchall() or []
-            return {
-                "success": True,
-                "source": "database",
-                "products": [serialize_product(row) for row in rows],
-            }
+            return catalog_payload(
+                [serialize_product(row) for row in rows],
+                "database",
+                requested,
+            )
         except Exception as err:
             print(f"[WARN] list_products: {err}")
         finally:
             conn.close()
 
-    return {
-        "success": True,
-        "source": "fallback",
-        "products": [item for item in _seed_products() if item.get("active")],
-    }
+    return catalog_payload(_seed_products(), "fallback", requested)
 
 
 @router.get("/{product_id}")
@@ -147,7 +172,7 @@ def add_product_to_cart(
     Metadane sklepu bez nowej kolumny:
       technology   = shop_sku
       file_name    = nazwa produktu
-      material     = kategoria
+      material     = slug kategorii (hardware, materialy, ...)
       layer_height = sku
     Cena zawsze z tabeli products (klient nie ustawia total_price).
     """

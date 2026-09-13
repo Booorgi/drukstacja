@@ -20,13 +20,21 @@ async function readApiError(res) {
   }
 }
 
-export async function listProducts() {
-  const res = await fetch(`${apiBase()}/api/products`);
+export async function listProducts(options = {}) {
+  const params = new URLSearchParams();
+  if (options.category) params.set("category", options.category);
+  const qs = params.toString();
+  const res = await fetch(`${apiBase()}/api/products${qs ? `?${qs}` : ""}`);
   if (!res.ok) {
     throw new Error(await readApiError(res));
   }
   const data = await res.json();
-  return data.products || [];
+  return {
+    products: data.products || [],
+    categories: data.categories || [],
+    source: data.source || null,
+    category: data.category ?? null,
+  };
 }
 
 export async function addProductToCart(productId, quantity = 1) {
