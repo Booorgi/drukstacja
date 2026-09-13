@@ -100,6 +100,8 @@ Kolejne statusy produkcyjne zostają na później (poza zakresem tej zmiany).
 
 Ta sama komenda `python db_setup.py` tworzy tabelę i seeduje 4 SKU z poprzedniego mocka `/sklep` (`ON CONFLICT DO NOTHING`), a potem **normalizuje** `category` do slugów. Gotowe printy (`gotowe-printy`) zostają puste — tylko zabawki użytkowe, bez litofanów i ozdób.
 
+Backend nie wymaga ręcznego odpalenia skryptu po deployu: FastAPI `lifespan` woła `ensure_products_on_startup()` (idempotentne CREATE / seed / remap). Chwilowy brak Postgresa jest logowany i API startuje z fallbackiem in-code. Dockerfile dodatkowo robi `python db_setup.py && uvicorn …` (`PORT` bez zmian).
+
 | Kolumna | Typ | Uwagi |
 |---------|-----|--------|
 | `id` | `VARCHAR(50)` PK | To samo co sku w seedzie. |
