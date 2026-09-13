@@ -28,6 +28,7 @@ from analysis import (
     process_uploaded_file,
     analyze_file,
     export_colored_preview_glb,
+    COLORED_PREVIEW_FACE_LIMIT,
     ALL_SUPPORTED_EXTENSIONS,
     INSTANT_3D_EXTENSIONS,
     INSTANT_MESH_EXTENSIONS,
@@ -1014,58 +1015,145 @@ async def analyze_model_endpoint(
                         result["message"] = f"Złożona bryła CAD ({source_ext.upper()}) wymaga manualnego przygotowania siatki przez inżyniera. Oferta w 24h."
 
             colored_mesh = result.pop("colored_mesh", None)
+            skip_colored_preview = bool(result.get("skipped_colored_preview"))
+            file_profile_early = result.get("file_profile") or {}
+            slice_stats_early = file_profile_early.get("slice_stats") or {}
+
+            # Gęsty 3MF bez siatki: wycena z slice_info Bambu, bez podglądu GLB/STL.
+            if raw_mesh is None and result.get("instant_pricing") is True and slice_stats_early.get("filament_weight_g"):
+                try:
+                    if file_profile_early.get("layer_height"):
+                        layer_height = float(file_profile_early["layer_height"])
+                    if file_profile_early.get("nozzle_size"):
+                        nozzle_size = float(file_profile_early["nozzle_size"])
+                    if file_profile_early.get("infill") is not None:
+                        infill = int(file_profile_early["infill"])
+                    if file_profile_early.get("filament_types"):
+                        filament_type = str(file_profile_early["filament_types"][0])
+                    color_count = int(
+                        result.get("color_count")
+                        or len(result.get("filament_colours") or [])
+                        or len(file_profile_early.get("filament_colours") or [])
+                        or 1
+                    )
+                    slice_data = slice_result_from_bambu_stats(
+                        slice_stats_early,
+                        infill=int(infill),
+                        layer_height=float(layer_height),
+                        filament_type=filament_type,
+                        nozzle_size=float(nozzle_size),
+                    )
+                    result["slicer_engine"] = slice_data.get("engine")
+                    result["print_time_hours"] = slice_data.get("print_time_hours")
+                    result["print_time_formatted"] = slice_data.get("print_time_formatted")
+                    result["filament_weight_g"] = slice_data.get("filament_weight_g")
+                    result["filament_length_m"] = slice_data.get("filament_length_m")
+                    result["filament_volume_cm3"] = slice_data.get("filament_volume_cm3")
+                    result["layer_height"] = float(layer_height)
+                    result["nozzle_size"] = float(nozzle_size)
+                    result["infill"] = int(infill)
+                    result["filament_type"] = filament_type
+                    result["has_supports"] = slice_data.get("has_supports", False)
+                    result["support_lines"] = []
+                    result["flush_cm3"] = slice_data.get("flush_cm3") or 0
+                    result["support_cm3"] = slice_data.get("support_cm3") or 0
+                    result["color_count"] = color_count
+                    result["has_file_colors"] = False
+                    result["preview_glb_url"] = None
+                    result["preview_stl_url"] = None
+                    price_info = calculate_price_from_slicer(
+                        print_time_hours=result["print_time_hours"] or 1.0,
+                        filament_weight_g=result["filament_weight_g"] or 20.0,
+                        material=filament_type,
+                        quantity=1,
+                        layer_height=float(layer_height),
+                        nozzle_size=float(nozzle_size),
+                    )
+                    result["price_breakdown"] = price_info
+                    result["unit_price"] = price_info["unit_price_pln"]
+                    result["message"] = (
+                        "Duży plik 3MF: wycena z zapisanego cięcia Bambu. "
+                        "Podgląd wielokolorowy pominięty, żeby analiza zdążyła wrócić."
+                    )
+                except Exception as meta_err:
+                    print(f"[WARN] Wycena 3MF z samego slice_info nie powiodła się: {meta_err}")
 
             if raw_mesh is not None and result.get("instant_pricing") is True:
                 try:
+                    dense_preview = int(result.get("triangle_count") or len(raw_mesh.faces) or 0) >= COLORED_PREVIEW_FACE_LIMIT
                     oriented_mesh, orientation_info = auto_orient_mesh(raw_mesh)
                     oriented_stl_path = os.path.join(tmp_dir, f"{unique_id}_oriented.stl")
-                    oriented_mesh.export(oriented_stl_path)
-
-                    preview_stl_key = f"models/{unique_id}_oriented.stl"
-                    cached_stl_name = f"{unique_id}_oriented.stl"
-                    cached_path = os.path.join(MODELS_CACHE_DIR, cached_stl_name)
-                    try:
-                        shutil.copyfile(oriented_stl_path, cached_path)
-                    except Exception as c_err:
-                        print(f"[WARN] Błąd zapisu do lokalnego cache: {c_err}")
-                        cached_path = oriented_stl_path
-
-                    background_tasks.add_task(
-                        _bg_upload_cached, cached_path, preview_stl_key, "model/stl"
-                    )
-                    result["preview_stl_key"] = preview_stl_key
-                    result["preview_stl_url"] = f"/api/cached-model/{cached_stl_name}"
                     result["orientation"] = orientation_info
                     result["preview_glb_url"] = None
                     result["preview_glb_key"] = None
+                    result["preview_stl_key"] = None
+                    result["preview_stl_url"] = None
 
-                    # Podgląd GLB z kolorami AMS (STL nie przenosi barw filamentu)
-                    if colored_mesh is not None:
+                    if dense_preview:
+                        print(
+                            f"[INFO] Gęsta siatka ({result.get('triangle_count')} ścianek) "
+                            "— pomijam eksport STL/GLB podglądu, zostawiam wycenę."
+                        )
+                        colored_mesh = None
+                    else:
+                        oriented_mesh.export(oriented_stl_path)
+                        preview_stl_key = f"models/{unique_id}_oriented.stl"
+                        cached_stl_name = f"{unique_id}_oriented.stl"
+                        cached_path = os.path.join(MODELS_CACHE_DIR, cached_stl_name)
                         try:
-                            matrix = orientation_info.get("matrix")
-                            preview_colored = colored_mesh.copy()
-                            if matrix:
-                                preview_colored.apply_transform(np.array(matrix, dtype=float))
-                            glb_path = os.path.join(tmp_dir, f"{unique_id}_preview.glb")
-                            export_colored_preview_glb(preview_colored, glb_path)
-                            cached_glb_name = f"{unique_id}_preview.glb"
-                            cached_glb = os.path.join(MODELS_CACHE_DIR, cached_glb_name)
+                            shutil.copyfile(oriented_stl_path, cached_path)
+                        except Exception as c_err:
+                            print(f"[WARN] Błąd zapisu do lokalnego cache: {c_err}")
+                            cached_path = oriented_stl_path
+
+                        background_tasks.add_task(
+                            _bg_upload_cached, cached_path, preview_stl_key, "model/stl"
+                        )
+                        result["preview_stl_key"] = preview_stl_key
+                        result["preview_stl_url"] = f"/api/cached-model/{cached_stl_name}"
+
+                        # Podgląd GLB z kolorami AMS — pomijany na gęstych 3MF (Jaguar),
+                        # bo split + normalne zjada limit czasu / RAM i zrywa fetch.
+                        preview_face_count = int(
+                            result.get("triangle_count")
+                            or len(getattr(colored_mesh, "faces", []) or [])
+                            or 0
+                        )
+                        if (
+                            colored_mesh is not None
+                            and not skip_colored_preview
+                            and preview_face_count < COLORED_PREVIEW_FACE_LIMIT
+                        ):
                             try:
-                                shutil.copyfile(glb_path, cached_glb)
-                            except Exception:
-                                cached_glb = glb_path
-                            preview_glb_key = f"models/{unique_id}_preview.glb"
-                            background_tasks.add_task(
-                                _bg_upload_cached,
-                                cached_glb,
-                                preview_glb_key,
-                                "model/gltf-binary",
+                                matrix = orientation_info.get("matrix")
+                                preview_colored = colored_mesh.copy()
+                                if matrix:
+                                    preview_colored.apply_transform(np.array(matrix, dtype=float))
+                                glb_path = os.path.join(tmp_dir, f"{unique_id}_preview.glb")
+                                export_colored_preview_glb(preview_colored, glb_path)
+                                cached_glb_name = f"{unique_id}_preview.glb"
+                                cached_glb = os.path.join(MODELS_CACHE_DIR, cached_glb_name)
+                                try:
+                                    shutil.copyfile(glb_path, cached_glb)
+                                except Exception:
+                                    cached_glb = glb_path
+                                preview_glb_key = f"models/{unique_id}_preview.glb"
+                                background_tasks.add_task(
+                                    _bg_upload_cached,
+                                    cached_glb,
+                                    preview_glb_key,
+                                    "model/gltf-binary",
+                                )
+                                result["preview_glb_key"] = preview_glb_key
+                                result["preview_glb_url"] = f"/api/cached-model/{cached_glb_name}"
+                                result["has_file_colors"] = True
+                            except Exception as glb_err:
+                                print(f"[WARN] Nie udało się wyeksportować kolorowego podglądu GLB: {glb_err}")
+                        elif colored_mesh is not None:
+                            print(
+                                f"[INFO] Pomijam eksport GLB ({preview_face_count} ścianek) "
+                                "— analiza i wycena idą dalej."
                             )
-                            result["preview_glb_key"] = preview_glb_key
-                            result["preview_glb_url"] = f"/api/cached-model/{cached_glb_name}"
-                            result["has_file_colors"] = True
-                        except Exception as glb_err:
-                            print(f"[WARN] Nie udało się wyeksportować kolorowego podglądu GLB: {glb_err}")
                     # Liczba slotow AMS i gestosc malowania - NIE zalezna od tego,
                     # czy GLB wrocil (to tylko podglad). Wycena musi doliczyc plykanie.
                     color_count = int(

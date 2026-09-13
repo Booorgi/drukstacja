@@ -21,6 +21,7 @@ import StudioMaterialPicker from "../components/StudioMaterialPicker";
 import StudioMobileSheet from "../components/StudioMobileSheet";
 import PrinterLayersBand from "../components/PrinterLayersBand";
 import { STL_MATERIALS } from "../lib/filament";
+import { peek3mfPrintProfile } from "../lib/peek3mfProfile";
 import useMediaQuery from "../lib/useMediaQuery";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -422,6 +423,28 @@ endsolid fixture
     formData.append("filament_type", matConfig?.name?.split(" ")[0] || "PLA");
 
     const is3mf = file.name.toLowerCase().endsWith(".3mf");
+    let peekedProfile = null;
+    if (is3mf) {
+      try {
+        peekedProfile = await peek3mfPrintProfile(file);
+        if (peekedProfile?.filament_types?.length) {
+          handleSelectMaterial(materialIdFromFilamentType(peekedProfile.filament_types[0]));
+        }
+        if (peekedProfile?.layer_height) setLayerHeight(peekedProfile.layer_height);
+        if (peekedProfile?.nozzle_size) setNozzleSize(peekedProfile.nozzle_size);
+        if (peekedProfile?.infill != null) setInfill(peekedProfile.infill);
+        if (peekedProfile?.filament_colours?.length) {
+          setSelectedColor(peekedProfile.filament_colours[0]);
+          setAnalysisData({ file_profile: peekedProfile });
+        }
+      } catch (peekErr) {
+        console.warn("Nie udało się odczytać profilu 3MF z pliku:", peekErr);
+      }
+    }
+
+    // 180 s to ostatnia deska ratunku w przeglądarce. Railway zrywa bezczynne HTTP
+    // po ~5 min; Failed to fetch zwykle znaczy, że worker padł / proxy ucięło
+    // odpowiedź wcześniej (gęsty XML + GLB), bez nagłówków CORS.
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), is3mf ? 180000 : 55000);
 
@@ -481,6 +504,17 @@ endsolid fixture
         : isNetworkErr
         ? "Nie udało się połączyć z serwerem analizy (przekroczony limit czasu lub zbyt duży plik). Możesz ponowić próbę lub przesłać plik do bezpłatnej wyceny manualnej (RFQ)."
         : `Błąd analizy pliku: ${err.message}`;
+      if ((isAbort || isNetworkErr) && is3mf) {
+        setAnalysisData({
+          instant_pricing: false,
+          type: "rfq_document",
+          category: "Model 3D (analiza przekroczona)",
+          message:
+            "Serwer nie zdążył policzyć geometrii tego 3MF. Profil AMS z pliku zostaje — wyślij RFQ albo spróbuj ponownie.",
+          file_profile: peekedProfile || {},
+          original_filename: file.name,
+        });
+      }
       alert(errorMsg);
     } finally {
       clearTimeout(timeoutId);
