@@ -160,6 +160,36 @@ function placeObjectOnBed(object3d) {
   object3d.updateMatrixWorld(true);
 }
 
+function meshMaterials(mesh) {
+  if (!mesh?.material) return [];
+  return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+}
+
+function ensureMeshNormals(mesh) {
+  const geo = mesh?.geometry;
+  if (!geo || geo.attributes?.normal) return;
+  geo.computeVertexNormals();
+}
+
+function applyFileColorMaterials(mesh, { materialProps, isWireframe }) {
+  const hasVertexColors = Boolean(mesh.geometry?.attributes?.color);
+  meshMaterials(mesh).forEach((mat) => {
+    if (!mat) return;
+    mat.wireframe = isWireframe;
+    if (hasVertexColors) {
+      mat.vertexColors = true;
+      if (mat.color) mat.color.set("#ffffff");
+    }
+    if ("roughness" in mat) mat.roughness = materialProps.roughness;
+    if ("metalness" in mat) mat.metalness = materialProps.metalness;
+    if ("clearcoat" in mat) mat.clearcoat = materialProps.clearcoat ?? 0;
+    if ("clearcoatRoughness" in mat) {
+      mat.clearcoatRoughness = materialProps.clearcoatRoughness || 0.1;
+    }
+    mat.needsUpdate = true;
+  });
+}
+
 function CadModelGeometry({
   url,
   fileName,
@@ -209,6 +239,7 @@ function CadModelGeometry({
             if (!ch.isMesh) return;
             ch.castShadow = true;
             ch.receiveShadow = true;
+            ensureMeshNormals(ch);
             const pos = ch.geometry?.attributes?.position;
             if (pos) {
               const indexed = ch.geometry.index ? ch.geometry.index.count / 3 : pos.count / 3;
@@ -390,11 +421,9 @@ function CadModelGeometry({
     if (!gltfRoot) return undefined;
     gltfRoot.traverse((ch) => {
       if (!ch.isMesh) return;
+      ensureMeshNormals(ch);
       if (useFileColors) {
-        const mats = Array.isArray(ch.material) ? ch.material : [ch.material];
-        mats.forEach((mat) => {
-          if (mat) mat.wireframe = isWireframe;
-        });
+        applyFileColorMaterials(ch, { materialProps, isWireframe });
         return;
       }
       const prev = ch.material;

@@ -27,6 +27,7 @@ from sklearn.cluster import KMeans
 from analysis import (
     process_uploaded_file,
     analyze_file,
+    export_colored_preview_glb,
     ALL_SUPPORTED_EXTENSIONS,
     INSTANT_3D_EXTENSIONS,
     INSTANT_MESH_EXTENSIONS,
@@ -1042,11 +1043,11 @@ async def analyze_model_endpoint(
                     if colored_mesh is not None:
                         try:
                             matrix = orientation_info.get("matrix")
-                            preview_colored = colored_mesh
+                            preview_colored = colored_mesh.copy()
                             if matrix:
                                 preview_colored.apply_transform(np.array(matrix, dtype=float))
                             glb_path = os.path.join(tmp_dir, f"{unique_id}_preview.glb")
-                            preview_colored.export(glb_path, file_type="glb")
+                            export_colored_preview_glb(preview_colored, glb_path)
                             cached_glb_name = f"{unique_id}_preview.glb"
                             cached_glb = os.path.join(MODELS_CACHE_DIR, cached_glb_name)
                             try:

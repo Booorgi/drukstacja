@@ -12,12 +12,15 @@ import trimesh
 from analysis import (
     DEFAULT_AMS_PALETTE,
     decode_paint_slot,
+    export_colored_preview_glb,
     load_3mf_bundle,
 )
 from orientation import SUPPORT_THRESHOLD_ANGLE_DEG, _support_score, auto_orient_mesh
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SAMPLE = os.path.join(HERE, "test_generated_bambu.3mf")
+if not os.path.exists(SAMPLE):
+    SAMPLE = os.path.abspath(os.path.join(HERE, "..", "test_generated_bambu.3mf"))
 
 
 def _glb_json(path: str) -> dict:
@@ -219,6 +222,23 @@ def test_auto_orient_lays_y_up_plate_flat():
     assert info["mode"] == "aabb_flat"
 
 
+def _preview_has_ams_colors(gltf: dict) -> bool:
+    """GLB musi nieść barwy AMS: COLOR_0 albo materiały PBR z różnymi baseColor."""
+    has_vertex_color = False
+    for mesh in gltf.get("meshes") or []:
+        for prim in mesh.get("primitives") or []:
+            if "COLOR_0" in (prim.get("attributes") or {}):
+                has_vertex_color = True
+    materials = gltf.get("materials") or []
+    factors = []
+    for mat in materials:
+        pbr = mat.get("pbrMetallicRoughness") or {}
+        factor = pbr.get("baseColorFactor")
+        if factor:
+            factors.append(tuple(round(c, 3) for c in factor[:3]))
+    return has_vertex_color or len(set(factors)) >= 2
+
+
 def test_oriented_glb_keeps_vertex_colors():
     bundle = load_3mf_bundle(SAMPLE)
     oriented, info = auto_orient_mesh(bundle["mesh"])
@@ -226,12 +246,72 @@ def test_oriented_glb_keeps_vertex_colors():
     preview = bundle["colored_mesh"].copy()
     preview.apply_transform(info["matrix"])
     out = os.path.join(tempfile.gettempdir(), "drukstacja_preview_test.glb")
-    preview.export(out, file_type="glb")
+    export_colored_preview_glb(preview, out)
     gltf = _glb_json(out)
     attrs = gltf["meshes"][0]["primitives"][0]["attributes"]
-    assert "COLOR_0" in attrs
+    assert "NORMAL" in attrs
+    assert _preview_has_ams_colors(gltf)
     assert os.path.getsize(out) > 100
     assert oriented.bounds[0][2] >= -1e-6
+
+
+def _build_multipart_3mf() -> str:
+    """Dwa obiekty bez paint_color — kolory tylko z ekstrudera części (jak MakerLab)."""
+    boxes = [
+        trimesh.creation.box(extents=[10, 10, 2]),
+        trimesh.creation.box(extents=[6, 6, 2]),
+    ]
+    objects_xml = []
+    for idx, box in enumerate(boxes, start=1):
+        verts = "".join(
+            f'<vertex x="{v[0]}" y="{v[1]}" z="{v[2]}"/>' for v in box.vertices
+        )
+        tris = "".join(
+            f'<triangle v1="{f[0]}" v2="{f[1]}" v3="{f[2]}"/>' for f in box.faces
+        )
+        objects_xml.append(
+            f'<object id="{idx}" type="model"><mesh>'
+            f"<vertices>{verts}</vertices><triangles>{tris}</triangles>"
+            "</mesh></object>"
+        )
+    model_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
+        f"<resources>{''.join(objects_xml)}</resources>"
+        '<build><item objectid="1"/><item objectid="2"/></build></model>'
+    )
+    settings_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<config>"
+        '<object id="1"><metadata key="extruder" value="1"/></object>'
+        '<object id="2"><metadata key="extruder" value="2"/></object>'
+        "</config>"
+    )
+    path = os.path.join(tempfile.mkdtemp(), "multipart.3mf")
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("3D/3dmodel.model", model_xml)
+        zf.writestr("Metadata/model_settings.config", settings_xml)
+        zf.writestr(
+            "Metadata/project_settings.config",
+            json.dumps({"filament_colour": ["#080504", "#DFDFDE"]}),
+        )
+    return path
+
+
+def test_preview_glb_has_normals_and_part_colors():
+    """Części AMS bez pędzla też muszą dać oświetlony, wielokolorowy GLB."""
+    path = _build_multipart_3mf()
+    bundle = load_3mf_bundle(path)
+    assert bundle["has_file_colors"] is True
+    assert bundle["part_count"] == 2
+    out = os.path.join(tempfile.gettempdir(), "drukstacja_multipart_preview.glb")
+    export_colored_preview_glb(bundle["colored_mesh"], out)
+    gltf = _glb_json(out)
+    for mesh in gltf["meshes"]:
+        for prim in mesh["primitives"]:
+            assert "NORMAL" in prim["attributes"]
+    assert _preview_has_ams_colors(gltf)
+    assert len(gltf["meshes"]) >= 1
 
 
 if __name__ == "__main__":
