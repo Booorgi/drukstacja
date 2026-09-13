@@ -47,11 +47,15 @@ test.describe("homepage printer layers hero", () => {
 
     const mode = await hero.getAttribute("data-printer-mode");
     if (mode === "scrub") {
+      await expect.poll(async () => video.evaluate((el) => el.paused)).toBe(true);
       const t0 = await video.evaluate((el) => el.currentTime);
       await page.evaluate(() => {
         const studio = document.querySelector("#configurator");
         window.scrollTo(0, Math.max(120, (studio?.offsetTop || 400) * 0.55));
       });
+      await expect
+        .poll(async () => video.evaluate((el) => el.paused), { timeout: 4000 })
+        .toBe(true);
       await expect
         .poll(async () => video.evaluate((el) => el.currentTime), { timeout: 4000 })
         .toBeGreaterThan(t0 + 0.05);
