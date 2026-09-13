@@ -62,6 +62,12 @@ body {
   overflow-x: hidden;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  [data-printer-layers-video] {
+    display: none;
+  }
+}
+
 /* Subtelny, nowoczesny scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

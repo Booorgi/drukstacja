@@ -15,6 +15,7 @@ import StudioEmptyDropzone from "../components/StudioEmptyDropzone";
 import StudioControlRail from "../components/StudioControlRail";
 import StudioQuoteBar from "../components/StudioQuoteBar";
 import StudioScale from "../components/StudioScale";
+import PrinterLayersBand from "../components/PrinterLayersBand";
 import { STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -1058,6 +1059,8 @@ endsolid fixture
           />
         </div>
       </section>
+
+      <PrinterLayersBand />
 
       <main className="max-w-7xl mx-auto px-4 py-10 space-y-8 w-full">
         <div id="materialy" className="w-full">
