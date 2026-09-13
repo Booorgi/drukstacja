@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import trimesh
 import cv2
 import numpy as np
@@ -118,6 +118,7 @@ class ResliceRequest(BaseModel):
 
 
 class Generate3MFRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     preview_stl_key: str | None = None
     file_key: str | None = None
     model_key: str | None = None
