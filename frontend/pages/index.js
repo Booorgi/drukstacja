@@ -4,6 +4,7 @@ import Head from "next/head";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabaseClient";
+import { authHeaders, createOrder, createRfqOrder, fetchCartOrders } from "../lib/ordersApi";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
 import Navbar from "../components/Navbar";
@@ -289,19 +290,11 @@ export default function Home() {
 
   async function fetchCart(userId) {
     if (!userId) return;
-    const { data } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("status", "in_cart")
-      .order("created_at", { ascending: false });
-    if (data) {
-      try {
-        const deletedIds = JSON.parse(localStorage.getItem("deleted_order_ids") || "[]");
-        setCartItems(data.filter((it) => !deletedIds.includes(String(it.id))));
-      } catch {
-        setCartItems(data);
-      }
+    try {
+      const data = await fetchCartOrders();
+      setCartItems(data);
+    } catch (err) {
+      console.warn("Błąd koszyka:", err);
     }
   }
 
@@ -486,22 +479,21 @@ endsolid fixture
       const fileName = selectedFile?.name || analysisData?.original_filename || "Dokumentacja RFQ";
       const categoryName = analysisData?.category || "RFQ";
 
-      const { error } = await supabase.from("orders").insert({
-        user_id: user?.id || null,
-        file_name: `[RFQ] ${fileName} (${categoryName})`,
-        material: `Wycena Inżynierska: ${categoryName}`,
-        technology: `Wycena 24h: ${rfqName || "Klient"} (${targetEmail}${rfqPhone ? ", tel: " + rfqPhone : ""}) | Ilość: ${rfqQuantity} szt. | Uwagi: ${rfqNotes || "Brak uwag"}`,
-        layer_height: "Wg specyfikacji",
-        infill: 0,
-        clean_supports: false,
-        brass_inserts: false,
-        quantity: parseInt(rfqQuantity) || 1,
-        total_price: 0.0,
-        dimensions_mm: [0, 0, 0],
-        status: "rfq_pending",
-      });
-
-      if (error) {
+      try {
+        await createRfqOrder({
+          file_name: `[RFQ] ${fileName} (${categoryName})`,
+          material: `Wycena Inżynierska: ${categoryName}`,
+          technology: `Wycena 24h: ${rfqName || "Klient"} (${targetEmail}${rfqPhone ? ", tel: " + rfqPhone : ""}) | Ilość: ${rfqQuantity} szt. | Uwagi: ${rfqNotes || "Brak uwag"}`,
+          layer_height: "Wg specyfikacji",
+          infill: 0,
+          clean_supports: false,
+          brass_inserts: false,
+          quantity: parseInt(rfqQuantity) || 1,
+          total_price: 0.0,
+          dimensions_mm: [0, 0, 0],
+          status: "rfq_pending",
+        });
+      } catch (error) {
         console.warn("Błąd zapisu RFQ w bazie:", error);
       }
       setRfqSubmitted(true);
@@ -680,66 +672,53 @@ endsolid fixture
 
     setAddingToCart(true);
     try {
-      const { data: newOrder, error } = await supabase
-        .from("orders")
-        .insert({
-          user_id: user.id,
-          file_name: selectedFile?.name || "Model 3D STL",
-          material: `${matConfig.name} (${activeColorObj?.name || selectedColor})`,
-          technology: `${
-            matConfig.group === "composite"
-              ? "FDM Hardened Steel 0.4mm (Carbon)"
-              : matConfig.group === "flex"
-              ? "FDM Direct Drive 0.4mm (Flex TPU)"
-              : `FDM Precision ${nozzleSize}mm`
-          }${analysisData?.print_time_formatted ? ` | Czas: ${analysisData.print_time_formatted}` : ""}${
-            analysisData?.filament_weight_g ? ` | Waga: ${analysisData.filament_weight_g}g` : ""
-          }${scalePercent !== 100 ? ` | Skala: ${scalePercent}%` : ""}`,
-          layer_height: `${layerHeight} mm`,
-          infill: infill,
-          clean_supports: true,
-          brass_inserts: false,
-          quantity: quantity,
-          total_price: parseFloat(totalPrice),
-          dimensions_mm: (analysisData?.source_dimensions_mm || analysisData?.dimensions_mm || [60, 60, 40]).map(
-            (v) => Number((Number(v) * modelScale).toFixed(2))
-          ),
-          status: "in_cart",
-        })
-        .select()
-        .single();
+      const newOrder = await createOrder({
+        file_name: selectedFile?.name || "Model 3D STL",
+        material: `${matConfig.name} (${activeColorObj?.name || selectedColor})`,
+        technology: `${
+          matConfig.group === "composite"
+            ? "FDM Hardened Steel 0.4mm (Carbon)"
+            : matConfig.group === "flex"
+            ? "FDM Direct Drive 0.4mm (Flex TPU)"
+            : `FDM Precision ${nozzleSize}mm`
+        }${analysisData?.print_time_formatted ? ` | Czas: ${analysisData.print_time_formatted}` : ""}${
+          analysisData?.filament_weight_g ? ` | Waga: ${analysisData.filament_weight_g}g` : ""
+        }${scalePercent !== 100 ? ` | Skala: ${scalePercent}%` : ""}`,
+        layer_height: `${layerHeight} mm`,
+        infill: infill,
+        clean_supports: true,
+        brass_inserts: false,
+        quantity: quantity,
+        total_price: parseFloat(totalPrice),
+        dimensions_mm: (analysisData?.source_dimensions_mm || analysisData?.dimensions_mm || [60, 60, 40]).map(
+          (v) => Number((Number(v) * modelScale).toFixed(2))
+        ),
+        status: "in_cart",
+        nozzle_size: String(nozzleSize || "0.4"),
+      });
 
-      if (error) throw error;
-
-      // W tle: wygenerowanie pakietu produkcyjnego .3MF
+      // W tle: wygenerowanie pakietu produkcyjnego .3MF (backend zapisuje URL w Railway)
       if (newOrder?.id && (analysisData?.preview_stl_key || analysisData?.file_key)) {
-        fetch(`${API_URL || ""}/api/generate-3mf`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            order_id: newOrder.id,
-            model_key: analysisData.preview_stl_key || analysisData.file_key,
-            file_name: selectedFile?.name || "model.stl",
-            material: matConfig.name || "PLA",
-            color_hex: activeColorObj?.hex || "#EF4444",
-            layer_height: parseFloat(String(layerHeight || "0.2").replace(/[^\d.]/g, "")) || 0.2,
-            infill: parseInt(String(infill || "20").replace(/[^\d.]/g, "")) || 20,
-            nozzle_size: parseFloat(String(nozzleSize || "0.4").replace(/[^\d.]/g, "")) || 0.4,
-            scale: modelScale,
-          }),
-        })
-          .then(async (res) => {
-            if (res.ok) {
-              const resData = await res.json();
-              if (resData.download_url) {
-                await supabase
-                  .from("orders")
-                  .update({ production_file_url: resData.download_url })
-                  .eq("id", newOrder.id);
-              }
-            }
+        const modelKey = analysisData.preview_stl_key || analysisData.file_key;
+        authHeaders({ "Content-Type": "application/json" }).then((headers) =>
+          fetch(`${API_URL || ""}/api/generate-3mf`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              order_id: newOrder.id,
+              preview_stl_key: analysisData.preview_stl_key || null,
+              file_key: analysisData.file_key || null,
+              model_key: modelKey,
+              file_name: selectedFile?.name || "model.stl",
+              material: matConfig.name || "PLA",
+              color_hex: activeColorObj?.hex || "#EF4444",
+              layer_height: parseFloat(String(layerHeight || "0.2").replace(/[^\d.]/g, "")) || 0.2,
+              infill: parseInt(String(infill || "20").replace(/[^\d.]/g, "")) || 20,
+              nozzle_size: parseFloat(String(nozzleSize || "0.4").replace(/[^\d.]/g, "")) || 0.4,
+              scale: modelScale,
+            }),
           })
-          .catch((e) => console.warn("Background 3MF generation:", e));
+        ).catch((e) => console.warn("Background 3MF generation:", e));
       }
       await fetchCart(user.id);
       setIsCartOpen(true);

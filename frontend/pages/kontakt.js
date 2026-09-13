@@ -4,6 +4,7 @@ import Navbar from "../components/Navbar";
 import AuthModal from "../components/AuthModal";
 import CartDrawer from "../components/CartDrawer";
 import { supabase } from "../lib/supabaseClient";
+import { fetchCartOrders } from "../lib/ordersApi";
 
 const CONTACT_PHONE = "+48 ___ ___ ___";
 
@@ -36,13 +37,11 @@ export default function KontaktPage() {
 
   async function fetchCart(userId) {
     if (!userId) return;
-    const { data } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("status", "in_cart")
-      .order("created_at", { ascending: false });
-    if (data) setCartItems(data);
+    try {
+      setCartItems(await fetchCartOrders());
+    } catch (err) {
+      console.warn("Błąd koszyka:", err);
+    }
   }
 
   async function handleSubmit(e) {
@@ -226,7 +225,14 @@ export default function KontaktPage() {
       </main>
 
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
-      <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} items={cartItems} onRefresh={() => user && fetchCart(user.id)} />
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        items={cartItems}
+        onRemoveItem={(removedId) => {
+          setCartItems((prev) => prev.filter((it) => String(it.id) !== String(removedId)));
+        }}
+      />
     </div>
   );
 }
