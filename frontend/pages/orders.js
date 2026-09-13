@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 import { listOrders } from "../lib/ordersApi";
+import { isShopSkuLine } from "../lib/orderLine";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -128,6 +129,7 @@ export default function OrdersPage() {
           <div className="space-y-6">
             {orders.map((order) => {
               const currentStep = getStepIndex(order.status);
+              const shopLine = isShopSkuLine(order);
               const formattedDate = new Date(order.created_at).toLocaleDateString("pl-PL", {
                 year: "numeric",
                 month: "short",
@@ -144,10 +146,15 @@ export default function OrdersPage() {
                   {/* Nagłówek kafelka zlecenia */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#24324A] pb-4">
                     <div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <span className="text-base font-bold text-white font-tech">
                           {order.file_name}
                         </span>
+                        {shopLine && (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#EF4444]/15 border border-[#EF4444]/40 text-[#F87171]">
+                            SKLEP
+                          </span>
+                        )}
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#161F30] border border-[#24324A] text-[#00E5FF]">
                           ID: #{order.id.slice(0, 8).toUpperCase()}
                         </span>
@@ -165,6 +172,27 @@ export default function OrdersPage() {
                     </div>
                   </div>
 
+                  {shopLine ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs font-mono bg-[#0B0F17]/60 p-4 rounded-xl border border-[#24324A]">
+                      <div>
+                        <span className="text-[10px] text-[#94A3B8] block">Typ</span>
+                        <strong className="text-white">Produkt sklepowy</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-[#94A3B8] block">Kategoria</span>
+                        <strong className="text-[#00E5FF]">{order.material || "Sklep"}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-[#94A3B8] block">SKU</span>
+                        <strong className="text-white">{order.layer_height || "—"}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-[#94A3B8] block">Sztuk</span>
+                        <strong className="text-white">{order.quantity} szt.</strong>
+                      </div>
+                    </div>
+                  ) : (
+                  <>
                   {/* STEPPER STATUSU PRODUKCJI */}
                   <div className="space-y-2">
                     <span className="text-[11px] font-mono text-[#94A3B8] uppercase tracking-wider block">
@@ -289,6 +317,8 @@ export default function OrdersPage() {
                       </div>
                     );
                   })()}
+                  </>
+                  )}
                 </div>
               );
             })}
