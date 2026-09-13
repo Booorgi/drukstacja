@@ -841,7 +841,11 @@ endsolid fixture
           className="studio-surface relative mx-3 mb-3 flex flex-col rounded-2xl bg-[#E2E2E2] ring-1 ring-black/5 sm:mx-4"
         >
           <div data-studio-stage className="studio-stage">
-          <StudioControlRail empty={isEmptyStage} framed={!isLocked3mf}>
+          <StudioControlRail
+            empty={isEmptyStage}
+            framed={!isLocked3mf}
+            pickerOpen={!isMdUp && (materialPickerOpen || colorPickerOpen || printParamsOpen || scaleOpen)}
+          >
             {isLocked3mf ? (
               <StudioFileProfile
                 colours={fileProfile.filament_colours || analysisData?.filament_colours || []}

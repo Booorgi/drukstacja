@@ -109,16 +109,20 @@ test.describe("studio rail pickers", () => {
     await expect(color.getByText("Kolor filamentu")).toBeVisible();
     await assertSheetClearsHeader(page, color);
 
-    await page.locator('[data-studio-wheel="Parametry"]').click();
+    await page.keyboard.press("Escape");
     await expect(color).toHaveCount(0);
+
+    await page.locator('[data-studio-wheel="Parametry"]').click();
     const params = page.locator('[data-studio-print-params-surface="sheet"]');
     await expect(params).toBeVisible();
     await expect(params.getByText("Parametry druku")).toBeVisible();
     await expect(params.getByRole("button", { name: "20%" })).toBeVisible();
     await assertSheetClearsHeader(page, params);
 
-    await page.locator('[data-studio-wheel="Skala"]').click();
+    await page.keyboard.press("Escape");
     await expect(params).toHaveCount(0);
+
+    await page.locator('[data-studio-wheel="Skala"]').click();
     const scale = page.locator('[data-studio-scale-surface="sheet"]');
     await expect(scale).toBeVisible();
     await expect(scale.getByText("Skala modelu")).toBeVisible();
