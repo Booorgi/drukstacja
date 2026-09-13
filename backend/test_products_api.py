@@ -279,6 +279,7 @@ def test_ensure_products_on_startup_survives_errors(monkeypatch):
 
 def test_lifespan_keeps_api_up_when_db_unavailable(monkeypatch):
     monkeypatch.setattr("db.get_db_connection", lambda *args, **kwargs: None)
+    monkeypatch.setattr("products_api.get_db_connection", lambda *args, **kwargs: None)
     from db_setup import ensure_products_on_startup
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -306,9 +307,12 @@ def test_lifespan_keeps_api_up_when_db_unavailable(monkeypatch):
 
 def test_dockerfile_runs_db_setup_before_uvicorn_and_keeps_port():
     dockerfile = Path(__file__).with_name("Dockerfile").read_text()
-    assert "python db_setup.py && uvicorn main:app" in dockerfile
+    assert "python db_setup.py && exec uvicorn main:app" in dockerfile
     assert "${PORT:-8080}" in dockerfile
     assert "EXPOSE 8080" in dockerfile
+    start_sh = Path(__file__).with_name("start.sh").read_text()
+    assert "python db_setup.py" in start_sh
+    assert 'exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-8080}"' in start_sh
 
 
 @pytest.mark.skipif(not _has_database(), reason="Brak DATABASE_URL / TEST_DATABASE_URL")

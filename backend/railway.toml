@@ -1,0 +1,6 @@
+# Railway startCommand is not always a shell. `python db_setup.py && uvicorn`
+# gets exec'd as `python db_setup.py` — process exits, HTTP 502.
+# Schema/seed: FastAPI lifespan (ensure_products_on_startup) + optional start.sh.
+
+[deploy]
+startCommand = "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"
