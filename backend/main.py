@@ -40,9 +40,11 @@ from slicer import convert_step_to_stl, run_slicer, slice_result_from_bambu_stat
 from orientation import auto_orient_mesh
 from packager_3mf import generate_production_3mf, sanitize_filename
 from db import get_db_connection
-from db_setup import ensure_products_on_startup
+from db_setup import ensure_oms_schema, ensure_products_on_startup
 from orders_api import router as orders_router, update_production_file_url
 from products_api import router as products_router
+from checkout_api import router as checkout_router, webhook_router
+from admin_api import router as admin_router
 
 # Katalog cache dla wygenerowanych i zorientowanych siatek STL do szybkiego ponownego cięcia
 MODELS_CACHE_DIR = os.path.join(tempfile.gettempdir(), "drukstacja_cache")
@@ -54,8 +56,9 @@ os.makedirs(PROJECTS_3MF_CACHE_DIR, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Tworzy / seeduje products przy starcie. Błąd DB nie wyłącza API."""
+    """Tworzy / seeduje products i schemat OMS. Błąd DB nie wyłącza API."""
     ensure_products_on_startup()
+    ensure_oms_schema()
     yield
 
 
@@ -72,6 +75,9 @@ app.add_middleware(
 
 app.include_router(orders_router)
 app.include_router(products_router)
+app.include_router(checkout_router)
+app.include_router(webhook_router)
+app.include_router(admin_router)
 
 MAX_FILE_SIZE_MB = 100
 ALLOWED_EXTENSIONS = ALL_SUPPORTED_EXTENSIONS

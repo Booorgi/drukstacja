@@ -12,7 +12,7 @@ import os
 from dataclasses import dataclass
 
 import jwt
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
 
 @dataclass
@@ -124,3 +124,32 @@ def get_optional_user(authorization: str | None = Header(default=None)) -> AuthU
     if not token:
         return None
     return get_current_user(authorization)
+
+
+def admin_emails() -> set[str]:
+    raw = os.getenv("ADMIN_EMAILS") or ""
+    return {part.strip().lower() for part in raw.split(",") if part.strip()}
+
+
+def user_email(user: AuthUser) -> str | None:
+    if user.email:
+        return str(user.email)
+    claims = user.claims or {}
+    email = claims.get("email")
+    if email:
+        return str(email)
+    meta = claims.get("user_metadata") or {}
+    if isinstance(meta, dict) and meta.get("email"):
+        return str(meta["email"])
+    return None
+
+
+def get_admin_user(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    """Staff-only: e-mail z JWT musi być na liście ADMIN_EMAILS (po przecinku)."""
+    allowed = admin_emails()
+    if not allowed:
+        raise HTTPException(status_code=503, detail="Brak konfiguracji ADMIN_EMAILS.")
+    email = user_email(user)
+    if not email or email.strip().lower() not in allowed:
+        raise HTTPException(status_code=403, detail="Brak uprawnień administratora.")
+    return user

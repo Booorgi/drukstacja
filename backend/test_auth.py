@@ -62,6 +62,31 @@ def test_missing_bearer_is_401():
     assert get_bearer_token("Bearer good") == "good"
 
 
+def test_admin_user_matches_env_emails(monkeypatch):
+    from auth import get_admin_user, get_current_user
+
+    monkeypatch.setenv("ADMIN_EMAILS", "ops@drukstacja.pl, second@booorgi.pl")
+    user_id = str(uuid4())
+    token = make_token(user_id, email="second@booorgi.pl")
+    admin = get_admin_user(user=get_current_user(authorization=f"Bearer {token}"))
+    assert admin.id == user_id
+
+    stranger = make_token(email="klient@example.com")
+    with pytest.raises(HTTPException) as exc:
+        get_admin_user(user=get_current_user(authorization=f"Bearer {stranger}"))
+    assert exc.value.status_code == 403
+
+
+def test_admin_without_config_is_503(monkeypatch):
+    from auth import get_admin_user, get_current_user
+
+    monkeypatch.delenv("ADMIN_EMAILS", raising=False)
+    token = make_token(email="ops@drukstacja.pl")
+    with pytest.raises(HTTPException) as exc:
+        get_admin_user(user=get_current_user(authorization=f"Bearer {token}"))
+    assert exc.value.status_code == 503
+
+
 def test_missing_jwt_config_is_503(monkeypatch):
     monkeypatch.delenv("SUPABASE_JWT_SECRET", raising=False)
     monkeypatch.delenv("SUPABASE_URL", raising=False)
