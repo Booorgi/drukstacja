@@ -230,6 +230,84 @@ def test_vectorize_ai_endpoint():
     assert count_svg_subpaths(body["svg"]) < 40
 
 
+def count_svg_vertices(svg: str) -> int:
+    return len(re.findall(r"\bM\s", svg)) + len(re.findall(r"\bL\s", svg))
+
+
+def make_face_with_tiny_features(width=1200, height=900, seed=4) -> bytes:
+    """Duża głowa + małe oczy / błysk — detale, które 800 px + dylatacja 0.4 mm zjada."""
+    rng = np.random.default_rng(seed)
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+    img[:] = (170, 200, 230)
+    cv2.ellipse(img, (width // 2, int(height * 0.52)), (int(width * 0.28), int(height * 0.32)), 0, 0, 360, (30, 28, 26), -1)
+    cv2.ellipse(img, (width // 2, int(height * 0.64)), (int(width * 0.12), int(height * 0.08)), 0, 0, 360, (68, 100, 150), -1)
+    cv2.circle(img, (int(width * 0.42), int(height * 0.48)), 8, (18, 18, 16), -1)
+    cv2.circle(img, (int(width * 0.58), int(height * 0.48)), 8, (18, 18, 16), -1)
+    cv2.circle(img, (int(width * 0.435), int(height * 0.47)), 3, (220, 220, 218), -1)
+    grain = rng.normal(0, 10, img.shape)
+    img = np.clip(img.astype(np.float32) + grain, 0, 255).astype(np.uint8)
+    n = int(0.03 * width * height)
+    ys = rng.integers(0, height, n)
+    xs = rng.integers(0, width, n)
+    img[ys, xs] = rng.integers(0, 256, (n, 3), dtype=np.uint8)
+    return _encode_png(img)
+
+
+def count_midsize_components(labels: np.ndarray, lo: int, hi: int) -> int:
+    n_colors = int(labels.max()) + 1 if labels.size and labels.max() >= 0 else 0
+    total = 0
+    for c in range(n_colors):
+        mask = (labels == c).astype(np.uint8)
+        n_cc, _, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+        for i in range(1, n_cc):
+            area = int(stats[i, cv2.CC_STAT_AREA])
+            if lo <= area <= hi:
+                total += 1
+    return total
+
+
+def test_working_dim_tracks_nozzle():
+    assert main._working_dim(0.4) == 800
+    assert main._working_dim(0.2) == 1600
+    assert main._wall_dilate_iterations(0.2) == 0
+    assert main._wall_dilate_iterations(0.4) == 1
+
+
+def test_fine_nozzle_keeps_more_detail_than_04():
+    """Dysza 0.2 mm: wyższy working_dim, więcej wierzchołków, zachowane drobne plamy."""
+    png = make_face_with_tiny_features()
+    svg02, _, dbg02 = main.image_to_quantized_svg(
+        png, n_colors=4, keep_bg=True, filter_noise=5, detail=10, nozzle_mm=0.2, _debug=True
+    )
+    svg04, _, dbg04 = main.image_to_quantized_svg(
+        png, n_colors=4, keep_bg=True, filter_noise=5, detail=10, nozzle_mm=0.4, _debug=True
+    )
+    assert dbg02["working_dim"] > dbg04["working_dim"]
+    assert dbg02["wall_dilate"] == 0
+    assert dbg04["wall_dilate"] == 1
+    verts02 = count_svg_vertices(svg02)
+    verts04 = count_svg_vertices(svg04)
+    assert verts02 > verts04, f"0.2 mm powinno dać gęstsze ścieżki ({verts02} vs {verts04})"
+    mid02 = count_midsize_components(dbg02["remapped"], 20, 2500)
+    mid04 = count_midsize_components(dbg04["remapped"], 20, 2500)
+    assert mid02 >= mid04, f"0.2 mm powinno zachować drobne regiony ({mid02} vs {mid04})"
+    assert svg02.startswith("<svg")
+
+
+def test_vectorize_ai_accepts_nozzle_mm():
+    png = make_noisy_poster()
+    client = TestClient(main.app)
+    response = client.post(
+        "/vectorize-ai",
+        files={"file": ("poster.png", io.BytesIO(png), "image/png")},
+        data={"n_colors": "4", "keep_bg": "true", "nozzle_mm": "0.2"},
+    )
+    assert response.status_code == 200, response.text[:500]
+    body = response.json()
+    assert body["svg"].startswith("<svg")
+    assert len(body["detected_colors"]) == 4
+
+
 def test_vectorize_ai_accepts_makerlab_params():
     png = make_noisy_poster()
     client = TestClient(main.app)
@@ -257,6 +335,9 @@ if __name__ == "__main__":
     test_detail_10_matches_legacy_epsilon()
     test_organic_photo_keeps_smooth_recognisable_edges()
     test_keep_bg_false_still_returns_svg()
+    test_working_dim_tracks_nozzle()
+    test_fine_nozzle_keeps_more_detail_than_04()
     test_vectorize_ai_endpoint()
     test_vectorize_ai_accepts_makerlab_params()
+    test_vectorize_ai_accepts_nozzle_mm()
     print("test_vectorize_quality: OK")

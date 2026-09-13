@@ -2268,6 +2268,9 @@ export default function KeychainGenerator() {
           formData.append("file", blob, "preprocessed.png");
           formData.append("keep_bg", keepBg.toString());
           formData.append("n_colors", nColorsModal.toString());
+          formData.append("nozzle_mm", "0.2");
+          formData.append("detail", "10");
+          formData.append("filter_noise", "5");
 
           try {
             const res = await fetch(`${API_URL}/vectorize-ai`, {
@@ -3515,6 +3518,9 @@ export default function KeychainGenerator() {
                       <span>Prosty (2)</span>
                       <span>Max AMS (4)</span>
                     </div>
+                    <p className="text-[10px] text-slate-400 mt-1.5 leading-snug">
+                      Wektoryzacja pod dyszę 0.2 mm (wyższa rozdzielczość, bez pogrubiania ścianek 0.4 mm).
+                    </p>
                   </div>
 
                   <div className="flex items-center gap-2 pt-1">
