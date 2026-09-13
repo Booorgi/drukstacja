@@ -2758,7 +2758,7 @@ export default function KeychainGenerator() {
                     data-tilt-enable
                     onClick={enableTilt}
                     disabled={tiltStatus === "pending"}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/85 px-2 py-0.5 text-[10px] font-semibold leading-tight text-slate-600 shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-slate-900 disabled:opacity-60 cursor-pointer"
+                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-slate-200/80 bg-white/85 px-2 py-0.5 text-[10px] font-semibold leading-tight text-slate-600 shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-slate-900 disabled:opacity-60 cursor-pointer"
                   >
                     <svg className="h-2.5 w-2.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                       <rect x="5" y="1.5" width="6" height="13" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
@@ -2770,7 +2770,7 @@ export default function KeychainGenerator() {
                 {tiltHasMotion && (
                   <span
                     data-tilt-active
-                    className="inline-flex items-center rounded-full border border-slate-200/70 bg-white/70 px-2 py-0.5 text-[10px] font-semibold leading-tight text-slate-500 shadow-sm backdrop-blur-sm"
+                    className="inline-flex items-center whitespace-nowrap rounded-full border border-slate-200/70 bg-white/70 px-2 py-0.5 text-[10px] font-semibold leading-tight text-slate-500 shadow-sm backdrop-blur-sm"
                   >
                     Przechyl telefon
                   </span>
@@ -2780,7 +2780,7 @@ export default function KeychainGenerator() {
                   data-scale-compare
                   aria-pressed={scaleContext === "coin"}
                   onClick={() => setScaleContext((prev) => (prev === "coin" ? "off" : "coin"))}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-tight shadow-sm backdrop-blur-sm transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-tight shadow-sm backdrop-blur-sm transition-all cursor-pointer ${
                     scaleContext === "coin"
                       ? "border-amber-400 bg-amber-500 text-white"
                       : "border-slate-200/80 bg-white/85 text-slate-600 hover:bg-white hover:text-slate-900"
