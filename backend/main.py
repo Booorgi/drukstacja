@@ -366,12 +366,68 @@ def _merge_small_regions(
                 if neigh.size == 0:
                     continue
                 vals, counts = np.unique(neigh, return_counts=True)
-                cleaned[component] = int(vals[np.argmax(counts)])
+                target = int(vals[np.argmax(counts)])
+                # Midtones / jasny pysk nie wpadają w najciemniejszą warstwę
+                if (
+                    n_colors >= 3
+                    and target == n_colors - 1
+                    and c_idx <= n_colors - 3
+                    and area >= min_area * 0.5
+                ):
+                    continue
+                cleaned[component] = target
                 merged_any = True
         if not merged_any:
             break
     cleaned[~sil_bool] = -1
     return cleaned
+
+
+def _layer_fractions(remapped: np.ndarray, n_colors: int) -> list[float]:
+    sil_n = float(np.sum(remapped >= 0))
+    if sil_n < 1:
+        return [0.0] * n_colors
+    return [float(np.sum(remapped == i)) / sil_n for i in range(n_colors)]
+
+
+def _needs_luminance_ladder(fracs: list[float], n_colors: int) -> bool:
+    """Czy RGB KMeans oddał twarz dwóm ciemnym warstwom (casus psa / Makerlab)."""
+    if n_colors < 3 or len(fracs) < n_colors:
+        return False
+    pair = fracs[-1] + fracs[-2]
+    # Dwie ciemne zjadają podmiot, a jasna baza (pysk/klatka) jest za mała
+    return pair > 0.56 and fracs[0] < 0.22
+
+
+def _assign_luminance_quantiles(bgr: np.ndarray, sil: np.ndarray, n_colors: int) -> np.ndarray:
+    """Koszyki L* z lekkim biasem w jasne: czerń zostaje warstwą cech (oczy/nos/uszy).
+
+    x^1.25 przy 4 kolorach ≈ 30/28/25/17 zamiast równych 25%. Równy podział nadal
+    zostawiał ciemnobrązową plamę na pysku; Makerlab trzyma czerń na detalach.
+    """
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+    L = lab[:, :, 0].astype(np.float32)
+    sil_bool = sil.astype(bool)
+    fg_L = L[sil_bool]
+    xs = np.linspace(0.0, 1.0, n_colors + 1)
+    pcts = 100.0 * np.power(xs, 1.25)
+    edges = np.percentile(fg_L, pcts)
+    for i in range(1, len(edges)):
+        if edges[i] <= edges[i - 1]:
+            edges[i] = edges[i - 1] + 0.5
+    out = np.full(L.shape, -1, dtype=np.int32)
+    for i in range(n_colors):
+        lo = edges[n_colors - 1 - i]
+        hi = edges[n_colors - i]
+        if i == 0:
+            sel = sil_bool & (L >= lo)
+        elif i == n_colors - 1:
+            sel = sil_bool & (L < hi)
+        else:
+            sel = sil_bool & (L >= lo) & (L < hi)
+        out[sel] = i
+    out[~sil_bool] = -1
+    return out
 
 
 def _collapse_near_duplicate_clusters(
@@ -448,9 +504,10 @@ def image_to_quantized_svg(
     Wektoryzacja pod wielokolorowe breloki (Makerlab-like):
     1. Segmentacja AI / GrabCut (bez zmian w logice wycinania).
     2. Rozdzielczość robocza zależy od dyszy: 0.2 mm → 1600 px, 0.4 mm → 800 px.
-    3. Denoise + scalanie wysp (Filter Noise); próg w mm² maleje z cieńszą dyszą.
-    4. Brak dylatacji ścianek przy dyszy ≤0.25 mm (stary kernel 3×3 był pod 0.4 mm).
-    5. Detail=10 = 0.0010*peri z capem ~1.15 px (gęstsze ścieżki przy wyższym px).
+    3. RGB KMeans; drabina L* tylko gdy dwie ciemne warstwy zjadają pysk (casus Makerlab).
+    4. Denoise + scalanie wysp (Filter Noise); midtones nie wpadają w najciemniejszą warstwę.
+    5. Brak dylatacji ścianek przy dyszy ≤0.25 mm (stary kernel 3×3 był pod 0.4 mm).
+    6. Detail=10 = 0.0010*peri z capem ~1.15 px (gęstsze ścieżki przy wyższym px).
     """
     n_colors = max(2, min(6, n_colors))
     filter_noise = _clamp_int(filter_noise, 0, 10, 5)
@@ -562,11 +619,10 @@ def image_to_quantized_svg(
     denoised = _denoise_for_quantize(bgr_resized, filter_noise)
     fg_pixels = denoised[sil].reshape(-1, 3)
     if len(fg_pixels) < n_colors * 10:
-        fg_pixels = denoised.reshape(-1, 3)
         sil = np.ones((new_h, new_w), dtype=bool)
         sil_u8 = np.full((new_h, new_w), 255, dtype=np.uint8)
 
-    # Próbka tylko na gęstej siatce (~1600 px); 800 px zostaje pełny fit jak w #29
+    fg_pixels = denoised[sil].reshape(-1, 3)
     if len(fg_pixels) > 900_000:
         sample_idx = np.random.RandomState(42).choice(len(fg_pixels), 280_000, replace=False)
         kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=5).fit(fg_pixels[sample_idx])
@@ -575,23 +631,33 @@ def image_to_quantized_svg(
         kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=5).fit(fg_pixels)
         fg_labels = kmeans.labels_
     centers = kmeans.cluster_centers_.astype(int)
-
-    # Sortowanie od najjaśniejszego (baza) do najciemniejszego (detale/źrenice)
     brightness = [0.299 * c[2] + 0.587 * c[1] + 0.114 * c[0] for c in centers]
     sorted_order = np.argsort(brightness)[::-1]
     centers = centers[sorted_order]
-
-    labels = np.full((new_h, new_w), -1, dtype=int)
-    labels[sil] = fg_labels
+    raw = np.full((new_h, new_w), -1, dtype=int)
+    raw[sil] = fg_labels
     remapped = np.full((new_h, new_w), -1, dtype=int)
     for new_idx, old_cluster in enumerate(sorted_order):
-        remapped[labels == old_cluster] = new_idx
+        remapped[raw == old_cluster] = new_idx
+    rebalanced = False
+    fr0 = _layer_fractions(remapped, n_colors)
+    if _needs_luminance_ladder(fr0, n_colors):
+        remapped = _assign_luminance_quantiles(denoised, sil, n_colors)
+        rebalanced = True
+        for i in range(n_colors):
+            pix = denoised[remapped == i]
+            if len(pix) > 0:
+                centers[i] = np.mean(pix, axis=0).astype(int)
 
     remapped = _smooth_label_map(remapped, sil, filter_noise)
     # Filter Noise=5 → ΔE_Lab ≈ 11: tylko niemal identyczne czernie, nie beż z brązem
     remapped = _collapse_near_duplicate_clusters(
         centers, remapped, n_colors, max_lab_dist=8.0 + filter_noise * 0.6
     )
+    fr = _layer_fractions(remapped, n_colors)
+    if _needs_luminance_ladder(fr, n_colors):
+        remapped = _assign_luminance_quantiles(denoised, sil, n_colors)
+        rebalanced = True
     min_area = _min_region_area(filter_noise, new_w, new_h, nozzle_mm=nozzle_mm)
     remapped = _merge_small_regions(remapped, sil, n_colors, min_area)
 
@@ -720,6 +786,9 @@ def image_to_quantized_svg(
             "working_dim": int(target_dim),
             "nozzle_mm": float(nozzle_mm),
             "wall_dilate": int(dilate_iters),
+            "rebalanced": bool(rebalanced),
+            "darkest_frac": float(_layer_fractions(remapped, n_colors)[-1]),
+            "layer_fracs": _layer_fractions(remapped, n_colors),
         }
     return svg, hex_colors
 
