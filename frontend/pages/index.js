@@ -21,6 +21,7 @@ import StudioMaterialPicker from "../components/StudioMaterialPicker";
 import StudioMobileSheet from "../components/StudioMobileSheet";
 import PrinterLayersBand from "../components/PrinterLayersBand";
 import { STL_MATERIALS } from "../lib/filament";
+import useMediaQuery from "../lib/useMediaQuery";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -169,6 +170,7 @@ export default function Home() {
   const scaleParamsRef = useRef(null);
   const scaleSheetRef = useRef(null);
   const modelScale = Math.max(0.05, Math.min(2, scalePercent / 100));
+  const isMdUp = useMediaQuery("(min-width: 768px)");
 
   function handleSelectColor(item) {
     if (item?.hex) setSelectedColor(item.hex);
@@ -875,7 +877,7 @@ endsolid fixture
                     }}
                   />
                   <StudioMobileSheet
-                    open={materialPickerOpen}
+                    open={materialPickerOpen && !isMdUp}
                     onClose={() => setMaterialPickerOpen(false)}
                     closeLabel="Zamknij wybór materiału"
                     panelRef={materialSheetRef}
@@ -901,8 +903,8 @@ endsolid fixture
                     muted={isEmptyStage}
                     label="Kolor"
                   />
-                  {colorPickerOpen ? (
-                    <div className="absolute bottom-0 left-full z-[90] ml-3 hidden md:block">
+                  {colorPickerOpen && isMdUp ? (
+                    <div className="absolute bottom-0 left-full z-[90] ml-3">
                       <StudioColorPicker
                         colors={colorWheelItems}
                         value={selectedColor}
@@ -913,7 +915,7 @@ endsolid fixture
                     </div>
                   ) : null}
                   <StudioMobileSheet
-                    open={colorPickerOpen}
+                    open={colorPickerOpen && !isMdUp}
                     onClose={() => setColorPickerOpen(false)}
                     closeLabel="Zamknij wybór koloru"
                     panelRef={colorSheetRef}
@@ -940,8 +942,8 @@ endsolid fixture
                     label="Parametry"
                     caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
                   />
-                  {printParamsOpen ? (
-                    <div className="absolute bottom-0 left-full z-[90] ml-3 hidden md:block">
+                  {printParamsOpen && isMdUp ? (
+                    <div className="absolute bottom-0 left-full z-[90] ml-3">
                       <StudioPrintParams
                         nozzleSize={nozzleSize}
                         setNozzleSize={setNozzleSize}
@@ -957,7 +959,7 @@ endsolid fixture
                     </div>
                   ) : null}
                   <StudioMobileSheet
-                    open={printParamsOpen}
+                    open={printParamsOpen && !isMdUp}
                     onClose={() => setPrintParamsOpen(false)}
                     closeLabel="Zamknij parametry druku"
                     panelRef={printParamsSheetRef}
@@ -997,8 +999,8 @@ endsolid fixture
                     label="Skala"
                     caption={`${scalePercent}%`}
                   />
-                  {scaleOpen ? (
-                    <div className="absolute bottom-0 left-full z-[90] ml-3 hidden md:block">
+                  {scaleOpen && isMdUp ? (
+                    <div className="absolute bottom-0 left-full z-[90] ml-3">
                       <StudioScale
                         scalePercent={scalePercent}
                         setScalePercent={setScalePercent}
@@ -1010,7 +1012,7 @@ endsolid fixture
                     </div>
                   ) : null}
                   <StudioMobileSheet
-                    open={scaleOpen}
+                    open={scaleOpen && !isMdUp}
                     onClose={() => setScaleOpen(false)}
                     closeLabel="Zamknij skalę modelu"
                     panelRef={scaleSheetRef}
