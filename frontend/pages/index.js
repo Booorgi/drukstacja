@@ -844,7 +844,7 @@ endsolid fixture
           <StudioControlRail
             empty={isEmptyStage}
             framed={!isLocked3mf}
-            pickerOpen={!isMdUp && (materialPickerOpen || colorPickerOpen || printParamsOpen || scaleOpen)}
+            pickerOpen={materialPickerOpen || colorPickerOpen || printParamsOpen || scaleOpen}
           >
             {isLocked3mf ? (
               <StudioFileProfile

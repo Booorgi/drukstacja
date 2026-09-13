@@ -80,6 +80,13 @@ test.describe("studio rail pickers", () => {
     const opacity = await materials.evaluate((el) => Number(getComputedStyle(el).opacity));
     expect(opacity, "desktop material panel must be fully opaque").toBe(1);
 
+    const plaBox = await materials.getByRole("button", { name: /PLA Tough/ }).boundingBox();
+    const hit = await page.evaluate(({ x, y }) => {
+      const el = document.elementFromPoint(x, y);
+      return el ? el.closest("[data-studio-material-option]")?.getAttribute("data-studio-material-option") : null;
+    }, { x: plaBox.x + plaBox.width / 2, y: plaBox.y + plaBox.height / 2 });
+    expect(hit, "material rows must sit above the quote bar").toBe("PLA_STANDARD");
+
     await materials.getByRole("button", { name: /PLA Matte/ }).click();
     await expect(materials).toHaveCount(0);
     await expect(rail.locator("span").filter({ hasText: "PLA Matte / Satin" })).toBeVisible();
