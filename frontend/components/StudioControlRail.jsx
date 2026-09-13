@@ -11,6 +11,7 @@ import React from "react";
 export default function StudioControlRail({
   empty = false,
   framed = true,
+  pickerOpen = false,
   children,
   className = "",
 }) {
@@ -20,7 +21,10 @@ export default function StudioControlRail({
       aria-describedby={empty ? "studio-control-rail-hint" : undefined}
       data-studio-control-rail
       data-empty={empty ? "true" : "false"}
-      className={`relative z-20 flex justify-center px-4 pt-2 md:absolute md:left-3 md:top-3 md:bottom-24 md:items-center md:px-0 md:pt-0 md:pointer-events-none ${className}`}
+      data-picker-open={pickerOpen ? "true" : "false"}
+      className={`relative flex justify-center px-4 pt-2 md:absolute md:left-3 md:top-3 md:bottom-24 md:items-center md:px-0 md:pt-0 md:pointer-events-none ${
+        pickerOpen ? "z-[86]" : "z-20"
+      } ${className}`}
     >
       <div
         data-studio-control-rail-frame

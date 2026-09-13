@@ -38,9 +38,17 @@ export default function StudioPrintParams({
   infill,
   setInfill,
   infillOptions = [10, 20, 40, 60, 100],
+  surface = "popover",
 }) {
   return (
-    <div className="w-[280px] rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10 space-y-4">
+    <div
+      data-studio-print-params
+      data-studio-print-params-surface={surface}
+      role="dialog"
+      aria-label="Parametry druku"
+      className="w-full rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10 space-y-4 md:w-[280px]"
+    >
+      <div className="mx-auto h-1 w-10 rounded-full bg-neutral-200 md:hidden" aria-hidden />
       <p className="text-base font-semibold">Parametry druku</p>
 
       <ParamRow label="Dysza">
