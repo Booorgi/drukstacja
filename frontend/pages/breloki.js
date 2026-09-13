@@ -400,8 +400,6 @@ const KeychainViewer3D = dynamic(
         strokeFilament,
         layerSeparation,
         outlineHull,
-        offsetX = 0,
-        offsetY = 0,
       }) {
         const strokeGeometry = useMemo(() => {
           if (!strokeEnabled || strokeWidth <= 0) return null;
@@ -516,7 +514,7 @@ const KeychainViewer3D = dynamic(
           >
             <mesh
               geometry={strokeGeometry}
-              position={[offsetX, offsetY, baseThickness / 2 + 0.01 + separationOffset]}
+              position={[0, 0, baseThickness / 2 + 0.01 + separationOffset]}
               renderOrder={10}
             >
               <SunluDynamicMaterial filamentInfo={strokeFilament} />
@@ -615,6 +613,7 @@ const KeychainViewer3D = dynamic(
             ? graphicUniformScale
             : (minBound * ((graphicScale || 80) / 100)) / 100;
 
+        // Offset applies only to the motif — never to the parent keychain / rim.
         return (
           <group position={[offsetX, offsetY, (baseThickness || 3) / 2]}>
             <group
@@ -1044,7 +1043,7 @@ const KeychainViewer3D = dynamic(
                     filamentInfo: baseFilament,
                   }}
                 >
-                  <mesh geometry={outlineBaseGeometry} position={[offsetX, offsetY, -baseThickness / 2]}>
+                  <mesh geometry={outlineBaseGeometry} position={[0, 0, -baseThickness / 2]}>
                     <SunluDynamicMaterial filamentInfo={baseFilament} />
                   </mesh>
                 </group>
@@ -1059,7 +1058,7 @@ const KeychainViewer3D = dynamic(
                       filamentInfo: baseFilament,
                     }}
                   >
-                    <mesh position={[offsetX + outlineRingPos.x, offsetY + outlineRingPos.y, 0]}>
+                    <mesh position={[outlineRingPos.x, outlineRingPos.y, 0]}>
                       <torusGeometry args={[5, 1.6, 16, 32]} />
                       <SunluDynamicMaterial filamentInfo={baseFilament} />
                     </mesh>
@@ -1080,8 +1079,6 @@ const KeychainViewer3D = dynamic(
               strokeFilament={strokeFilament}
               layerSeparation={layerSeparation}
               outlineHull={outlineLayout?.hull}
-              offsetX={offsetX}
-              offsetY={offsetY}
             />
 
             <SvgMakerWorldLayers
@@ -1201,8 +1198,6 @@ const KeychainViewer3D = dynamic(
         baseWidth,
         baseHeight,
         baseDiameter,
-        offsetX = 0,
-        offsetY = 0,
       }) {
         const radius = (baseDiameter || 60) / 2;
         if (shapeType === "rect") {
@@ -1214,12 +1209,6 @@ const KeychainViewer3D = dynamic(
           }
           return {
             offset: [0, -baseHeight / 2, 0],
-            restRotation: [0, 0, 0],
-          };
-        }
-        if (shapeType === "outline") {
-          return {
-            offset: [-offsetX, -(offsetY + radius + (hasHole ? 4.5 : 0)), 0],
             restRotation: [0, 0, 0],
           };
         }
@@ -1557,6 +1546,25 @@ const KeychainViewer3D = dynamic(
           }
 
           const handlers = {
+            inspectPartLocals: () => {
+              const target = keychainGroupRef && keychainGroupRef.current;
+              if (!target) return null;
+              target.updateMatrixWorld(true);
+              const locals = [];
+              target.traverse((node) => {
+                if (!node || !node.isMesh || !node.geometry) return;
+                const ud = findExportUserData(node);
+                const local = meshMatrixRelativeTo(node, target);
+                locals.push({
+                  key: logicalPartKey(ud),
+                  role: ud.partRole || "",
+                  x: local.elements[12],
+                  y: local.elements[13],
+                  z: local.elements[14],
+                });
+              });
+              return locals;
+            },
             exportSTL: () => {
               try {
                 const target = keychainGroupRef && keychainGroupRef.current;
@@ -2036,6 +2044,7 @@ export default function KeychainGenerator() {
   const [activeTab, setActiveTab] = useState("shape");
 
   const [graphicScale, setGraphicScale] = useState(75);
+  // Motif-only translation (mm). Must not be applied to the base plate or rim.
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(0);
 
@@ -3159,7 +3168,7 @@ export default function KeychainGenerator() {
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
                     {shapeType === "outline" ? (
                       <p className="text-[11px] text-slate-500">
-                        Przy kształcie „Od grafiki” rozmiar ustawiasz suwakiem Rozmiar i Margines w zakładce Kształt. Przesunięcie poniżej rusza bazę razem z grafiką.
+                        Przy kształcie „Od grafiki” rozmiar ustawiasz suwakiem Rozmiar i Margines w zakładce Kształt. Przesunięcie poniżej rusza tylko motyw — baza i rant zostają.
                       </p>
                     ) : (
                       <div>
@@ -3191,6 +3200,7 @@ export default function KeychainGenerator() {
                           max="30"
                           step="1"
                           value={offsetX}
+                          data-graphic-offset="x"
                           onChange={(e) => setOffsetX(parseInt(e.target.value))}
                           className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
                         />
@@ -3206,6 +3216,7 @@ export default function KeychainGenerator() {
                           max="30"
                           step="1"
                           value={offsetY}
+                          data-graphic-offset="y"
                           onChange={(e) => setOffsetY(parseInt(e.target.value))}
                           className="w-full h-1.5 bg-slate-200 rounded cursor-pointer accent-[#EF4444]"
                         />
