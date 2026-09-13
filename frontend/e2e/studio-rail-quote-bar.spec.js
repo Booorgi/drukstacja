@@ -45,6 +45,7 @@ async function assertRailClearsQuoteBar(page) {
 
   const cta = page.locator("[data-studio-quote-bar]").getByRole("button", { name: /Do koszyka|Wybierz plik/ });
   await expect(cta).toBeVisible();
+  await cta.scrollIntoViewIfNeeded();
   const ctaBox = await cta.boundingBox();
   const sample = page.locator("[data-studio-control-rail-frame] >> text=Materiał");
   await expect(sample).toBeVisible();
@@ -57,9 +58,22 @@ async function assertRailClearsQuoteBar(page) {
   expect(hit).toMatch(/Do koszyka|Wybierz plik/i);
 }
 
+async function revealStudio(page) {
+  await page.evaluate(() => {
+    const el = document.getElementById("configurator");
+    if (!el) return;
+    const top = el.getBoundingClientRect().top + window.scrollY - 72;
+    window.scrollTo(0, Math.max(0, top));
+  });
+  await expect
+    .poll(async () => page.evaluate(() => !document.documentElement.hasAttribute("data-printer-hero-active")))
+    .toBe(true);
+}
+
 test.describe("studio left rail vs sticky quote bar", () => {
   test("empty state keeps rail above the quote bar", async ({ page }) => {
     await page.goto("/");
+    await revealStudio(page);
     await expect(page.getByText("Upuść model tutaj")).toBeVisible();
     await expect(page.locator("[data-studio-control-rail]")).toHaveAttribute("data-empty", "true");
     await expect(page.locator("[data-quote-state='empty']")).toBeVisible();
@@ -68,6 +82,7 @@ test.describe("studio left rail vs sticky quote bar", () => {
 
   test("quoted state keeps rail above the quote bar", async ({ page }) => {
     await page.goto("/?studioLayout=quoted");
+    await revealStudio(page);
     await expect(page.getByRole("heading", { name: "Watch case 1.stl" })).toBeVisible();
     await expect(page.locator("[data-studio-control-rail]")).toHaveAttribute("data-empty", "false");
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
