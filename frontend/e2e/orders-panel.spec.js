@@ -109,9 +109,10 @@ test.describe("orders panel", () => {
     await expect(page.getByRole("heading", { name: "Moje zlecenia" })).toBeVisible();
     await expect(page.locator("[data-site-nav]")).toBeVisible();
     await expect(page.locator("[data-orders-login]")).toContainText("Zaloguj się, aby zobaczyć zlecenia");
-    await expect(page.getByText("PANEL ZLECEŃ KLIENTA")).toHaveCount(0);
+    await expect(page.locator("h1")).toHaveText("Moje zlecenia");
     await expect(page.getByText("LABS 3D")).toHaveCount(0);
     await expect(page.getByText("Wróć do konfiguratora")).toHaveCount(0);
+    await expect(page.locator("header a", { hasText: "DRUKSTACJA" })).toHaveCount(0);
 
     await page.locator("[data-orders-login] button").click();
     await expect(page.getByRole("heading", { name: "Zaloguj się" })).toBeVisible();

@@ -187,7 +187,7 @@ export default function OrdersPage() {
         {showLoginPrompt ? (
           <div
             data-orders-login
-            className="rounded-3xl border border-slate-200/80 bg-white p-10 md:p-12 text-center space-y-4 shadow-sm"
+            className="rounded-3xl border border-slate-200 bg-white p-10 md:p-12 text-center space-y-4 shadow-sm"
           >
             <p className="text-lg font-black text-slate-900 tracking-tight">Zaloguj się, aby zobaczyć zlecenia</p>
             <p className="text-sm text-slate-500 max-w-md mx-auto">
@@ -245,7 +245,7 @@ export default function OrdersPage() {
                   key={order.id}
                   data-order-card={order.id}
                   data-order-kind={shopLine ? "shop" : "print"}
-                  className="bg-white rounded-3xl border border-slate-200/80 p-5 md:p-6 shadow-sm space-y-5"
+                  className="bg-white rounded-3xl border border-slate-200 p-5 md:p-6 shadow-sm space-y-5"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-slate-100">
                     <div className="min-w-0">
