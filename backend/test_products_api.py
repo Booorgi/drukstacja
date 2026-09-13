@@ -35,8 +35,7 @@ def make_token(user_id=None):
 
 @pytest.fixture
 def catalog_client(monkeypatch):
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.setattr("db.get_db_connection", lambda: None)
+    # Nie ruszamy DATABASE_URL — inne testy w sesji korzystają z tej samej env.
     monkeypatch.setattr("products_api.get_db_connection", lambda: None)
 
     from fastapi import FastAPI
