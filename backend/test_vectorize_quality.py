@@ -311,6 +311,70 @@ def test_vectorize_ai_accepts_nozzle_mm():
     assert len(body["detected_colors"]) == 4
 
 
+def make_dark_headed_dog(width=700, height=700) -> bytes:
+    """Ciemna głowa + jasny pysk / klatka — RGB KMeans zjada pysk w czerń."""
+    img = np.zeros((height, width, 4), dtype=np.uint8)
+    img[:, :, :3] = 255
+    # sylwetka
+    cv2.ellipse(img, (width // 2, int(height * 0.48)), (int(width * 0.22), int(height * 0.28)), 0, 0, 360, (40, 36, 32, 255), -1)
+    # klatka / szyja — jasny beż
+    cv2.ellipse(img, (int(width * 0.62), int(height * 0.62)), (int(width * 0.14), int(height * 0.16)), 20, 0, 360, (150, 185, 220, 255), -1)
+    # pysk — mid tan (to nie może zniknąć w czerni)
+    cv2.ellipse(img, (width // 2, int(height * 0.55)), (int(width * 0.12), int(height * 0.10)), 0, 0, 360, (90, 140, 190, 255), -1)
+    # czarne uszy / nos / oczy
+    cv2.ellipse(img, (int(width * 0.40), int(height * 0.28)), (28, 70), -20, 0, 360, (18, 16, 14, 255), -1)
+    cv2.ellipse(img, (int(width * 0.60), int(height * 0.32)), (22, 40), 15, 0, 360, (18, 16, 14, 255), -1)
+    cv2.circle(img, (width // 2, int(height * 0.58)), 16, (12, 10, 10, 255), -1)
+    cv2.circle(img, (int(width * 0.44), int(height * 0.46)), 7, (12, 10, 10, 255), -1)
+    cv2.circle(img, (int(width * 0.56), int(height * 0.46)), 7, (12, 10, 10, 255), -1)
+    cv2.circle(img, (int(width * 0.45), int(height * 0.45)), 2, (230, 230, 228, 255), -1)
+    return _encode_png(img)
+
+
+def _darkest_and_pair_frac(dbg) -> tuple[float, float]:
+    fr = dbg.get("layer_fracs")
+    if not fr:
+        rem = dbg["remapped"]
+        n = int(rem.max()) + 1
+        fr = [float(np.sum(rem == i)) / max(1, float(np.sum(rem >= 0))) for i in range(n)]
+    darkest = fr[-1]
+    pair = fr[-1] + (fr[-2] if len(fr) > 1 else 0.0)
+    return darkest, pair
+
+
+def test_dark_face_not_one_black_blob():
+    """Ciemna głowa psa: pysk/midtones zostają, czerń nie zjada twarzy."""
+    png = make_dark_headed_dog()
+    svg, colors, dbg = main.image_to_quantized_svg(
+        png, n_colors=4, keep_bg=False, filter_noise=5, detail=10, nozzle_mm=0.2, _debug=True
+    )
+    assert len(colors) == 4
+    darkest, pair = _darkest_and_pair_frac(dbg)
+    assert darkest <= 0.36, f"Najciemniejsza warstwa zjada twarz: {darkest:.2f}"
+    assert pair <= 0.62, f"Dwie ciemne warstwy zjadają pysk: {pair:.2f}"
+    light = dbg["layer_fracs"][0]
+    assert light >= 0.12, f"Za mało jasnej bazy (klatka/pysk): {light:.2f}"
+    assert svg.startswith("<svg")
+
+
+def test_real_dog_photo_keeps_muzzle_if_present():
+    """Zdjęcie referencyjne: drabina L* zamiast czarnej plamy na pysku."""
+    path = "/home/ubuntu/.cursor/projects/workspace/assets/7839b2a830384abd8eee78521b16f64a1bc84e6dcbe14b2f026d852cec8e506f.png"
+    if not os.path.isfile(path):
+        path = "/tmp/dogvec/source.png"
+    if not os.path.isfile(path):
+        return
+    png = open(path, "rb").read()
+    _, colors, dbg = main.image_to_quantized_svg(
+        png, n_colors=4, keep_bg=False, filter_noise=5, detail=10, nozzle_mm=0.2, _debug=True
+    )
+    assert len(colors) == 4
+    darkest, pair = _darkest_and_pair_frac(dbg)
+    assert darkest <= 0.32, f"Pies: za dużo czerni {darkest:.2f}"
+    assert pair <= 0.58, f"Pies: dwie ciemne {pair:.2f}"
+    assert dbg["layer_fracs"][0] >= 0.16
+
+
 def test_vectorize_ai_accepts_makerlab_params():
     png = make_noisy_poster()
     client = TestClient(main.app)
@@ -341,6 +405,8 @@ if __name__ == "__main__":
     test_working_dim_tracks_nozzle()
     test_fine_nozzle_keeps_more_detail_than_04()
     test_vectorize_ai_endpoint()
+    test_dark_face_not_one_black_blob()
+    test_real_dog_photo_keeps_muzzle_if_present()
     test_vectorize_ai_accepts_makerlab_params()
     test_vectorize_ai_accepts_nozzle_mm()
     print("test_vectorize_quality: OK")
