@@ -15,6 +15,7 @@ export default function StudioScale({
   scalePercent,
   setScalePercent,
   sourceDimensionsMm = [0, 0, 0],
+  surface = "popover",
 }) {
   const factor = scalePercent / 100;
   const scaled = (sourceDimensionsMm || [0, 0, 0]).map((v) => Number(v) * factor);
@@ -25,7 +26,14 @@ export default function StudioScale({
     sourceMax > 0 ? Math.max(5, Math.min(200, Math.round((FIT_MM / sourceMax) * 100))) : 100;
 
   return (
-    <div className="w-[280px] rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10 space-y-4">
+    <div
+      data-studio-scale
+      data-studio-scale-surface={surface}
+      role="dialog"
+      aria-label="Skala modelu"
+      className="w-full rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10 space-y-4 md:w-[280px]"
+    >
+      <div className="mx-auto h-1 w-10 rounded-full bg-neutral-200 md:hidden" aria-hidden />
       <div>
         <p className="text-base font-semibold">Skala modelu</p>
         <p className="text-xs text-neutral-500 mt-0.5">

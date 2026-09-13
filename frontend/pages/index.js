@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { createPortal } from "react-dom";
 import Head from "next/head";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -18,6 +17,8 @@ import StudioControlRail from "../components/StudioControlRail";
 import StudioQuoteBar from "../components/StudioQuoteBar";
 import StudioScale from "../components/StudioScale";
 import StudioColorPicker from "../components/StudioColorPicker";
+import StudioMaterialPicker from "../components/StudioMaterialPicker";
+import StudioMobileSheet from "../components/StudioMobileSheet";
 import PrinterLayersBand from "../components/PrinterLayersBand";
 import { STL_MATERIALS } from "../lib/filament";
 
@@ -155,18 +156,35 @@ export default function Home() {
   const [addingToCart, setAddingToCart] = useState(false);
   const [printParamsOpen, setPrintParamsOpen] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
   const [scaleOpen, setScaleOpen] = useState(false);
   const [scalePercent, setScalePercent] = useState(100);
   const fileInputRef = useRef(null);
   const printParamsRef = useRef(null);
+  const printParamsSheetRef = useRef(null);
   const colorPickerRef = useRef(null);
   const colorSheetRef = useRef(null);
+  const materialPickerRef = useRef(null);
+  const materialSheetRef = useRef(null);
   const scaleParamsRef = useRef(null);
+  const scaleSheetRef = useRef(null);
   const modelScale = Math.max(0.05, Math.min(2, scalePercent / 100));
 
   function handleSelectColor(item) {
     if (item?.hex) setSelectedColor(item.hex);
     setColorPickerOpen(false);
+  }
+
+  function handleSelectMaterialFromPicker(mat) {
+    if (mat?.id) handleSelectMaterial(mat.id);
+    setMaterialPickerOpen(false);
+  }
+
+  function closeOtherStudioPickers(keep) {
+    if (keep !== "material") setMaterialPickerOpen(false);
+    if (keep !== "color") setColorPickerOpen(false);
+    if (keep !== "params") setPrintParamsOpen(false);
+    if (keep !== "scale") setScaleOpen(false);
   }
 
   // Weryfikacja tworzywa PLA dla dyszy 0.2 mm
@@ -182,21 +200,22 @@ export default function Home() {
   }, [isPlaMaterial, nozzleSize]);
 
   useEffect(() => {
-    if (!printParamsOpen && !scaleOpen && !colorPickerOpen) return undefined;
+    if (!printParamsOpen && !scaleOpen && !colorPickerOpen && !materialPickerOpen) return undefined;
+    function outside(el, sheetEl, target) {
+      return Boolean(el) && !el.contains(target) && !sheetEl?.contains(target);
+    }
     function onDocClick(e) {
-      if (printParamsOpen && printParamsRef.current && !printParamsRef.current.contains(e.target)) {
+      if (printParamsOpen && outside(printParamsRef.current, printParamsSheetRef.current, e.target)) {
         setPrintParamsOpen(false);
       }
-      if (scaleOpen && scaleParamsRef.current && !scaleParamsRef.current.contains(e.target)) {
+      if (scaleOpen && outside(scaleParamsRef.current, scaleSheetRef.current, e.target)) {
         setScaleOpen(false);
       }
-      if (
-        colorPickerOpen &&
-        colorPickerRef.current &&
-        !colorPickerRef.current.contains(e.target) &&
-        !colorSheetRef.current?.contains(e.target)
-      ) {
+      if (colorPickerOpen && outside(colorPickerRef.current, colorSheetRef.current, e.target)) {
         setColorPickerOpen(false);
+      }
+      if (materialPickerOpen && outside(materialPickerRef.current, materialSheetRef.current, e.target)) {
+        setMaterialPickerOpen(false);
       }
     }
     function onKey(e) {
@@ -204,6 +223,7 @@ export default function Home() {
       setPrintParamsOpen(false);
       setScaleOpen(false);
       setColorPickerOpen(false);
+      setMaterialPickerOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onKey);
@@ -211,7 +231,7 @@ export default function Home() {
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onKey);
     };
-  }, [printParamsOpen, scaleOpen, colorPickerOpen]);
+  }, [printParamsOpen, scaleOpen, colorPickerOpen, materialPickerOpen]);
 
   // Dostępne wysokości warstwy dopasowane do wybranej średnicy dyszy
   const layerHeightOptions = useMemo(() => {
@@ -830,76 +850,89 @@ endsolid fixture
               />
             ) : (
               <>
-                <StudioWheel
-                  items={materialWheelItems}
-                  value={selectedMaterial}
-                  onChange={(item) => handleSelectMaterial(item.id)}
-                  size={isEmptyStage ? 42 : 48}
-                  muted={isEmptyStage}
-                  label="Materiał"
-                />
+                <div className="relative z-[80] overflow-visible" ref={materialPickerRef}>
+                  <StudioWheel
+                    items={materialWheelItems}
+                    value={selectedMaterial}
+                    onChange={(item) => handleSelectMaterial(item.id)}
+                    expanded={materialPickerOpen}
+                    size={isEmptyStage ? 42 : 48}
+                    muted={isEmptyStage}
+                    label="Materiał"
+                  />
+                  <button
+                    type="button"
+                    data-studio-material-open
+                    aria-label="Wybierz materiał"
+                    aria-haspopup="dialog"
+                    aria-expanded={materialPickerOpen}
+                    className={`absolute left-1/2 top-0 z-[1] -translate-x-1/2 rounded-full md:hidden ${
+                      isEmptyStage ? "h-[42px] w-[42px]" : "h-12 w-12"
+                    }`}
+                    onClick={() => {
+                      closeOtherStudioPickers("material");
+                      setMaterialPickerOpen((open) => !open);
+                    }}
+                  />
+                  <StudioMobileSheet
+                    open={materialPickerOpen}
+                    onClose={() => setMaterialPickerOpen(false)}
+                    closeLabel="Zamknij wybór materiału"
+                    panelRef={materialSheetRef}
+                  >
+                    <StudioMaterialPicker
+                      materials={filteredMaterials}
+                      value={selectedMaterial}
+                      surface="sheet"
+                      onSelect={handleSelectMaterialFromPicker}
+                    />
+                  </StudioMobileSheet>
+                </div>
                 <div className="relative z-[80] overflow-visible" ref={colorPickerRef}>
                   <StudioWheel
                     items={colorWheelItems}
                     value={selectedColor}
                     expanded={colorPickerOpen}
                     onOpen={() => {
-                      setPrintParamsOpen(false);
-                      setScaleOpen(false);
+                      closeOtherStudioPickers("color");
                       setColorPickerOpen((open) => !open);
                     }}
                     size={isEmptyStage ? 42 : 48}
                     muted={isEmptyStage}
                     label="Kolor"
                   />
-                  {colorPickerOpen && (
-                    <>
-                      <div className="absolute bottom-0 left-full z-[90] ml-3 hidden md:block">
-                        <StudioColorPicker
-                          colors={colorWheelItems}
-                          value={selectedColor}
-                          materialName={matConfig?.name}
-                          surface="popover"
-                          onSelect={handleSelectColor}
-                        />
-                      </div>
-                      {typeof document !== "undefined"
-                        ? createPortal(
-                            <div className="md:hidden">
-                              <button
-                                type="button"
-                                aria-label="Zamknij wybór koloru"
-                                className="fixed inset-0 z-[85] bg-black/25"
-                                onClick={() => setColorPickerOpen(false)}
-                              />
-                              <div
-                                ref={colorSheetRef}
-                                className="fixed inset-x-0 bottom-0 z-[90] p-3"
-                              >
-                                <div className="mx-auto max-w-sm">
-                                  <StudioColorPicker
-                                    colors={colorWheelItems}
-                                    value={selectedColor}
-                                    materialName={matConfig?.name}
-                                    surface="sheet"
-                                    onSelect={handleSelectColor}
-                                  />
-                                </div>
-                              </div>
-                            </div>,
-                            document.body
-                          )
-                        : null}
-                    </>
-                  )}
+                  {colorPickerOpen ? (
+                    <div className="absolute bottom-0 left-full z-[90] ml-3 hidden md:block">
+                      <StudioColorPicker
+                        colors={colorWheelItems}
+                        value={selectedColor}
+                        materialName={matConfig?.name}
+                        surface="popover"
+                        onSelect={handleSelectColor}
+                      />
+                    </div>
+                  ) : null}
+                  <StudioMobileSheet
+                    open={colorPickerOpen}
+                    onClose={() => setColorPickerOpen(false)}
+                    closeLabel="Zamknij wybór koloru"
+                    panelRef={colorSheetRef}
+                  >
+                    <StudioColorPicker
+                      colors={colorWheelItems}
+                      value={selectedColor}
+                      materialName={matConfig?.name}
+                      surface="sheet"
+                      onSelect={handleSelectColor}
+                    />
+                  </StudioMobileSheet>
                 </div>
                 <div className="relative z-[80] overflow-visible" ref={printParamsRef}>
                   <StudioWheel
                     items={printParamWheelItems}
                     expanded={printParamsOpen}
                     onOpen={() => {
-                      setScaleOpen(false);
-                      setColorPickerOpen(false);
+                      closeOtherStudioPickers("params");
                       setPrintParamsOpen((open) => !open);
                     }}
                     size={isEmptyStage ? 42 : 48}
@@ -907,8 +940,8 @@ endsolid fixture
                     label="Parametry"
                     caption={`${nozzleSize} · ${Number(layerHeight).toFixed(2)} · ${infill}%`}
                   />
-                  {printParamsOpen && (
-                    <div className="absolute bottom-full left-1/2 z-[90] mb-2 -translate-x-1/2 md:bottom-0 md:left-full md:top-auto md:mb-0 md:ml-3 md:translate-x-0">
+                  {printParamsOpen ? (
+                    <div className="absolute bottom-0 left-full z-[90] ml-3 hidden md:block">
                       <StudioPrintParams
                         nozzleSize={nozzleSize}
                         setNozzleSize={setNozzleSize}
@@ -919,9 +952,29 @@ endsolid fixture
                         infill={infill}
                         setInfill={setInfill}
                         infillOptions={[10, 20, 40, 60, 100]}
+                        surface="popover"
                       />
                     </div>
-                  )}
+                  ) : null}
+                  <StudioMobileSheet
+                    open={printParamsOpen}
+                    onClose={() => setPrintParamsOpen(false)}
+                    closeLabel="Zamknij parametry druku"
+                    panelRef={printParamsSheetRef}
+                  >
+                    <StudioPrintParams
+                      nozzleSize={nozzleSize}
+                      setNozzleSize={setNozzleSize}
+                      isPlaMaterial={isPlaMaterial}
+                      layerHeight={layerHeight}
+                      setLayerHeight={setLayerHeight}
+                      layerHeightOptions={layerHeightOptions}
+                      infill={infill}
+                      setInfill={setInfill}
+                      infillOptions={[10, 20, 40, 60, 100]}
+                      surface="sheet"
+                    />
+                  </StudioMobileSheet>
                 </div>
                 <div className="relative z-[80] overflow-visible" ref={scaleParamsRef}>
                   <StudioWheel
@@ -936,8 +989,7 @@ endsolid fixture
                     }
                     expanded={scaleOpen}
                     onOpen={() => {
-                      setPrintParamsOpen(false);
-                      setColorPickerOpen(false);
+                      closeOtherStudioPickers("scale");
                       setScaleOpen((open) => !open);
                     }}
                     size={isEmptyStage ? 42 : 48}
@@ -945,17 +997,33 @@ endsolid fixture
                     label="Skala"
                     caption={`${scalePercent}%`}
                   />
-                  {scaleOpen && (
-                    <div className="absolute bottom-full left-1/2 z-[90] mb-2 -translate-x-1/2 md:bottom-0 md:left-full md:top-auto md:mb-0 md:ml-3 md:translate-x-0">
+                  {scaleOpen ? (
+                    <div className="absolute bottom-0 left-full z-[90] ml-3 hidden md:block">
                       <StudioScale
                         scalePercent={scalePercent}
                         setScalePercent={setScalePercent}
                         sourceDimensionsMm={
                           analysisData?.source_dimensions_mm || analysisData?.dimensions_mm || [0, 0, 0]
                         }
+                        surface="popover"
                       />
                     </div>
-                  )}
+                  ) : null}
+                  <StudioMobileSheet
+                    open={scaleOpen}
+                    onClose={() => setScaleOpen(false)}
+                    closeLabel="Zamknij skalę modelu"
+                    panelRef={scaleSheetRef}
+                  >
+                    <StudioScale
+                      scalePercent={scalePercent}
+                      setScalePercent={setScalePercent}
+                      sourceDimensionsMm={
+                        analysisData?.source_dimensions_mm || analysisData?.dimensions_mm || [0, 0, 0]
+                      }
+                      surface="sheet"
+                    />
+                  </StudioMobileSheet>
                 </div>
               </>
             )}
