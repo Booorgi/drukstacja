@@ -60,7 +60,7 @@ Frontend **nie** pisze już do tabeli Supabase `orders`. Klient Supabase (`front
 | `POST` | `/api/checkout/cancel` | JWT | Przywraca nieopłacone linie do koszyka. |
 | `GET` | `/api/checkout/{id}` | JWT | Własny nagłówek + linie. |
 | `POST` | `/api/webhooks/stripe` | podpis Stripe | `checkout.session.completed` / `payment_intent.succeeded` → `paid` + `in_queue` (idempotentnie). |
-| `GET` | `/api/admin/checkouts` | JWT + `ADMIN_EMAILS` | Lista opłaconych / w pipeline. |
+| `GET` | `/api/admin/checkouts` | JWT + `ADMIN_EMAILS` | Lista opłaconych / w pipeline. `?status=`, `?payment=paid\|pending\|all`, `?q=` (ID, e-mail, plik). Zwraca też `counts`. |
 | `PATCH` | `/api/admin/checkouts/{id}` | JWT + `ADMIN_EMAILS` | `in_queue` → `in_production` → `post_processing` → `shipped`. |
 
 Istniejące endpointy silnika druku bez zmian kontraktu:
@@ -125,6 +125,7 @@ Ta sama komenda `python db_setup.py` (oraz `ensure_oms_schema()` w FastAPI `life
 | `payment_status` | `VARCHAR` | `pending` / `paid` / `cancelled` / `failed`. |
 | `production_status` | `VARCHAR` | `pending_payment` → `in_queue` → `in_production` → `post_processing` → `shipped`. |
 | `stripe_session_id`, `stripe_payment_intent_id` | tekst | Idempotencja webhooka. |
+| `customer_email` | tekst | E-mail z JWT w chwili checkoutu — szukanie w `/admin`. |
 | `created_at`, `updated_at` | `TIMESTAMPTZ` | |
 
 Stripe Dashboard → Webhooks → endpoint:

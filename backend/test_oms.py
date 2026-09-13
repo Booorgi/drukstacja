@@ -170,6 +170,7 @@ def test_create_checkout_freezes_cart_and_returns_stripe_url(client, user_a, mon
     assert checkout["shipping_city"] == "Warszawa"
     assert checkout["shipping_country"] == "PL"
     assert checkout["nip"] == "5252345678"
+    assert checkout["customer_email"] == "tester@example.com"
     assert checkout["shipping"] == 0
     assert checkout["total"] >= 30
     line_ids = {row["id"] for row in checkout["lines"]}
@@ -270,6 +271,9 @@ def test_admin_authz_and_status_transition(client, user_a, admin_user, monkeypat
     assert listed_before_pay.status_code == 200
     pending_ids = {row["id"] for row in listed_before_pay.json()["checkouts"]}
     assert created["id"] not in pending_ids
+    listed_all = client.get("/api/admin/checkouts?payment=all", headers=admin_headers)
+    assert created["id"] in {row["id"] for row in listed_all.json()["checkouts"]}
+    assert listed_all.json()["counts"]["pending_payment"] >= 1
 
     from checkout_api import apply_stripe_event
 
@@ -288,9 +292,26 @@ def test_admin_authz_and_status_transition(client, user_a, admin_user, monkeypat
 
     listed = client.get("/api/admin/checkouts", headers=admin_headers)
     assert listed.status_code == 200
-    found = next(row for row in listed.json()["checkouts"] if row["id"] == created["id"])
+    listed_body = listed.json()
+    found = next(row for row in listed_body["checkouts"] if row["id"] == created["id"])
     assert found["production_status"] == "in_queue"
+    assert found["customer_email"] == "tester@example.com"
     assert found["lines"]
+    assert listed_body["counts"]["in_queue"] >= 1
+
+    by_queue = client.get("/api/admin/checkouts?status=in_queue", headers=admin_headers)
+    assert created["id"] in {row["id"] for row in by_queue.json()["checkouts"]}
+    by_print = client.get("/api/admin/checkouts?status=in_production", headers=admin_headers)
+    assert created["id"] not in {row["id"] for row in by_print.json()["checkouts"]}
+    by_email = client.get("/api/admin/checkouts?q=tester@example.com", headers=admin_headers)
+    assert created["id"] in {row["id"] for row in by_email.json()["checkouts"]}
+    by_file = client.get("/api/admin/checkouts?q=farm.stl", headers=admin_headers)
+    assert created["id"] in {row["id"] for row in by_file.json()["checkouts"]}
+    pending_tab = client.get(
+        "/api/admin/checkouts?status=pending_payment",
+        headers=admin_headers,
+    )
+    assert pending_tab.status_code == 200
 
     skip = client.patch(
         f"/api/admin/checkouts/{created['id']}",

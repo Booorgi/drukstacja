@@ -51,3 +51,4 @@ Przy starcie API `ensure_oms_schema()` dopina tabelę `checkouts` i `orders.chec
 
 `/admin` — tylko gdy e-mail z JWT ∈ `ADMIN_EMAILS`.
 Status: `in_queue` → `in_production` → `post_processing` → `shipped`. Link 3MF gdy `production_file_url` jest na linii.
+Filtry (`status`, `payment`) i `q` (ID / e-mail / plik) na `GET /api/admin/checkouts`. Kolejka podświetla nowe `in_queue` i odświeża się co 20 s.
