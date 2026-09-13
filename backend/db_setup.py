@@ -200,6 +200,64 @@ SEED_PRODUCTS = [
 ]
 
 
+PRODUCTS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS products (
+    id VARCHAR(50) PRIMARY KEY,
+    sku VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    category VARCHAR(100),
+    badge VARCHAR(50),
+    icon VARCHAR(16),
+    price NUMERIC(10, 2) NOT NULL,
+    currency VARCHAR(8) NOT NULL DEFAULT 'PLN',
+    image_url TEXT,
+    stock INT NOT NULL DEFAULT 0,
+    in_stock BOOLEAN NOT NULL DEFAULT true,
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS sku VARCHAR(50);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS badge VARCHAR(50);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS icon VARCHAR(16);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS price NUMERIC(10, 2);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS currency VARCHAR(8);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS stock INT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS in_stock BOOLEAN;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS active BOOLEAN;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+CREATE INDEX IF NOT EXISTS idx_products_active_stock ON products (active, in_stock);
+CREATE INDEX IF NOT EXISTS idx_products_sku ON products (sku);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products (category);
+"""
+
+INSERT_PRODUCT_SQL = """
+INSERT INTO products (
+    id, sku, name, description, category, badge, icon,
+    price, currency, image_url, stock, in_stock, active, created_at, updated_at
+) VALUES (
+    %(id)s, %(sku)s, %(name)s, %(description)s, %(category)s, %(badge)s, %(icon)s,
+    %(price)s, %(currency)s, %(image_url)s, %(stock)s, %(in_stock)s, %(active)s, NOW(), NOW()
+)
+ON CONFLICT (id) DO NOTHING;
+"""
+
+STARTUP_DB_CONNECT_TIMEOUT_SEC = 8
+
+
+def _first_value(row):
+    if row is None:
+        return 0
+    if isinstance(row, dict):
+        return next(iter(row.values()))
+    return row[0]
+
+
 def normalize_product_categories(cur):
     """
     Przepina istniejące SKU i stare etykiety UI na stabilne slugi.
@@ -230,6 +288,58 @@ def normalize_product_categories(cur):
         )
         remapped += cur.rowcount or 0
     return remapped
+
+
+def ensure_products_schema(cur):
+    """
+    Idempotentny schemat + seed katalogu sklepu.
+    CREATE IF NOT EXISTS / ON CONFLICT DO NOTHING / remap kategorii.
+    """
+    cur.execute(PRODUCTS_SCHEMA_SQL)
+    for item in SEED_PRODUCTS:
+        cur.execute(INSERT_PRODUCT_SQL, item)
+
+    remapped = normalize_product_categories(cur)
+    cur.execute("SELECT COUNT(*) FROM products;")
+    products_count = int(_first_value(cur.fetchone()))
+    cur.execute("SELECT COUNT(*) FROM products WHERE active = true AND in_stock = true;")
+    products_available = int(_first_value(cur.fetchone()))
+    return {
+        "count": products_count,
+        "available": products_available,
+        "remapped": remapped,
+    }
+
+
+def ensure_products_on_startup() -> bool:
+    """
+    Bootstrap tabeli products przy starcie FastAPI.
+
+    Nigdy nie przerywa procesu: brak DATABASE_URL albo chwilowy błąd DB
+    kończy się logiem — /api/products zostaje przy fallbacku in-code.
+    """
+    try:
+        from db import get_db_connection
+
+        conn = get_db_connection(connect_timeout=STARTUP_DB_CONNECT_TIMEOUT_SEC)
+        if conn is None:
+            print("[WARN] products schema: brak DATABASE_URL / połączenia — katalog użyje fallback.")
+            return False
+        try:
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                stats = ensure_products_schema(cur)
+            extra = f", zremapowano {stats['remapped']} kategorii" if stats["remapped"] else ""
+            print(
+                f"[INFO] products schema gotowa "
+                f"({stats['count']} SKU, {stats['available']} aktywnych{extra})."
+            )
+            return True
+        finally:
+            conn.close()
+    except Exception as err:
+        print(f"[WARN] products schema: {err} — katalog użyje fallback.")
+        return False
 
 
 def get_db_connection():
@@ -320,65 +430,13 @@ def setup_database():
         print("      ✓ Tabela 'orders' ma kolumny UI (w tym nozzle_size) i indeksy user/status.")
 
         print("[3/4] Tworzenie tabeli 'products' i seed katalogu sklepu...")
-        products_migration_sql = """
-        CREATE TABLE IF NOT EXISTS products (
-            id VARCHAR(50) PRIMARY KEY,
-            sku VARCHAR(50) NOT NULL UNIQUE,
-            name VARCHAR(255) NOT NULL,
-            description TEXT,
-            category VARCHAR(100),
-            badge VARCHAR(50),
-            icon VARCHAR(16),
-            price NUMERIC(10, 2) NOT NULL,
-            currency VARCHAR(8) NOT NULL DEFAULT 'PLN',
-            image_url TEXT,
-            stock INT NOT NULL DEFAULT 0,
-            in_stock BOOLEAN NOT NULL DEFAULT true,
-            active BOOLEAN NOT NULL DEFAULT true,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS sku VARCHAR(50);
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT;
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100);
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS badge VARCHAR(50);
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS icon VARCHAR(16);
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS price NUMERIC(10, 2);
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS currency VARCHAR(8);
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS stock INT;
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS in_stock BOOLEAN;
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS active BOOLEAN;
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-        ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
-        CREATE INDEX IF NOT EXISTS idx_products_active_stock ON products (active, in_stock);
-        CREATE INDEX IF NOT EXISTS idx_products_sku ON products (sku);
-        CREATE INDEX IF NOT EXISTS idx_products_category ON products (category);
-        """
-        cur.execute(products_migration_sql)
-
-        insert_product_sql = """
-        INSERT INTO products (
-            id, sku, name, description, category, badge, icon,
-            price, currency, image_url, stock, in_stock, active, created_at, updated_at
-        ) VALUES (
-            %(id)s, %(sku)s, %(name)s, %(description)s, %(category)s, %(badge)s, %(icon)s,
-            %(price)s, %(currency)s, %(image_url)s, %(stock)s, %(in_stock)s, %(active)s, NOW(), NOW()
+        stats = ensure_products_schema(cur)
+        if stats["remapped"]:
+            print(f"      ✓ Znormalizowano kategorie sklepu ({stats['remapped']} wierszy → slug).")
+        print(
+            f"      ✓ Tabela 'products' gotowa "
+            f"({stats['count']} SKU, {stats['available']} aktywnych na stanie)."
         )
-        ON CONFLICT (id) DO NOTHING;
-        """
-        for item in SEED_PRODUCTS:
-            cur.execute(insert_product_sql, item)
-
-        remapped = normalize_product_categories(cur)
-        if remapped:
-            print(f"      ✓ Znormalizowano kategorie sklepu ({remapped} wierszy → slug).")
-
-        cur.execute("SELECT COUNT(*) FROM products;")
-        products_count = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM products WHERE active = true AND in_stock = true;")
-        products_available = cur.fetchone()[0]
-        print(f"      ✓ Tabela 'products' gotowa ({products_count} SKU, {products_available} aktywnych na stanie).")
 
         print(f"[4/4] Seedowanie {len(SEED_FILAMENTS)} filamentów (ON CONFLICT DO NOTHING)...")
         insert_sql = """

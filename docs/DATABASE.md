@@ -100,6 +100,10 @@ Kolejne statusy produkcyjne zostają na później (poza zakresem tej zmiany).
 
 Ta sama komenda `python db_setup.py` tworzy tabelę i seeduje 4 SKU z poprzedniego mocka `/sklep` (`ON CONFLICT DO NOTHING`), a potem **normalizuje** `category` do slugów. Gotowe printy (`gotowe-printy`) zostają puste — tylko zabawki użytkowe, bez litofanów i ozdób.
 
+Backend nie wymaga ręcznego odpalenia skryptu po deployu: FastAPI `lifespan` woła `ensure_products_on_startup()` (idempotentne CREATE / seed / remap). Chwilowy brak Postgresa jest logowany i API startuje z fallbackiem in-code.
+
+Dockerfile / `start.sh` dodatkowo odpalają `db_setup.py`, a potem `exec uvicorn` na `${PORT:-8080}`. Na Railway `startCommand` **nie jest shellem**: `python db_setup.py && uvicorn` kończy proces po seedzie, a `--port ${PORT:-8080}` dochodzi do uvicorn jako literał. Użyj `sh start.sh` albo `uvicorn main:app --host 0.0.0.0 --port 8080`.
+
 | Kolumna | Typ | Uwagi |
 |---------|-----|--------|
 | `id` | `VARCHAR(50)` PK | To samo co sku w seedzie. |

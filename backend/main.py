@@ -14,6 +14,7 @@ import base64
 from pathlib import Path
 
 from typing import Any
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,6 +40,7 @@ from slicer import convert_step_to_stl, run_slicer, slice_result_from_bambu_stat
 from orientation import auto_orient_mesh
 from packager_3mf import generate_production_3mf, sanitize_filename
 from db import get_db_connection
+from db_setup import ensure_products_on_startup
 from orders_api import router as orders_router, update_production_file_url
 from products_api import router as products_router
 
@@ -50,8 +52,15 @@ os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
 PROJECTS_3MF_CACHE_DIR = os.path.join(tempfile.gettempdir(), "drukstacja_3mf")
 os.makedirs(PROJECTS_3MF_CACHE_DIR, exist_ok=True)
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Tworzy / seeduje products przy starcie. Błąd DB nie wyłącza API."""
+    ensure_products_on_startup()
+    yield
+
+
 # Inicjalizacja aplikacji FastAPI
-app = FastAPI(title="Drukstacja API", version="0.5.0")
+app = FastAPI(title="Drukstacja API", version="0.5.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
