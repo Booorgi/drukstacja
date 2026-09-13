@@ -15,6 +15,7 @@ import StudioEmptyDropzone from "../components/StudioEmptyDropzone";
 import StudioControlRail from "../components/StudioControlRail";
 import StudioQuoteBar from "../components/StudioQuoteBar";
 import StudioScale from "../components/StudioScale";
+import PrinterLayersBand from "../components/PrinterLayersBand";
 import { STL_MATERIALS } from "../lib/filament";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -763,6 +764,8 @@ endsolid fixture
         className="hidden"
         onChange={handleFileInputChange}
       />
+
+      <PrinterLayersBand />
 
       <section
         id="configurator"
