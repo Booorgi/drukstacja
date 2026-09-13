@@ -68,9 +68,15 @@ test.describe("studio rail pickers", () => {
 
     const wheelBox = await materialWheel.boundingBox();
     const pickerBox = await materials.boundingBox();
+    const viewport = page.viewportSize();
     expect(pickerBox.x, "desktop popover sits to the right of the Materiał wheel").toBeGreaterThan(
       wheelBox.x + wheelBox.width - 8
     );
+    expect(pickerBox.y, "desktop popover stays below the top of the viewport").toBeGreaterThanOrEqual(0);
+    expect(pickerBox.y + pickerBox.height, "desktop popover stays on screen").toBeLessThanOrEqual(
+      viewport.height + 1
+    );
+    await expect(materials.getByRole("button", { name: /PLA Tough/ })).toBeInViewport();
     const opacity = await materials.evaluate((el) => Number(getComputedStyle(el).opacity));
     expect(opacity, "desktop material panel must be fully opaque").toBe(1);
 

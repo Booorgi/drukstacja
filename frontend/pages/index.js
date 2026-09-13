@@ -870,7 +870,7 @@ endsolid fixture
                     label="Materiał"
                   />
                   {materialPickerOpen && isMdUp ? (
-                    <div className="absolute bottom-0 left-full z-[90] ml-3">
+                    <div className="absolute top-0 left-full z-[90] ml-3">
                       <StudioMaterialPicker
                         materials={filteredMaterials}
                         value={selectedMaterial}
