@@ -268,8 +268,19 @@ def _ellipse_kernel(size: int):
     return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
 
 
-def _denoise_for_quantize(bgr: np.ndarray, filter_noise: int) -> np.ndarray:
-    """Bilateral + median przed KMeans — gasi ziarno, bez ruszania epsilon konturów."""
+def _denoise_for_quantize(
+    bgr: np.ndarray, filter_noise: int, texture: bool = False
+) -> np.ndarray:
+    """Bilateral + median przed KMeans — gasi ziarno, bez ruszania epsilon konturów.
+
+    texture=True (tylko po drabinie L*): lżejszy blur, żeby sierść nie stała się plamą.
+    Globalnie tego nie wolno — na posterze FN=5 wyspy skaczą z ~7 do 150+.
+    """
+    if texture:
+        den = cv2.bilateralFilter(bgr, d=5, sigmaColor=28.0, sigmaSpace=28.0)
+        if filter_noise >= 1:
+            den = cv2.medianBlur(den, 3)
+        return den
     diameter = 5 if filter_noise < 4 else (7 if filter_noise < 8 else 9)
     sigma = 16.0 + 10.0 * filter_noise  # Filter Noise=5 → ~66
     den = cv2.bilateralFilter(bgr, d=diameter, sigmaColor=sigma, sigmaSpace=sigma)
@@ -289,7 +300,8 @@ def _min_region_area(
     # Cieńsza dysza zmniejsza próg tylko gdy naprawdę pracujemy na gęstszej siatce
     if long_side >= 1400:
         px_ref *= (_clamp_float(nozzle_mm, 0.15, 0.80, 0.2) / 0.4) ** 2
-    return max(8, int(px_ref * res_scale))
+    area = max(8, int(px_ref * res_scale))
+    return area
 
 
 def count_label_islands(labels: np.ndarray, n_colors: int, max_area: int | None = None) -> int:
@@ -306,7 +318,9 @@ def count_label_islands(labels: np.ndarray, n_colors: int, max_area: int | None 
     return total
 
 
-def _smooth_label_map(labels: np.ndarray, sil: np.ndarray, filter_noise: int) -> np.ndarray:
+def _smooth_label_map(
+    labels: np.ndarray, sil: np.ndarray, filter_noise: int, texture: bool = False
+) -> np.ndarray:
     """Median na mapie etykiet — usuwa salt-and-pepper bez mieszania barw."""
     sil_bool = sil.astype(bool)
     if filter_noise < 1:
@@ -314,8 +328,11 @@ def _smooth_label_map(labels: np.ndarray, sil: np.ndarray, filter_noise: int) ->
         out[~sil_bool] = -1
         return out
 
-    # 5×5 przy FN=5 jak w #29; na siatce 1600 px to i tak połowa „mm” względem 800 px
-    k = 3 if filter_noise < 3 else (5 if filter_noise < 7 else 7)
+    # 5×5 przy FN=5 jak w #29; texture (drabina L*) zostawia kępki 3×3
+    if texture:
+        k = 3
+    else:
+        k = 3 if filter_noise < 3 else (5 if filter_noise < 7 else 7)
     work = (labels + 1).astype(np.uint8)  # tło -1 → 0
     blurred = cv2.medianBlur(work, k)
     out = labels.copy()
@@ -469,12 +486,50 @@ def _collapse_near_duplicate_clusters(
     return out
 
 
-def _approx_epsilon(contour, detail: int) -> float:
+def _etch_lighter_boundaries(
+    labels: np.ndarray, sil: np.ndarray, n_colors: int, min_component: int = 80
+) -> np.ndarray:
+    """1 px ciemniejszej krawędzi dużych plam → jaśniejszy sąsiad (mozaika, bez dziur).
+
+    Małych kępek nie ruszamy — obrys 1 px rozrywał je w pieprz.
+    """
+    sil_bool = sil.astype(bool)
+    work = labels.copy()
+    large = np.zeros(work.shape, dtype=bool)
+    for c_idx in range(n_colors):
+        mask = ((work == c_idx) & sil_bool).astype(np.uint8)
+        n_cc, cc, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        for i in range(1, n_cc):
+            if int(stats[i, cv2.CC_STAT_AREA]) >= min_component:
+                large[cc == i] = True
+    neigh_min = np.full(work.shape, n_colors + 8, dtype=np.int32)
+    for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        rolled = np.roll(np.roll(work, dy, axis=0), dx, axis=1)
+        valid = sil_bool.copy()
+        if dy == -1:
+            valid[-1, :] = False
+        elif dy == 1:
+            valid[0, :] = False
+        if dx == -1:
+            valid[:, -1] = False
+        elif dx == 1:
+            valid[:, 0] = False
+        valid &= rolled >= 0
+        neigh_min = np.where(valid, np.minimum(neigh_min, rolled), neigh_min)
+    edge = sil_bool & large & (work >= 0) & (neigh_min < work)
+    work[edge] = neigh_min[edge]
+    work[~sil_bool] = -1
+    return work
+
+
+def _approx_epsilon(contour, detail: int, tight: bool = False) -> float:
     """Detail=10 = stary pipeline (0.0010 * peri). Niższy detail grubiej upraszcza, z capem w px."""
     peri = float(cv2.arcLength(contour, True))
     d = max(1, min(10, int(detail)))
     frac = 0.0010 + (10 - d) * 0.0007  # 10→0.0010, 1→0.0073
     cap = 1.15 + (10 - d) * 0.35  # 10→1.15px, żeby duże plamy nie stały się drzazgami
+    if tight:
+        cap = min(cap, 0.85)
     return min(cap, max(0.25, frac * peri))
 
 
@@ -505,9 +560,10 @@ def image_to_quantized_svg(
     1. Segmentacja AI / GrabCut (bez zmian w logice wycinania).
     2. Rozdzielczość robocza zależy od dyszy: 0.2 mm → 1600 px, 0.4 mm → 800 px.
     3. RGB KMeans; drabina L* tylko gdy dwie ciemne warstwy zjadają pysk (casus Makerlab).
-    4. Denoise + scalanie wysp (Filter Noise); midtones nie wpadają w najciemniejszą warstwę.
-    5. Brak dylatacji ścianek przy dyszy ≤0.25 mm (stary kernel 3×3 był pod 0.4 mm).
-    6. Detail=10 = 0.0010*peri z capem ~1.15 px (gęstsze ścieżki przy wyższym px).
+    4. Po drabinie: lżejszy denoise / merge, 1 px obrys w jaśniejszy sąsiad (sierść, nie sól).
+    5. Denoise + scalanie wysp (Filter Noise); midtones nie wpadają w najciemniejszą warstwę.
+    6. Brak dylatacji ścianek przy dyszy ≤0.25 mm (stary kernel 3×3 był pod 0.4 mm).
+    7. Detail=10 = 0.0010*peri z capem ~1.15 px (0.85 px przy drabinie — kępki futra).
     """
     n_colors = max(2, min(6, n_colors))
     filter_noise = _clamp_int(filter_noise, 0, 10, 5)
@@ -640,26 +696,40 @@ def image_to_quantized_svg(
     for new_idx, old_cluster in enumerate(sorted_order):
         remapped[raw == old_cluster] = new_idx
     rebalanced = False
+    texture_src = denoised
     fr0 = _layer_fractions(remapped, n_colors)
     if _needs_luminance_ladder(fr0, n_colors):
-        remapped = _assign_luminance_quantiles(denoised, sil, n_colors)
+        texture_src = _denoise_for_quantize(bgr_resized, filter_noise, texture=True)
+        remapped = _assign_luminance_quantiles(texture_src, sil, n_colors)
         rebalanced = True
         for i in range(n_colors):
-            pix = denoised[remapped == i]
+            pix = texture_src[remapped == i]
             if len(pix) > 0:
                 centers[i] = np.mean(pix, axis=0).astype(int)
 
-    remapped = _smooth_label_map(remapped, sil, filter_noise)
+    remapped = _smooth_label_map(remapped, sil, filter_noise, texture=rebalanced)
     # Filter Noise=5 → ΔE_Lab ≈ 11: tylko niemal identyczne czernie, nie beż z brązem
     remapped = _collapse_near_duplicate_clusters(
         centers, remapped, n_colors, max_lab_dist=8.0 + filter_noise * 0.6
     )
     fr = _layer_fractions(remapped, n_colors)
     if _needs_luminance_ladder(fr, n_colors):
-        remapped = _assign_luminance_quantiles(denoised, sil, n_colors)
+        texture_src = _denoise_for_quantize(bgr_resized, filter_noise, texture=True)
+        remapped = _assign_luminance_quantiles(texture_src, sil, n_colors)
         rebalanced = True
     min_area = _min_region_area(filter_noise, new_w, new_h, nozzle_mm=nozzle_mm)
+    if rebalanced:
+        # ~0.4 mm kępka przy 1600 px / 100 mm; pieprz nadal znika
+        min_area = max(20, int(min_area * 0.45))
     remapped = _merge_small_regions(remapped, sil, n_colors, min_area)
+    if rebalanced:
+        remapped = _etch_lighter_boundaries(
+            remapped, sil, n_colors, min_component=max(80, min_area * 2)
+        )
+        # Obrys może odłamać 1 px — zbierz pieprz, nie kępki
+        remapped = _merge_small_regions(
+            remapped, sil, n_colors, max(16, min_area // 2), max_passes=2
+        )
 
     # Kolory z oczyszczonych regionów (puste klastry zachowują środek KMeans)
     for i in range(n_colors):
@@ -680,8 +750,9 @@ def image_to_quantized_svg(
 
     for c_idx in range(n_colors):
         m = (remapped == c_idx).astype(np.uint8) * 255
-        # Tylko 2×2 open — close+mocny open rwał krawędzie w drzazgi
-        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, kernel_open)
+        # 2×2 open gładzi kępki sierści; po drabinie L* zostawiamy ząbek Makerlab
+        if not rebalanced:
+            m = cv2.morphologyEx(m, cv2.MORPH_OPEN, kernel_open)
         if dilate_iters > 0:
             m = cv2.dilate(m, kernel_wall, iterations=dilate_iters)
         # Ograniczenie do zewnętrznej sylwetki
@@ -724,7 +795,7 @@ def image_to_quantized_svg(
 
         hier = hierarchy[0]
         compound_paths = []
-        min_contour = max(15, int(min_area * 0.25))
+        min_contour = max(8 if rebalanced else 15, int(min_area * 0.25))
         min_hole = max(6, int(min_area * 0.12))
 
         for i in range(len(contours)):
@@ -736,7 +807,7 @@ def image_to_quantized_svg(
             if cv2.contourArea(cnt) < min_contour:
                 continue
 
-            approx = cv2.approxPolyDP(cnt, _approx_epsilon(cnt, detail), True)
+            approx = cv2.approxPolyDP(cnt, _approx_epsilon(cnt, detail, tight=rebalanced), True)
             pts = approx.reshape(-1, 2)
             if len(pts) < 3 or _is_needle_polygon(pts, min_area):
                 continue
@@ -753,7 +824,9 @@ def image_to_quantized_svg(
             while child != -1:
                 hole_cnt = contours[child]
                 if cv2.contourArea(hole_cnt) >= min_hole:
-                    hole_approx = cv2.approxPolyDP(hole_cnt, _approx_epsilon(hole_cnt, detail), True)
+                    hole_approx = cv2.approxPolyDP(
+                        hole_cnt, _approx_epsilon(hole_cnt, detail, tight=rebalanced), True
+                    )
                     hole_pts = hole_approx.reshape(-1, 2)
                     if len(hole_pts) >= 3 and not _is_needle_polygon(hole_pts, min_area):
                         hsx, hsy = map_pt(hole_pts[0])
