@@ -236,9 +236,14 @@ def _working_dim(nozzle_mm: float) -> int:
     return int(np.clip(round(800.0 * (0.4 / n)), 800, 2000))
 
 
-def _wall_dilate_iterations(nozzle_mm: float) -> int:
-    """Dylatacja 3×3 była pod dyszę 0.4 mm i zjada detale 0.2 mm."""
-    return 0 if _clamp_float(nozzle_mm, 0.15, 0.80, 0.2) <= 0.25 else 1
+def _wall_dilate_iterations(nozzle_mm: float, long_side: int | None = None) -> int:
+    """Bez dylatacji tylko gdy siatka jest gęsta (≈1600 px) i dysza ≤0.25 mm."""
+    n = _clamp_float(nozzle_mm, 0.15, 0.80, 0.2)
+    if n <= 0.25 and long_side is not None and long_side >= 1400:
+        return 0
+    if n <= 0.25 and long_side is None:
+        return 0
+    return 1
 
 
 def _ellipse_kernel(size: int):
@@ -262,10 +267,14 @@ def _denoise_for_quantize(bgr: np.ndarray, filter_noise: int) -> np.ndarray:
 def _min_region_area(
     filter_noise: int, width: int, height: int, nozzle_mm: float = 0.2
 ) -> int:
-    """Min. wyspa w px. FN=5 @800/0.4 ≈ 90 px; przy 0.2 mm i 1600 px też ≈ 90 px (mniej mm²)."""
-    res_scale = (max(width, height) / 800.0) ** 2
-    nozzle_scale = (_clamp_float(nozzle_mm, 0.15, 0.80, 0.2) / 0.4) ** 2
-    return max(8, int((5.0 * (filter_noise ** 1.8)) * res_scale * nozzle_scale))
+    """Min. wyspa w px. FN=5 @800 ≈ 90 px. Przy faktycznych 1600 px i 0.2 mm też ≈ 90 px (mniej mm²)."""
+    long_side = max(width, height)
+    res_scale = (long_side / 800.0) ** 2
+    px_ref = 5.0 * (filter_noise ** 1.8)
+    # Cieńsza dysza zmniejsza próg tylko gdy naprawdę pracujemy na gęstszej siatce
+    if long_side >= 1400:
+        px_ref *= (_clamp_float(nozzle_mm, 0.15, 0.80, 0.2) / 0.4) ** 2
+    return max(8, int(px_ref * res_scale))
 
 
 def count_label_islands(labels: np.ndarray, n_colors: int, max_area: int | None = None) -> int:
@@ -282,9 +291,7 @@ def count_label_islands(labels: np.ndarray, n_colors: int, max_area: int | None 
     return total
 
 
-def _smooth_label_map(
-    labels: np.ndarray, sil: np.ndarray, filter_noise: int, nozzle_mm: float = 0.2
-) -> np.ndarray:
+def _smooth_label_map(labels: np.ndarray, sil: np.ndarray, filter_noise: int) -> np.ndarray:
     """Median na mapie etykiet — usuwa salt-and-pepper bez mieszania barw."""
     sil_bool = sil.astype(bool)
     if filter_noise < 1:
@@ -292,10 +299,8 @@ def _smooth_label_map(
         out[~sil_bool] = -1
         return out
 
-    if nozzle_mm <= 0.25:
-        k = 3 if filter_noise < 7 else 5
-    else:
-        k = 3 if filter_noise < 3 else (5 if filter_noise < 7 else 7)
+    # 5×5 przy FN=5 jak w #29; na siatce 1600 px to i tak połowa „mm” względem 800 px
+    k = 3 if filter_noise < 3 else (5 if filter_noise < 7 else 7)
     work = (labels + 1).astype(np.uint8)  # tło -1 → 0
     blurred = cv2.medianBlur(work, k)
     out = labels.copy()
@@ -456,7 +461,11 @@ def image_to_quantized_svg(
         target_dim = min(wanted, max(native * 2, 800))
     scale = target_dim / native
     new_w, new_h = max(int(w * scale), 1), max(int(h * scale), 1)
-    interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+    # AREA przy downscale i przy dużym upscale (sól/pieprz nie rośnie do wysp 90 px)
+    if scale < 1.0 or scale > 1.35:
+        interp = cv2.INTER_AREA
+    else:
+        interp = cv2.INTER_LINEAR
     bgr_resized = cv2.resize(bgr, (new_w, new_h), interpolation=interp)
 
     # 1. USUWANIE TŁA I SEGMENTACJA
@@ -542,8 +551,8 @@ def image_to_quantized_svg(
         sil = np.ones((new_h, new_w), dtype=bool)
         sil_u8 = np.full((new_h, new_w), 255, dtype=np.uint8)
 
-    # Przy 1600 px fit na próbce, predict na wszystkich pikselach FG
-    if len(fg_pixels) > 280_000:
+    # Próbka tylko na gęstej siatce (~1600 px); 800 px zostaje pełny fit jak w #29
+    if len(fg_pixels) > 900_000:
         sample_idx = np.random.RandomState(42).choice(len(fg_pixels), 280_000, replace=False)
         kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=5).fit(fg_pixels[sample_idx])
         fg_labels = kmeans.predict(fg_pixels)
@@ -563,7 +572,7 @@ def image_to_quantized_svg(
     for new_idx, old_cluster in enumerate(sorted_order):
         remapped[labels == old_cluster] = new_idx
 
-    remapped = _smooth_label_map(remapped, sil, filter_noise, nozzle_mm=nozzle_mm)
+    remapped = _smooth_label_map(remapped, sil, filter_noise)
     # Filter Noise=5 → ΔE_Lab ≈ 11: tylko niemal identyczne czernie, nie beż z brązem
     remapped = _collapse_near_duplicate_clusters(
         centers, remapped, n_colors, max_lab_dist=8.0 + filter_noise * 0.6
@@ -585,7 +594,7 @@ def image_to_quantized_svg(
     # 4. MASKI WARSTW: przy 0.2 mm bez dylatacji 0.4 mm (kernel 3×3 zjada oczy / krawędzie)
     kernel_wall = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     kernel_open = _ellipse_kernel(2)
-    dilate_iters = _wall_dilate_iterations(nozzle_mm)
+    dilate_iters = _wall_dilate_iterations(nozzle_mm, long_side=max(new_w, new_h))
     layer_masks = []
 
     for c_idx in range(n_colors):

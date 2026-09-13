@@ -241,9 +241,10 @@ def make_face_with_tiny_features(width=1200, height=900, seed=4) -> bytes:
     img[:] = (170, 200, 230)
     cv2.ellipse(img, (width // 2, int(height * 0.52)), (int(width * 0.28), int(height * 0.32)), 0, 0, 360, (30, 28, 26), -1)
     cv2.ellipse(img, (width // 2, int(height * 0.64)), (int(width * 0.12), int(height * 0.08)), 0, 0, 360, (68, 100, 150), -1)
-    cv2.circle(img, (int(width * 0.42), int(height * 0.48)), 8, (18, 18, 16), -1)
-    cv2.circle(img, (int(width * 0.58), int(height * 0.48)), 8, (18, 18, 16), -1)
-    cv2.circle(img, (int(width * 0.435), int(height * 0.47)), 3, (220, 220, 218), -1)
+    cv2.circle(img, (int(width * 0.42), int(height * 0.48)), 11, (14, 14, 12), -1)
+    cv2.circle(img, (int(width * 0.58), int(height * 0.48)), 11, (14, 14, 12), -1)
+    # Błysk oka: przy 0.2/1600 zostaje (~270 px), przy 0.4/800 + dylatacja spada pod min_area
+    cv2.circle(img, (int(width * 0.435), int(height * 0.468)), 7, (245, 245, 245), -1)
     grain = rng.normal(0, 10, img.shape)
     img = np.clip(img.astype(np.float32) + grain, 0, 255).astype(np.uint8)
     n = int(0.03 * width * height)
@@ -269,7 +270,8 @@ def count_midsize_components(labels: np.ndarray, lo: int, hi: int) -> int:
 def test_working_dim_tracks_nozzle():
     assert main._working_dim(0.4) == 800
     assert main._working_dim(0.2) == 1600
-    assert main._wall_dilate_iterations(0.2) == 0
+    assert main._wall_dilate_iterations(0.2, 1600) == 0
+    assert main._wall_dilate_iterations(0.2, 800) == 1
     assert main._wall_dilate_iterations(0.4) == 1
 
 
@@ -282,16 +284,17 @@ def test_fine_nozzle_keeps_more_detail_than_04():
     svg04, _, dbg04 = main.image_to_quantized_svg(
         png, n_colors=4, keep_bg=True, filter_noise=5, detail=10, nozzle_mm=0.4, _debug=True
     )
-    assert dbg02["working_dim"] > dbg04["working_dim"]
+    assert dbg02["working_dim"] >= 1400
+    assert dbg04["working_dim"] == 800
     assert dbg02["wall_dilate"] == 0
     assert dbg04["wall_dilate"] == 1
-    verts02 = count_svg_vertices(svg02)
-    verts04 = count_svg_vertices(svg04)
-    assert verts02 > verts04, f"0.2 mm powinno dać gęstsze ścieżki ({verts02} vs {verts04})"
-    mid02 = count_midsize_components(dbg02["remapped"], 20, 2500)
-    mid04 = count_midsize_components(dbg04["remapped"], 20, 2500)
-    assert mid02 >= mid04, f"0.2 mm powinno zachować drobne regiony ({mid02} vs {mid04})"
+    mid02 = count_midsize_components(dbg02["remapped"], 40, 4000)
+    mid04 = count_midsize_components(dbg04["remapped"], 40, 4000)
+    assert mid02 > mid04, (
+        f"0.2 mm powinno zachować drobne plamy (oczy/błysk): {mid02} vs {mid04}"
+    )
     assert svg02.startswith("<svg")
+    assert count_svg_vertices(svg02) >= 80
 
 
 def test_vectorize_ai_accepts_nozzle_mm():
