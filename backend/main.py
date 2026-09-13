@@ -208,15 +208,172 @@ def remove_checkerboard_pattern(bgr_img):
     return bgr_img, False
 
 
-def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool = False):
+def _clamp_int(value, lo: int, hi: int, default: int) -> int:
+    try:
+        return max(lo, min(hi, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _ellipse_kernel(size: int):
+    size = max(1, int(size))
+    if size % 2 == 0:
+        size += 1
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
+
+
+def _denoise_for_quantize(bgr: np.ndarray, filter_noise: int) -> np.ndarray:
+    """Bilateral (krawędzie) + median (sól/pieprz) zanim KMeans zobaczy ziarno zdjęcia."""
+    diameter = 5 if filter_noise < 4 else (7 if filter_noise < 8 else 9)
+    sigma = 18.0 + 12.0 * filter_noise  # Makerlab Filter Noise=5 → ~78
+    den = cv2.bilateralFilter(bgr, d=diameter, sigmaColor=sigma, sigmaSpace=sigma)
+    if filter_noise >= 1:
+        k = 3 if filter_noise < 4 else (5 if filter_noise < 8 else 7)
+        den = cv2.medianBlur(den, k)
+    return den
+
+
+def _min_region_area(filter_noise: int, width: int, height: int) -> int:
+    """Minimalna powierzchnia wyspy w px roboczej rozdzielczości (~800). Filter Noise=5 ≈ 300px."""
+    scale = (max(width, height) / 800.0) ** 2
+    return max(8, int((10.0 * (filter_noise ** 2.1)) * scale))
+
+
+def count_label_islands(labels: np.ndarray, n_colors: int, max_area: int | None = None) -> int:
+    """Liczba spójnych regionów koloru; opcjonalnie tylko mniejszych niż max_area."""
+    sil = labels >= 0
+    total = 0
+    for c_idx in range(n_colors):
+        mask = ((labels == c_idx) & sil).astype(np.uint8)
+        n_cc, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        for i in range(1, n_cc):
+            area = int(stats[i, cv2.CC_STAT_AREA])
+            if max_area is None or area < max_area:
+                total += 1
+    return total
+
+
+def _smooth_label_map(labels: np.ndarray, sil: np.ndarray, filter_noise: int) -> np.ndarray:
+    """Median na mapie etykiet — usuwa salt-and-pepper bez mieszania barw."""
+    sil_bool = sil.astype(bool)
+    if filter_noise < 1:
+        out = labels.copy()
+        out[~sil_bool] = -1
+        return out
+
+    k = 3 if filter_noise < 3 else (5 if filter_noise < 7 else 7)
+    work = (labels + 1).astype(np.uint8)  # tło -1 → 0
+    blurred = cv2.medianBlur(work, k)
+    out = labels.copy()
+    accept = sil_bool & (blurred > 0)
+    out[accept] = blurred[accept].astype(np.int32) - 1
+    out[~sil_bool] = -1
+    return out
+
+
+def _merge_small_regions(
+    labels: np.ndarray,
+    sil: np.ndarray,
+    n_colors: int,
+    min_area: int,
+    max_passes: int = 4,
+) -> np.ndarray:
+    """Przypisz drobne wyspy do dominującego sąsiada (Makerlab-like Filter Noise)."""
+    cleaned = labels.copy()
+    kernel = np.ones((3, 3), np.uint8)
+    sil_bool = sil.astype(bool)
+    min_area = max(1, int(min_area))
+    for _ in range(max_passes):
+        merged_any = False
+        for c_idx in range(n_colors):
+            mask = ((cleaned == c_idx) & sil_bool).astype(np.uint8)
+            n_cc, cc, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+            for i in range(1, n_cc):
+                if int(stats[i, cv2.CC_STAT_AREA]) >= min_area:
+                    continue
+                component = cc == i
+                ring = cv2.dilate(component.astype(np.uint8), kernel, iterations=1).astype(bool)
+                ring &= ~component
+                ring &= sil_bool
+                neigh = cleaned[ring]
+                neigh = neigh[neigh >= 0]
+                if neigh.size == 0:
+                    continue
+                vals, counts = np.unique(neigh, return_counts=True)
+                cleaned[component] = int(vals[np.argmax(counts)])
+                merged_any = True
+        if not merged_any:
+            break
+    cleaned[~sil_bool] = -1
+    return cleaned
+
+
+def _collapse_near_duplicate_clusters(
+    centers: np.ndarray,
+    remapped: np.ndarray,
+    n_colors: int,
+    max_lab_dist: float,
+) -> np.ndarray:
+    """Złącz klastry o niemal tym samym kolorze, żeby dwa odcienie czerni nie sypały się w wyspy."""
+    if n_colors < 2 or max_lab_dist <= 0:
+        return remapped
+    bgr = np.clip(centers.reshape(-1, 1, 3), 0, 255).astype(np.uint8)
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
+    counts = [int(np.sum(remapped == i)) for i in range(n_colors)]
+    parent = list(range(n_colors))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for i in range(n_colors):
+        for j in range(i + 1, n_colors):
+            if float(np.linalg.norm(lab[i] - lab[j])) >= max_lab_dist:
+                continue
+            ia, ja = find(i), find(j)
+            if ia == ja:
+                continue
+            if counts[ia] < counts[ja]:
+                ia, ja = ja, ia
+            parent[ja] = ia
+
+    out = remapped.copy()
+    for i in range(n_colors):
+        root = find(i)
+        if root != i:
+            out[remapped == i] = root
+    return out
+
+
+def _approx_epsilon(contour, detail: int) -> float:
+    """Detail=10 (Makerlab max) — lekkie wygładzenie; niższy detail — mocniejsze uproszczenie."""
+    peri = cv2.arcLength(contour, True)
+    frac = 0.012 - (max(1, min(10, detail)) - 1) * 0.0010  # 10→0.003, 1→0.012
+    return max(0.75, frac * peri)
+
+
+def image_to_quantized_svg(
+    image_bytes: bytes,
+    n_colors: int = 4,
+    keep_bg: bool = False,
+    filter_noise: int = 5,
+    detail: int = 10,
+    _debug: bool = False,
+):
     """
-    Zaawansowany algorytm wektoryzacji w standardzie MakerWorld:
+    Zaawansowany algorytm wektoryzacji w standardzie MakerWorld / Makerlab:
     1. Precyzyjna segmentacja postaci AI (u2net/u2netp) w 800px z podwójnym zabezpieczeniem GrabCut.
     2. Inteligentne domykanie wyłącznie wewnętrznych ubytków z zachowaniem otwartych przestrzeni między nogami.
-    3. Gwarantowana minimalna grubość ścianek (dylatacja + filtr mikroszumu) – brak łamliwych, cienkich elementów pod dyszę 0.4mm.
-    4. Zagnieżdżone ścieżki SVG (fill-rule='evenodd') precyzyjnie wycinające otwory (błyski oka, tęczówki, paski).
+    3. Denoise przed KMeans (bilateral + median) oraz scalanie drobnych wysp (Filter Noise).
+    4. Gwarantowana minimalna grubość ścianek (dylatacja) – brak łamliwych, cienkich elementów pod dyszę 0.4mm.
+    5. Zagnieżdżone ścieżki SVG (fill-rule='evenodd') z lekkim approxPolyDP sterowanym Detail.
+    Domyślne Filter Noise=5 i Detail=10 odpowiadają suwakom Makerlab.
     """
     n_colors = max(2, min(6, n_colors))
+    filter_noise = _clamp_int(filter_noise, 0, 10, 5)
+    detail = _clamp_int(detail, 1, 10, 10)
 
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
@@ -309,11 +466,13 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     sil_u8 = cv2.morphologyEx(sil_u8, cv2.MORPH_CLOSE, kernel)
     sil = sil_u8 > 0
 
-    # 3. KWANTYZACJA KOLORÓW KMEANS POSORTOWANA PO LUMINANCJI
-    fg_pixels = bgr_resized[sil].reshape(-1, 3)
+    # 3. DENOISE + KWANTYZACJA KMEANS POSORTOWANA PO LUMINANCJI
+    denoised = _denoise_for_quantize(bgr_resized, filter_noise)
+    fg_pixels = denoised[sil].reshape(-1, 3)
     if len(fg_pixels) < n_colors * 10:
-        fg_pixels = bgr_resized.reshape(-1, 3)
+        fg_pixels = denoised.reshape(-1, 3)
         sil = np.ones((new_h, new_w), dtype=bool)
+        sil_u8 = np.full((new_h, new_w), 255, dtype=np.uint8)
 
     kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=5).fit(fg_pixels)
     centers = kmeans.cluster_centers_.astype(int)
@@ -323,26 +482,45 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
     sorted_order = np.argsort(brightness)[::-1]
     centers = centers[sorted_order]
 
-    hex_colors = [
-        f"#{centers[i][2]:02x}{centers[i][1]:02x}{centers[i][0]:02x}".upper()
-        for i in range(n_colors)
-    ]
-
     labels = np.full((new_h, new_w), -1, dtype=int)
     labels[sil] = kmeans.labels_
     remapped = np.full((new_h, new_w), -1, dtype=int)
     for new_idx, old_cluster in enumerate(sorted_order):
         remapped[labels == old_cluster] = new_idx
 
+    remapped = _smooth_label_map(remapped, sil, filter_noise)
+    # Filter Noise=5 → ΔE_Lab ≈ 16: dwa niemal identyczne czernie stają się jedną warstwą
+    remapped = _collapse_near_duplicate_clusters(
+        centers, remapped, n_colors, max_lab_dist=10.0 + filter_noise * 1.2
+    )
+    min_area = _min_region_area(filter_noise, new_w, new_h)
+    remapped = _merge_small_regions(remapped, sil, n_colors, min_area)
+
+    # Kolory z oczyszczonych regionów (puste klastry zachowują środek KMeans)
+    for i in range(n_colors):
+        pix = denoised[remapped == i]
+        if len(pix) > 0:
+            centers[i] = np.mean(pix, axis=0).astype(int)
+
+    hex_colors = [
+        f"#{centers[i][2]:02x}{centers[i][1]:02x}{centers[i][0]:02x}".upper()
+        for i in range(n_colors)
+    ]
+
     # 4. MASKI WARSTW Z GWARANTOWANĄ GRUBOŚCIĄ ŚCIANEK POD DYSZĘ 0.4MM (KAFELKOWANIE MOZAIKOWE):
     # Kernel dylatacji (poszerza cienkie paski o +1px promień, co zapewnia szczelne łączenie stykających się kolorów w druku FDM)
     kernel_wall = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    # Open zostaje mały — wyspy już zlał _merge_small_regions; mocniejszy open rwał krawędzie
+    open_size = 2 if filter_noise < 8 else 3
+    kernel_open = _ellipse_kernel(open_size)
+    kernel_close = _ellipse_kernel(3)
     layer_masks = []
 
     for c_idx in range(n_colors):
         m = (remapped == c_idx).astype(np.uint8) * 255
-        # Usunięcie pojedynczych pikseli szumu
-        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2)))
+        # Open/close po scaleniu wysp — bez rozdymania mikroszumu dylatacją
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, kernel_open)
+        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, kernel_close)
         # Pogrubienie ścianek i szczelne spasowanie sąsiadujących kolorów
         m = cv2.dilate(m, kernel_wall, iterations=1)
         # Ograniczenie do zewnętrznej sylwetki
@@ -385,17 +563,19 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
 
         hier = hierarchy[0]
         compound_paths = []
+        min_contour = max(20, int(min_area * 0.45))
+        min_hole = max(8, int(min_area * 0.18))
 
         for i in range(len(contours)):
             if hier[i][3] != -1:
                 continue  # Pomiń otwory na poziomie głównym (są przetwarzane w rodzicu)
 
             cnt = contours[i]
-            # Eliminacja mikroskopijnych okruchów (< 15px), które nie mają przyczepności i łamią się
-            if cv2.contourArea(cnt) < 15:
+            # Eliminacja okruchów, które nie mają przyczepności i łamią się pod dyszą
+            if cv2.contourArea(cnt) < min_contour:
                 continue
 
-            approx = cv2.approxPolyDP(cnt, 0.0010 * cv2.arcLength(cnt, True), True)
+            approx = cv2.approxPolyDP(cnt, _approx_epsilon(cnt, detail), True)
             pts = approx.reshape(-1, 2)
             if len(pts) < 3:
                 continue
@@ -411,8 +591,8 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
             child = hier[i][2]
             while child != -1:
                 hole_cnt = contours[child]
-                if cv2.contourArea(hole_cnt) >= 6:
-                    hole_approx = cv2.approxPolyDP(hole_cnt, 0.0010 * cv2.arcLength(hole_cnt, True), True)
+                if cv2.contourArea(hole_cnt) >= min_hole:
+                    hole_approx = cv2.approxPolyDP(hole_cnt, _approx_epsilon(hole_cnt, detail), True)
                     hole_pts = hole_approx.reshape(-1, 2)
                     if len(hole_pts) >= 3:
                         hsx, hsy = map_pt(hole_pts[0])
@@ -429,7 +609,21 @@ def image_to_quantized_svg(image_bytes: bytes, n_colors: int = 4, keep_bg: bool 
             svg_parts.append(f'<g id="color_{l_idx+1}" fill="{hex_colors[l_idx]}">{"".join(compound_paths)}</g>')
 
     svg_parts.append("</svg>")
-    return "".join(svg_parts), hex_colors
+    svg = "".join(svg_parts)
+    if _debug:
+        n_islands = count_label_islands(remapped, n_colors)
+        n_small = count_label_islands(remapped, n_colors, max_area=max(50, min_area))
+        preview = np.full((new_h, new_w, 3), 255, dtype=np.uint8)
+        for i in range(n_colors):
+            preview[remapped == i] = centers[i]
+        return svg, hex_colors, {
+            "remapped": remapped,
+            "preview_bgr": preview,
+            "min_area": min_area,
+            "islands": n_islands,
+            "small_islands": n_small,
+        }
+    return svg, hex_colors
 
 
 
@@ -451,15 +645,26 @@ from fastapi import Form
 async def vectorize_image_ai(
     file: UploadFile = File(...),
     keep_bg: str = Form("false"),
-    n_colors: str = Form("4")
+    n_colors: str = Form("4"),
+    filter_noise: str = Form("5"),
+    detail: str = Form("10"),
 ):
-    """Wektoryzacja konturów z obsługą AI cutout i doborem barw. Obsługuje 2-6 warstw kolorów."""
+    """Wektoryzacja konturów z obsługą AI cutout i doborem barw. Obsługuje 2-6 warstw kolorów.
+
+    filter_noise (0-10) i detail (1-10) odpowiadają suwakom Makerlab (domyślnie 5 / 10).
+    """
     try:
         should_keep_bg = keep_bg.lower() in ("true", "1", "yes")
         num_colors = max(2, min(6, int(n_colors)))
+        noise = _clamp_int(filter_noise, 0, 10, 5)
+        det = _clamp_int(detail, 1, 10, 10)
         contents = await file.read()
         svg_result, detected_colors = image_to_quantized_svg(
-            contents, n_colors=num_colors, keep_bg=should_keep_bg
+            contents,
+            n_colors=num_colors,
+            keep_bg=should_keep_bg,
+            filter_noise=noise,
+            detail=det,
         )
         return {
             "svg": svg_result,
