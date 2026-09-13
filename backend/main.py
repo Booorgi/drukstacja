@@ -234,9 +234,23 @@ def _denoise_for_quantize(bgr: np.ndarray, filter_noise: int) -> np.ndarray:
 
 
 def _min_region_area(filter_noise: int, width: int, height: int) -> int:
-    """Minimalna powierzchnia wyspy w px roboczej rozdzielczości (~800). Filter Noise=5 ≈ 120px."""
+    """Minimalna powierzchnia wyspy w px roboczej rozdzielczości (~800). Filter Noise=5 ≈ 300px."""
     scale = (max(width, height) / 800.0) ** 2
-    return max(8, int((8.0 + (filter_noise ** 2) * 4.5) * scale))
+    return max(8, int((10.0 * (filter_noise ** 2.1)) * scale))
+
+
+def count_label_islands(labels: np.ndarray, n_colors: int, max_area: int | None = None) -> int:
+    """Liczba spójnych regionów koloru; opcjonalnie tylko mniejszych niż max_area."""
+    sil = labels >= 0
+    total = 0
+    for c_idx in range(n_colors):
+        mask = ((labels == c_idx) & sil).astype(np.uint8)
+        n_cc, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        for i in range(1, n_cc):
+            area = int(stats[i, cv2.CC_STAT_AREA])
+            if max_area is None or area < max_area:
+                total += 1
+    return total
 
 
 def _smooth_label_map(labels: np.ndarray, sil: np.ndarray, filter_noise: int) -> np.ndarray:
@@ -294,6 +308,45 @@ def _merge_small_regions(
     return cleaned
 
 
+def _collapse_near_duplicate_clusters(
+    centers: np.ndarray,
+    remapped: np.ndarray,
+    n_colors: int,
+    max_lab_dist: float,
+) -> np.ndarray:
+    """Złącz klastry o niemal tym samym kolorze, żeby dwa odcienie czerni nie sypały się w wyspy."""
+    if n_colors < 2 or max_lab_dist <= 0:
+        return remapped
+    bgr = np.clip(centers.reshape(-1, 1, 3), 0, 255).astype(np.uint8)
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
+    counts = [int(np.sum(remapped == i)) for i in range(n_colors)]
+    parent = list(range(n_colors))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for i in range(n_colors):
+        for j in range(i + 1, n_colors):
+            if float(np.linalg.norm(lab[i] - lab[j])) >= max_lab_dist:
+                continue
+            ia, ja = find(i), find(j)
+            if ia == ja:
+                continue
+            if counts[ia] < counts[ja]:
+                ia, ja = ja, ia
+            parent[ja] = ia
+
+    out = remapped.copy()
+    for i in range(n_colors):
+        root = find(i)
+        if root != i:
+            out[remapped == i] = root
+    return out
+
+
 def _approx_epsilon(contour, detail: int) -> float:
     """Detail=10 (Makerlab max) — lekkie wygładzenie; niższy detail — mocniejsze uproszczenie."""
     peri = cv2.arcLength(contour, True)
@@ -307,6 +360,7 @@ def image_to_quantized_svg(
     keep_bg: bool = False,
     filter_noise: int = 5,
     detail: int = 10,
+    _debug: bool = False,
 ):
     """
     Zaawansowany algorytm wektoryzacji w standardzie MakerWorld / Makerlab:
@@ -435,6 +489,10 @@ def image_to_quantized_svg(
         remapped[labels == old_cluster] = new_idx
 
     remapped = _smooth_label_map(remapped, sil, filter_noise)
+    # Filter Noise=5 → ΔE_Lab ≈ 16: dwa niemal identyczne czernie stają się jedną warstwą
+    remapped = _collapse_near_duplicate_clusters(
+        centers, remapped, n_colors, max_lab_dist=10.0 + filter_noise * 1.2
+    )
     min_area = _min_region_area(filter_noise, new_w, new_h)
     remapped = _merge_small_regions(remapped, sil, n_colors, min_area)
 
@@ -452,7 +510,8 @@ def image_to_quantized_svg(
     # 4. MASKI WARSTW Z GWARANTOWANĄ GRUBOŚCIĄ ŚCIANEK POD DYSZĘ 0.4MM (KAFELKOWANIE MOZAIKOWE):
     # Kernel dylatacji (poszerza cienkie paski o +1px promień, co zapewnia szczelne łączenie stykających się kolorów w druku FDM)
     kernel_wall = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    open_size = 2 if filter_noise < 3 else (3 if filter_noise < 7 else 5)
+    # Open zostaje mały — wyspy już zlał _merge_small_regions; mocniejszy open rwał krawędzie
+    open_size = 2 if filter_noise < 8 else 3
     kernel_open = _ellipse_kernel(open_size)
     kernel_close = _ellipse_kernel(3)
     layer_masks = []
@@ -550,7 +609,21 @@ def image_to_quantized_svg(
             svg_parts.append(f'<g id="color_{l_idx+1}" fill="{hex_colors[l_idx]}">{"".join(compound_paths)}</g>')
 
     svg_parts.append("</svg>")
-    return "".join(svg_parts), hex_colors
+    svg = "".join(svg_parts)
+    if _debug:
+        n_islands = count_label_islands(remapped, n_colors)
+        n_small = count_label_islands(remapped, n_colors, max_area=max(50, min_area))
+        preview = np.full((new_h, new_w, 3), 255, dtype=np.uint8)
+        for i in range(n_colors):
+            preview[remapped == i] = centers[i]
+        return svg, hex_colors, {
+            "remapped": remapped,
+            "preview_bgr": preview,
+            "min_area": min_area,
+            "islands": n_islands,
+            "small_islands": n_small,
+        }
+    return svg, hex_colors
 
 
 

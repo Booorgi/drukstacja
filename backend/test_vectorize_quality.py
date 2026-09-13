@@ -72,18 +72,21 @@ def test_vectorize_returns_svg_and_colors():
 
 def test_filter_noise_removes_micro_islands():
     png = make_noisy_poster()
-    svg_clean, _ = main.image_to_quantized_svg(
-        png, n_colors=4, keep_bg=True, filter_noise=5, detail=10
+    svg_clean, _, dbg_clean = main.image_to_quantized_svg(
+        png, n_colors=4, keep_bg=True, filter_noise=5, detail=10, _debug=True
     )
-    svg_raw, _ = main.image_to_quantized_svg(
-        png, n_colors=4, keep_bg=True, filter_noise=0, detail=10
+    svg_raw, _, dbg_raw = main.image_to_quantized_svg(
+        png, n_colors=4, keep_bg=True, filter_noise=0, detail=10, _debug=True
     )
-    islands_clean = count_svg_subpaths(svg_clean)
-    islands_raw = count_svg_subpaths(svg_raw)
-    assert islands_clean < islands_raw, (
-        f"Filter Noise=5 powinno dać mniej wysp niż 0 ({islands_clean} vs {islands_raw})"
+    assert dbg_clean["islands"] < dbg_raw["islands"], (
+        f"Filter Noise=5 powinno dać mniej wysp niż 0 "
+        f"({dbg_clean['islands']} vs {dbg_raw['islands']})"
     )
-    assert islands_clean < 45, f"Zbyt dużo mikrowysp po filtrze: {islands_clean}"
+    assert dbg_clean["small_islands"] < dbg_raw["small_islands"]
+    assert dbg_clean["islands"] <= 12, f"Zbyt dużo regionów po filtrze: {dbg_clean['islands']}"
+    assert dbg_clean["small_islands"] == 0
+    assert count_svg_subpaths(svg_clean) < 40
+    assert svg_raw.startswith("<svg")
 
 
 def test_n_colors_preserved():
@@ -94,6 +97,23 @@ def test_n_colors_preserved():
         )
         assert len(colors) == n
         assert svg.count("<g id=\"color_") <= n
+
+
+def test_near_duplicate_darks_do_not_speckle():
+    """Dwa prawie identyczne czernie nie mogą sypać się w dziesiątki wysp."""
+    img = np.zeros((240, 320, 3), dtype=np.uint8)
+    img[:] = (200, 210, 220)
+    cv2.rectangle(img, (0, 0), (320, 80), (28, 26, 24), -1)
+    cv2.circle(img, (160, 140), 50, (32, 30, 28), -1)
+    rng = np.random.default_rng(1)
+    grain = rng.normal(0, 10, img.shape)
+    img = np.clip(img.astype(np.float32) + grain, 0, 255).astype(np.uint8)
+    png = _encode_png(img)
+    _, colors, dbg = main.image_to_quantized_svg(
+        png, n_colors=4, keep_bg=True, filter_noise=5, detail=10, _debug=True
+    )
+    assert len(colors) == 4
+    assert dbg["islands"] <= 8, f"Zbyt dużo regionów przy podobnych czerniach: {dbg['islands']}"
 
 
 def test_keep_bg_false_still_returns_svg():
@@ -118,7 +138,7 @@ def test_vectorize_ai_endpoint():
     assert "svg" in body and "detected_colors" in body
     assert body["svg"].startswith("<svg")
     assert len(body["detected_colors"]) == 4
-    assert count_svg_subpaths(body["svg"]) < 45
+    assert count_svg_subpaths(body["svg"]) < 40
 
 
 def test_vectorize_ai_accepts_makerlab_params():
@@ -144,6 +164,7 @@ if __name__ == "__main__":
     test_vectorize_returns_svg_and_colors()
     test_filter_noise_removes_micro_islands()
     test_n_colors_preserved()
+    test_near_duplicate_darks_do_not_speckle()
     test_keep_bg_false_still_returns_svg()
     test_vectorize_ai_endpoint()
     test_vectorize_ai_accepts_makerlab_params()
