@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import Head from "next/head";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -158,8 +159,14 @@ export default function Home() {
   const fileInputRef = useRef(null);
   const printParamsRef = useRef(null);
   const colorPickerRef = useRef(null);
+  const colorSheetRef = useRef(null);
   const scaleParamsRef = useRef(null);
   const modelScale = Math.max(0.05, Math.min(2, scalePercent / 100));
+
+  function handleSelectColor(item) {
+    if (item?.hex) setSelectedColor(item.hex);
+    setColorPickerOpen(false);
+  }
 
   // Weryfikacja tworzywa PLA dla dyszy 0.2 mm
   const isPlaMaterial = useMemo(() => {
@@ -182,7 +189,12 @@ export default function Home() {
       if (scaleOpen && scaleParamsRef.current && !scaleParamsRef.current.contains(e.target)) {
         setScaleOpen(false);
       }
-      if (colorPickerOpen && colorPickerRef.current && !colorPickerRef.current.contains(e.target)) {
+      if (
+        colorPickerOpen &&
+        colorPickerRef.current &&
+        !colorPickerRef.current.contains(e.target) &&
+        !colorSheetRef.current?.contains(e.target)
+      ) {
         setColorPickerOpen(false);
       }
     }
@@ -863,25 +875,42 @@ endsolid fixture
                   />
                   {colorPickerOpen && (
                     <>
-                      <button
-                        type="button"
-                        aria-label="Zamknij wybór koloru"
-                        className="fixed inset-0 z-[85] bg-black/25 md:hidden"
-                        onClick={() => setColorPickerOpen(false)}
-                      />
-                      <div className="fixed inset-x-0 bottom-0 z-[90] p-3 md:static md:inset-auto md:p-0">
-                        <div className="mx-auto max-w-sm md:absolute md:bottom-0 md:left-full md:top-auto md:mx-0 md:ml-3">
-                          <StudioColorPicker
-                            colors={colorWheelItems}
-                            value={selectedColor}
-                            materialName={matConfig?.name}
-                            onSelect={(item) => {
-                              setSelectedColor(item.hex);
-                              setColorPickerOpen(false);
-                            }}
-                          />
-                        </div>
+                      <div className="absolute bottom-0 left-full z-[90] ml-3 hidden md:block">
+                        <StudioColorPicker
+                          colors={colorWheelItems}
+                          value={selectedColor}
+                          materialName={matConfig?.name}
+                          surface="popover"
+                          onSelect={handleSelectColor}
+                        />
                       </div>
+                      {typeof document !== "undefined"
+                        ? createPortal(
+                            <div className="md:hidden">
+                              <button
+                                type="button"
+                                aria-label="Zamknij wybór koloru"
+                                className="fixed inset-0 z-[85] bg-black/25"
+                                onClick={() => setColorPickerOpen(false)}
+                              />
+                              <div
+                                ref={colorSheetRef}
+                                className="fixed inset-x-0 bottom-0 z-[90] p-3"
+                              >
+                                <div className="mx-auto max-w-sm">
+                                  <StudioColorPicker
+                                    colors={colorWheelItems}
+                                    value={selectedColor}
+                                    materialName={matConfig?.name}
+                                    surface="sheet"
+                                    onSelect={handleSelectColor}
+                                  />
+                                </div>
+                              </div>
+                            </div>,
+                            document.body
+                          )
+                        : null}
                     </>
                   )}
                 </div>

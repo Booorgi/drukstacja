@@ -33,10 +33,10 @@ test.describe("studio color picker", () => {
     await expect(colorWheel).toHaveAttribute("aria-haspopup", "dialog");
     await expect(colorWheel).toHaveAttribute("aria-expanded", "false");
     await expect(materialWheel).not.toHaveAttribute("aria-haspopup");
-    await expect(rail.getByText("Głęboka Czerń")).toBeVisible();
+    await expect(rail.locator("span").filter({ hasText: "Głęboka Czerń" })).toBeVisible();
 
     await colorWheel.click();
-    const picker = page.locator("[data-studio-color-picker]");
+    const picker = page.locator('[data-studio-color-picker-surface="popover"]');
     await expect(picker).toBeVisible();
     await expect(colorWheel).toHaveAttribute("aria-expanded", "true");
     await expect(picker.getByText("Kolor filamentu")).toBeVisible();
@@ -49,10 +49,10 @@ test.describe("studio color picker", () => {
 
     await picker.getByRole("button", { name: "Czysta Biel" }).click();
     await expect(picker).toHaveCount(0);
-    await expect(rail.getByText("Czysta Biel")).toBeVisible();
+    await expect(rail.locator("span").filter({ hasText: "Czysta Biel" })).toBeVisible();
 
     await materialWheel.locator("path").filter({ hasText: "PLA Matte / Satin" }).click();
-    await expect(rail.getByText("PLA Matte / Satin")).toBeVisible();
+    await expect(rail.locator("span").filter({ hasText: "PLA Matte / Satin" })).toBeVisible();
     await expect(page.locator("[data-studio-color-picker]")).toHaveCount(0);
     await expect(page.getByText("Parametry druku")).toHaveCount(0);
 
@@ -69,10 +69,10 @@ test.describe("studio color picker", () => {
     const rail = page.locator("[data-studio-control-rail-frame]");
     const colorWheel = page.locator('[data-studio-wheel="Kolor"]');
     await expect(colorWheel).toBeVisible();
-    await expect(rail.getByText("Głęboka Czerń")).toBeVisible();
+    await expect(rail.locator("span").filter({ hasText: "Głęboka Czerń" })).toBeVisible();
 
     await colorWheel.click();
-    const picker = page.locator("[data-studio-color-picker]");
+    const picker = page.locator('[data-studio-color-picker-surface="sheet"]');
     await expect(picker).toBeVisible();
     await expect(picker.getByRole("button", { name: "Czysta Biel" })).toBeVisible();
 
@@ -86,6 +86,6 @@ test.describe("studio color picker", () => {
 
     await swatch.click();
     await expect(picker).toHaveCount(0);
-    await expect(rail.getByText("Kobaltowy Błękit")).toBeVisible();
+    await expect(rail.locator("span").filter({ hasText: "Kobaltowy Błękit" })).toBeVisible();
   });
 });

@@ -22,12 +22,14 @@ export default function StudioColorPicker({
   value,
   onSelect,
   materialName,
+  surface = "popover",
 }) {
   const selected = colors.find((c) => isActiveColor(c, value)) || colors[0];
 
   return (
     <div
       data-studio-color-picker
+      data-studio-color-picker-surface={surface}
       role="dialog"
       aria-label="Wybierz kolor filamentu"
       className="w-full rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10 md:w-[280px]"
