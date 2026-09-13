@@ -36,6 +36,7 @@ export default function StudioWheel({
   value,
   onChange,
   onOpen,
+  expanded = false,
   size = 92,
   label,
   caption,
@@ -55,13 +56,29 @@ export default function StudioWheel({
   return (
     <div className={`flex flex-col items-center gap-1 ${className}`}>
       <div
+        data-studio-wheel={label || undefined}
         className={`relative cursor-pointer overflow-visible rounded-full bg-white ring-1 ring-black/5 ${
           muted
             ? "shadow-[0_2px_10px_rgba(0,0,0,0.08)]"
             : "shadow-[0_8px_28px_rgba(0,0,0,0.18)]"
         }`}
         style={{ width: size, height: size }}
+        role={onOpen ? "button" : undefined}
+        tabIndex={onOpen ? 0 : undefined}
+        aria-label={onOpen && label ? label : undefined}
+        aria-haspopup={onOpen ? "dialog" : undefined}
+        aria-expanded={onOpen ? Boolean(expanded) : undefined}
         onClick={onOpen ? () => onOpen() : undefined}
+        onKeyDown={
+          onOpen
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpen();
+                }
+              }
+            : undefined
+        }
       >
         <svg
           viewBox="0 0 100 100"

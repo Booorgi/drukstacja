@@ -15,6 +15,7 @@ import StudioEmptyDropzone from "../components/StudioEmptyDropzone";
 import StudioControlRail from "../components/StudioControlRail";
 import StudioQuoteBar from "../components/StudioQuoteBar";
 import StudioScale from "../components/StudioScale";
+import StudioColorPicker from "../components/StudioColorPicker";
 import PrinterLayersBand from "../components/PrinterLayersBand";
 import { STL_MATERIALS } from "../lib/filament";
 
@@ -151,10 +152,12 @@ export default function Home() {
   const [quantity, setQuantity] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
   const [printParamsOpen, setPrintParamsOpen] = useState(false);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [scaleOpen, setScaleOpen] = useState(false);
   const [scalePercent, setScalePercent] = useState(100);
   const fileInputRef = useRef(null);
   const printParamsRef = useRef(null);
+  const colorPickerRef = useRef(null);
   const scaleParamsRef = useRef(null);
   const modelScale = Math.max(0.05, Math.min(2, scalePercent / 100));
 
@@ -171,7 +174,7 @@ export default function Home() {
   }, [isPlaMaterial, nozzleSize]);
 
   useEffect(() => {
-    if (!printParamsOpen && !scaleOpen) return undefined;
+    if (!printParamsOpen && !scaleOpen && !colorPickerOpen) return undefined;
     function onDocClick(e) {
       if (printParamsOpen && printParamsRef.current && !printParamsRef.current.contains(e.target)) {
         setPrintParamsOpen(false);
@@ -179,10 +182,23 @@ export default function Home() {
       if (scaleOpen && scaleParamsRef.current && !scaleParamsRef.current.contains(e.target)) {
         setScaleOpen(false);
       }
+      if (colorPickerOpen && colorPickerRef.current && !colorPickerRef.current.contains(e.target)) {
+        setColorPickerOpen(false);
+      }
+    }
+    function onKey(e) {
+      if (e.key !== "Escape") return;
+      setPrintParamsOpen(false);
+      setScaleOpen(false);
+      setColorPickerOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [printParamsOpen, scaleOpen]);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [printParamsOpen, scaleOpen, colorPickerOpen]);
 
   // Dostępne wysokości warstwy dopasowane do wybranej średnicy dyszy
   const layerHeightOptions = useMemo(() => {
@@ -831,19 +847,51 @@ endsolid fixture
                   muted={isEmptyStage}
                   label="Materiał"
                 />
-                <StudioWheel
-                  items={colorWheelItems}
-                  value={selectedColor}
-                  onChange={(item) => setSelectedColor(item.hex)}
-                  size={isEmptyStage ? 42 : 48}
-                  muted={isEmptyStage}
-                  label="Kolor"
-                />
+                <div className="relative z-[80] overflow-visible" ref={colorPickerRef}>
+                  <StudioWheel
+                    items={colorWheelItems}
+                    value={selectedColor}
+                    expanded={colorPickerOpen}
+                    onOpen={() => {
+                      setPrintParamsOpen(false);
+                      setScaleOpen(false);
+                      setColorPickerOpen((open) => !open);
+                    }}
+                    size={isEmptyStage ? 42 : 48}
+                    muted={isEmptyStage}
+                    label="Kolor"
+                  />
+                  {colorPickerOpen && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Zamknij wybór koloru"
+                        className="fixed inset-0 z-[85] bg-black/25 md:hidden"
+                        onClick={() => setColorPickerOpen(false)}
+                      />
+                      <div className="fixed inset-x-0 bottom-0 z-[90] p-3 md:static md:inset-auto md:p-0">
+                        <div className="mx-auto max-w-sm md:absolute md:bottom-0 md:left-full md:top-auto md:mx-0 md:ml-3">
+                          <StudioColorPicker
+                            colors={colorWheelItems}
+                            value={selectedColor}
+                            materialName={matConfig?.name}
+                            onSelect={(item) => {
+                              setSelectedColor(item.hex);
+                              setColorPickerOpen(false);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
                 <div className="relative z-[80] overflow-visible" ref={printParamsRef}>
                   <StudioWheel
                     items={printParamWheelItems}
+                    expanded={printParamsOpen}
                     onOpen={() => {
                       setScaleOpen(false);
+                      setColorPickerOpen(false);
                       setPrintParamsOpen((open) => !open);
                     }}
                     size={isEmptyStage ? 42 : 48}
@@ -878,8 +926,10 @@ endsolid fixture
                     value={
                       scalePercent <= 17 ? "s10" : scalePercent <= 37 ? "s25" : scalePercent <= 75 ? "s50" : "s100"
                     }
+                    expanded={scaleOpen}
                     onOpen={() => {
                       setPrintParamsOpen(false);
+                      setColorPickerOpen(false);
                       setScaleOpen((open) => !open);
                     }}
                     size={isEmptyStage ? 42 : 48}
