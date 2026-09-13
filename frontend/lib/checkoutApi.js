@@ -55,8 +55,13 @@ export async function getCheckout(checkoutId) {
   return data.checkout;
 }
 
-export async function listAdminCheckouts(status) {
-  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+export async function listAdminCheckouts(options) {
+  const opts = typeof options === "string" ? { status: options } : options || {};
+  const params = new URLSearchParams();
+  if (opts.status) params.set("status", opts.status);
+  if (opts.payment) params.set("payment", opts.payment);
+  if (opts.q) params.set("q", opts.q);
+  const qs = params.toString() ? `?${params.toString()}` : "";
   const res = await fetch(`${apiBase()}/api/admin/checkouts${qs}`, {
     headers: await authHeaders(),
   });
@@ -66,7 +71,11 @@ export async function listAdminCheckouts(status) {
     throw error;
   }
   const data = await res.json();
-  return data.checkouts || [];
+  return {
+    checkouts: data.checkouts || [],
+    counts: data.counts || {},
+    admin: data.admin || null,
+  };
 }
 
 export async function advanceAdminCheckout(checkoutId, productionStatus) {

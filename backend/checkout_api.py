@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from auth import AuthUser, get_current_user
+from auth import AuthUser, get_current_user, user_email
 from oms import (
     PAYMENT_PAID,
     PAYMENT_PENDING,
@@ -298,13 +298,15 @@ def create_checkout(payload: AddressPayload, user: AuthUser = Depends(get_curren
                         user_id, shipping_name, shipping_phone, shipping_street,
                         shipping_city, shipping_postal_code, shipping_country,
                         company, nip, subtotal, shipping, total,
-                        payment_status, production_status, created_at, updated_at
+                        payment_status, production_status, customer_email,
+                        created_at, updated_at
                     )
                     VALUES (
                         %s, %s, %s, %s,
                         %s, %s, %s,
                         %s, %s, %s, %s, %s,
-                        %s, %s, NOW(), NOW()
+                        %s, %s, %s,
+                        NOW(), NOW()
                     )
                     RETURNING *
                     """,
@@ -323,6 +325,7 @@ def create_checkout(payload: AddressPayload, user: AuthUser = Depends(get_curren
                         total,
                         PAYMENT_PENDING,
                         PRODUCTION_PENDING_PAYMENT,
+                        (user_email(user) or "").strip().lower() or None,
                     ),
                 )
                 checkout = dict(cur.fetchone())

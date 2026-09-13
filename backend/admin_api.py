@@ -1,11 +1,13 @@
 """
 Panel staff OMS — lista opłaconych zamówień i przesuwanie statusu produkcji.
 
-GET   /api/admin/checkouts       lista paid / pipeline
+GET   /api/admin/checkouts       lista paid / pipeline (+ filtry / szukanie)
 GET   /api/admin/checkouts/{id}  detal + linie
 PATCH /api/admin/checkouts/{id}  in_queue → in_production → post_processing → shipped
 """
 from __future__ import annotations
+
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -15,6 +17,8 @@ from oms import (
     ADMIN_NEXT_STATUS,
     ADMIN_VISIBLE_PRODUCTION,
     PAYMENT_PAID,
+    PAYMENT_PENDING,
+    PRODUCTION_PENDING_PAYMENT,
     fetch_checkout,
     fetch_checkout_lines,
     serialize_checkout,
@@ -22,6 +26,20 @@ from oms import (
 from orders_api import require_db
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+ADMIN_FILTER_STATUSES = set(ADMIN_VISIBLE_PRODUCTION) | {
+    PAYMENT_PAID,
+    PRODUCTION_PENDING_PAYMENT,
+}
+PAYMENT_FILTERS = {PAYMENT_PAID, PAYMENT_PENDING, "all"}
+
+PRODUCTION_SORT_RANK = {
+    "in_queue": 0,
+    "in_production": 1,
+    "post_processing": 2,
+    "pending_payment": 3,
+    "shipped": 4,
+}
 
 
 class AdminStatusUpdate(BaseModel):
@@ -47,40 +65,158 @@ def _attach_lines(cur, checkouts: list[dict]) -> list[dict]:
     return [serialize_checkout(row, grouped.get(str(row["id"]), [])) for row in checkouts]
 
 
+def empty_admin_counts() -> dict[str, int]:
+    return {
+        "all": 0,
+        "in_queue": 0,
+        "in_production": 0,
+        "post_processing": 0,
+        "shipped": 0,
+        "pending_payment": 0,
+        "paid": 0,
+        "pending": 0,
+    }
+
+
+def checkout_matches_query(checkout: dict, query: str | None) -> bool:
+    needle = (query or "").strip().lower()
+    if not needle:
+        return True
+    haystacks = [
+        str(checkout.get("id") or ""),
+        str(checkout.get("customer_email") or ""),
+        str(checkout.get("shipping_name") or ""),
+        str(checkout.get("shipping_phone") or ""),
+        str(checkout.get("company") or ""),
+        str(checkout.get("nip") or ""),
+    ]
+    for line in checkout.get("lines") or []:
+        haystacks.extend(
+            [
+                str(line.get("id") or ""),
+                str(line.get("file_name") or ""),
+                str(line.get("material") or ""),
+                str(line.get("layer_height") or ""),
+            ]
+        )
+    return any(needle in value.lower() for value in haystacks)
+
+
+def count_admin_checkouts(checkouts: list[dict]) -> dict[str, int]:
+    counts = empty_admin_counts()
+    for row in checkouts:
+        production = row.get("production_status")
+        payment = row.get("payment_status")
+        if production in ADMIN_VISIBLE_PRODUCTION:
+            counts["all"] += 1
+            if production in counts:
+                counts[production] += 1
+        if production == PRODUCTION_PENDING_PAYMENT or payment == PAYMENT_PENDING:
+            counts["pending_payment"] += 1
+        if payment == PAYMENT_PAID:
+            counts["paid"] += 1
+        if payment == PAYMENT_PENDING:
+            counts["pending"] += 1
+    return counts
+
+
+def _created_ts(row: dict) -> float:
+    value = row.get("created_at")
+    if isinstance(value, datetime):
+        return value.timestamp()
+    if isinstance(value, str) and value:
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def sort_admin_checkouts(checkouts: list[dict]) -> list[dict]:
+    return sorted(
+        checkouts,
+        key=lambda row: (
+            PRODUCTION_SORT_RANK.get(row.get("production_status"), 9),
+            -_created_ts(row),
+        ),
+    )
+
+
+def filter_admin_checkouts(
+    checkouts: list[dict],
+    *,
+    status: str | None = None,
+    payment: str | None = None,
+    query: str | None = None,
+) -> list[dict]:
+    matched = [row for row in checkouts if checkout_matches_query(row, query)]
+    if payment and payment != "all":
+        matched = [row for row in matched if row.get("payment_status") == payment]
+    if status == PAYMENT_PAID:
+        matched = [row for row in matched if row.get("payment_status") == PAYMENT_PAID]
+    elif status == PRODUCTION_PENDING_PAYMENT:
+        matched = [
+            row
+            for row in matched
+            if row.get("production_status") == PRODUCTION_PENDING_PAYMENT
+            or row.get("payment_status") == PAYMENT_PENDING
+        ]
+    elif status in ADMIN_VISIBLE_PRODUCTION:
+        matched = [row for row in matched if row.get("production_status") == status]
+    elif not status and payment != "all" and payment != PAYMENT_PENDING:
+        matched = [
+            row for row in matched if row.get("production_status") in ADMIN_VISIBLE_PRODUCTION
+        ]
+    return sort_admin_checkouts(matched)
+
+
 @router.get("/checkouts")
 def list_admin_checkouts(
     status: str | None = Query(default=None),
+    payment: str | None = Query(default=None),
+    q: str | None = Query(default=None),
     user: AuthUser = Depends(get_admin_user),
 ):
-    if status and status not in ADMIN_VISIBLE_PRODUCTION and status != PAYMENT_PAID:
+    if status and status not in ADMIN_FILTER_STATUSES:
         raise HTTPException(status_code=400, detail=f"Nieznany filtr statusu: {status}")
+    if payment and payment not in PAYMENT_FILTERS:
+        raise HTTPException(status_code=400, detail=f"Nieznany filtr płatności: {payment}")
 
     conn = require_db()
     try:
         with conn:
             with conn.cursor() as cur:
-                if status and status in ADMIN_VISIBLE_PRODUCTION:
-                    cur.execute(
-                        """
-                        SELECT * FROM checkouts
-                        WHERE payment_status = %s AND production_status = %s
-                        ORDER BY created_at DESC
-                        """,
-                        (PAYMENT_PAID, status),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT * FROM checkouts
-                        WHERE payment_status = %s
-                           OR production_status = ANY(%s)
-                        ORDER BY created_at DESC
-                        """,
-                        (PAYMENT_PAID, list(ADMIN_VISIBLE_PRODUCTION)),
-                    )
+                cur.execute(
+                    """
+                    SELECT * FROM checkouts
+                    WHERE payment_status = %s
+                       OR production_status = ANY(%s)
+                       OR (
+                            payment_status = %s
+                            AND production_status = %s
+                       )
+                    ORDER BY created_at DESC
+                    """,
+                    (
+                        PAYMENT_PAID,
+                        list(ADMIN_VISIBLE_PRODUCTION),
+                        PAYMENT_PENDING,
+                        PRODUCTION_PENDING_PAYMENT,
+                    ),
+                )
                 rows = [dict(row) for row in (cur.fetchall() or [])]
-                checkouts = _attach_lines(cur, rows)
-        return {"success": True, "checkouts": checkouts, "admin": user.email}
+                catalog = _attach_lines(cur, rows)
+        searched = [row for row in catalog if checkout_matches_query(row, q)]
+        counts = count_admin_checkouts(searched)
+        checkouts = filter_admin_checkouts(
+            catalog, status=status, payment=payment, query=q
+        )
+        return {
+            "success": True,
+            "checkouts": checkouts,
+            "counts": counts,
+            "admin": user.email,
+        }
     except HTTPException:
         raise
     except Exception as err:

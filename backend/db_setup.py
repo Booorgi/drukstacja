@@ -498,6 +498,7 @@ CREATE TABLE IF NOT EXISTS checkouts (
     production_status VARCHAR(50) NOT NULL DEFAULT 'pending_payment',
     stripe_session_id VARCHAR(255),
     stripe_payment_intent_id VARCHAR(255),
+    customer_email VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -516,6 +517,7 @@ ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50);
 ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS production_status VARCHAR(50);
 ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS stripe_session_id VARCHAR(255);
 ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS stripe_payment_intent_id VARCHAR(255);
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255);
 ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 CREATE INDEX IF NOT EXISTS idx_checkouts_user_created ON checkouts (user_id, created_at DESC);
