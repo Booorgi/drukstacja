@@ -28,6 +28,7 @@ import {
   getFilamentById,
   getFilamentByHex,
 } from "../config/filamentDatabase";
+import useDeviceTilt from "../lib/useDeviceTilt";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -1360,7 +1361,7 @@ const KeychainViewer3D = dynamic(
         return null;
       }
 
-      function usePendulumPhysics(pendulumPivotRef) {
+      function usePendulumPhysics(pendulumPivotRef, { tiltRef, onPreviewInteract } = {}) {
         const { gl, controls } = useThree();
         const physicsRef = React.useRef({
           rotation: { x: 0.16, y: 0, z: -0.1 },
@@ -1380,53 +1381,16 @@ const KeychainViewer3D = dynamic(
           vx: 0,
           vy: 0,
         });
-        const gyroReadyRef = React.useRef(false);
-
-        const applyGyro = React.useCallback((event) => {
-          if (dragRef.current.active) return;
-          const physics = physicsRef.current;
-          const tiltZ = THREE.MathUtils.degToRad(event.gamma || 0) * 0.4;
-          const tiltX = THREE.MathUtils.degToRad((event.beta || 0) - 45) * 0.4;
-          physics.target.z = THREE.MathUtils.clamp(tiltZ, -0.6, 0.6);
-          physics.target.x = THREE.MathUtils.clamp(tiltX, -0.6, 0.6);
-        }, []);
-
-        const requestGyro = React.useCallback(async () => {
-          if (gyroReadyRef.current || typeof window === "undefined") return;
-          try {
-            if (
-              typeof DeviceOrientationEvent !== "undefined" &&
-              typeof DeviceOrientationEvent.requestPermission === "function"
-            ) {
-              const res = await DeviceOrientationEvent.requestPermission();
-              if (res !== "granted") return;
-            }
-            window.addEventListener("deviceorientation", applyGyro, true);
-            gyroReadyRef.current = true;
-          } catch {
-            /* brak żyroskopu */
-          }
-        }, [applyGyro]);
-
-        React.useEffect(() => {
-          if (typeof window === "undefined") return undefined;
-          if (
-            typeof DeviceOrientationEvent === "undefined" ||
-            typeof DeviceOrientationEvent.requestPermission !== "function"
-          ) {
-            window.addEventListener("deviceorientation", applyGyro, true);
-            gyroReadyRef.current = true;
-          }
-          return () => {
-            window.removeEventListener("deviceorientation", applyGyro, true);
-          };
-        }, [applyGyro]);
 
         React.useEffect(() => {
           const el = gl?.domElement;
           if (!el) return undefined;
           el.style.touchAction = "none";
           el.style.cursor = "grab";
+
+          const onNativeDown = () => {
+            if (typeof onPreviewInteract === "function") onPreviewInteract();
+          };
 
           const onMove = (e) => {
             const drag = dragRef.current;
@@ -1456,27 +1420,41 @@ const KeychainViewer3D = dynamic(
             if (!drag.active) return;
             drag.active = false;
             const physics = physicsRef.current;
-            physics.target.x = 0;
-            physics.target.y = 0;
-            physics.target.z = 0;
+            const tilt = tiltRef && tiltRef.current;
+            if (tilt && tilt.active) {
+              physics.target.x = tilt.x;
+              physics.target.z = tilt.z;
+            } else {
+              physics.target.x = 0;
+              physics.target.y = 0;
+              physics.target.z = 0;
+            }
             physics.velocity.z += drag.vx * 0.00022;
             physics.velocity.x += drag.vy * 0.00022;
             if (controls) controls.enabled = true;
             if (gl?.domElement) gl.domElement.style.cursor = "grab";
           };
 
+          el.addEventListener("pointerdown", onNativeDown);
           window.addEventListener("pointermove", onMove);
           window.addEventListener("pointerup", onUp);
           window.addEventListener("pointercancel", onUp);
           return () => {
+            el.removeEventListener("pointerdown", onNativeDown);
             window.removeEventListener("pointermove", onMove);
             window.removeEventListener("pointerup", onUp);
             window.removeEventListener("pointercancel", onUp);
           };
-        }, [gl, controls]);
+        }, [gl, controls, tiltRef, onPreviewInteract]);
 
         useFrame(() => {
           const physics = physicsRef.current;
+          const tilt = tiltRef && tiltRef.current;
+          if (!dragRef.current.active && tilt && tilt.active) {
+            physics.target.x = tilt.x;
+            physics.target.z = tilt.z;
+          }
+
           const forceX = (physics.target.x - physics.rotation.x) * physics.stiffness;
           const forceZ = (physics.target.z - physics.rotation.z) * physics.stiffness;
           const forceY = (physics.target.y - physics.rotation.y) * (physics.stiffness * 0.5);
@@ -1498,13 +1476,21 @@ const KeychainViewer3D = dynamic(
             pivot.rotation.x = physics.rotation.x;
             pivot.rotation.z = physics.rotation.z;
             pivot.rotation.y = physics.rotation.y;
+            if (typeof window !== "undefined") {
+              window.__KEYCHAIN_PIVOT = {
+                x: pivot.rotation.x,
+                y: pivot.rotation.y,
+                z: pivot.rotation.z,
+                drag: dragRef.current.active,
+              };
+            }
           }
         });
 
         return React.useCallback(
           (e) => {
             e.stopPropagation();
-            requestGyro();
+            if (typeof onPreviewInteract === "function") onPreviewInteract();
             const native = e.nativeEvent || e;
             const drag = dragRef.current;
             drag.active = true;
@@ -1518,12 +1504,12 @@ const KeychainViewer3D = dynamic(
             if (controls) controls.enabled = false;
             if (gl?.domElement) gl.domElement.style.cursor = "grabbing";
           },
-          [controls, gl, requestGyro]
+          [controls, gl, onPreviewInteract]
         );
       }
 
-      function PendulumSimulation({ pendulumPivotRef, children }) {
-        const beginDrag = usePendulumPhysics(pendulumPivotRef);
+      function PendulumSimulation({ pendulumPivotRef, children, tiltRef, onPreviewInteract }) {
+        const beginDrag = usePendulumPhysics(pendulumPivotRef, { tiltRef, onPreviewInteract });
         return (
           <group
             onPointerDown={(e) => {
@@ -1766,7 +1752,7 @@ const KeychainViewer3D = dynamic(
         return null;
       }
 
-      return React.forwardRef(function Viewer({ onExportReady, scaleContext = "off", ...props }, ref) {
+      return React.forwardRef(function Viewer({ onExportReady, scaleContext = "off", tiltRef, onPreviewInteract, ...props }, ref) {
         const exportFnRef = React.useRef(null);
         const keychainGroupRef = React.useRef(null);
         const pendulumPivotRef = React.useRef(null);
@@ -1818,7 +1804,11 @@ const KeychainViewer3D = dynamic(
                   <meshStandardMaterial color={0xdcdcdc} metalness={0.95} roughness={0.15} />
                 </mesh>
                 <group ref={pendulumPivotRef} name="PendulumPivot" position={[0, -RING_RADIUS, 0]}>
-                  <PendulumSimulation pendulumPivotRef={pendulumPivotRef}>
+                  <PendulumSimulation
+                    pendulumPivotRef={pendulumPivotRef}
+                    tiltRef={tiltRef}
+                    onPreviewInteract={onPreviewInteract}
+                  >
                     <KeychainChain />
                     <group position={[0, -(CHAIN_LENGTH + CHAIN_TO_USZKO), 0]}>
                       <group rotation={hang.restRotation}>
@@ -2090,6 +2080,7 @@ export default function KeychainGenerator() {
   const [layerViewEnabled, setLayerViewEnabled] = useState(false);
   const [layerSeparation, setLayerSeparation] = useState(0);
   const [scaleContext, setScaleContext] = useState("off");
+  const { tiltRef, status: tiltStatus, needsPrompt: tiltNeedsPrompt, hasMotion: tiltHasMotion, enableTilt } = useDeviceTilt();
 
   // --- NOWE: Eksport STL & 3MF Bambu ---
   const viewerRef = useRef(null);
@@ -2726,6 +2717,8 @@ export default function KeychainGenerator() {
               <KeychainViewer3D
                 ref={viewerRef}
                 scaleContext={scaleContext}
+                tiltRef={tiltRef}
+                onPreviewInteract={enableTilt}
                 onExportReady={(handlers) => {
                   exportHandlerRef.current = handlers;
                 }}
@@ -2758,23 +2751,54 @@ export default function KeychainGenerator() {
               />
               </div>
 
-              <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center rounded-2xl border border-slate-200/80 bg-white/90 px-2 py-1.5 shadow-lg shadow-slate-900/5 backdrop-blur-md">
+              <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5">
+                {tiltNeedsPrompt && tiltStatus !== "denied" && tiltStatus !== "granted" && (
+                  <button
+                    type="button"
+                    data-tilt-enable
+                    onClick={enableTilt}
+                    disabled={tiltStatus === "pending"}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/85 px-2 py-0.5 text-[10px] font-semibold leading-tight text-slate-600 shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-slate-900 disabled:opacity-60 cursor-pointer"
+                  >
+                    <svg className="h-2.5 w-2.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <rect x="5" y="1.5" width="6" height="13" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
+                      <circle cx="8" cy="12.2" r="0.7" fill="currentColor" />
+                    </svg>
+                    {tiltStatus === "pending" ? "Czekam na zgodę…" : "Rusz telefonem"}
+                  </button>
+                )}
+                {tiltHasMotion && (
+                  <span
+                    data-tilt-active
+                    className="inline-flex items-center rounded-full border border-slate-200/70 bg-white/70 px-2 py-0.5 text-[10px] font-semibold leading-tight text-slate-500 shadow-sm backdrop-blur-sm"
+                  >
+                    Przechyl telefon
+                  </span>
+                )}
                 <button
                   type="button"
+                  data-scale-compare
+                  aria-pressed={scaleContext === "coin"}
                   onClick={() => setScaleContext((prev) => (prev === "coin" ? "off" : "coin"))}
-                  className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-tight shadow-sm backdrop-blur-sm transition-all cursor-pointer ${
                     scaleContext === "coin"
-                      ? "bg-amber-500 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      ? "border-amber-400 bg-amber-500 text-white"
+                      : "border-slate-200/80 bg-white/85 text-slate-600 hover:bg-white hover:text-slate-900"
                   }`}
                 >
-                  <span className="inline-block h-3.5 w-3.5 rounded-full border border-amber-300 bg-amber-200" />
+                  <span
+                    className={`inline-block h-2 w-2 rounded-full border ${
+                      scaleContext === "coin"
+                        ? "border-amber-200 bg-amber-100"
+                        : "border-amber-300 bg-amber-200"
+                    }`}
+                  />
                   Porównaj z 5 zł
                 </button>
               </div>
 
               <div className="pointer-events-none absolute right-3 top-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500/80">
-                Pociągnij brelok
+                {tiltHasMotion ? "Pociągnij lub przechyl" : "Pociągnij brelok"}
               </div>
 
               {layerViewEnabled && (
