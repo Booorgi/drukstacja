@@ -41,4 +41,24 @@ test.describe("large 3MF skipped preview", () => {
     await expect(page.getByText("518 g")).toBeVisible();
     await expect(page.getByRole("button", { name: "Do koszyka" })).toBeEnabled();
   });
+
+  test("embedded 3MF plate photo fills the stage when 3D is skipped", async ({ page }) => {
+    await page.goto("/?studioLayout=preview-skipped-photo");
+    await revealStudio(page);
+
+    const thumb = page.locator("[data-studio-preview-thumbnail]");
+    await expect(page.locator("[data-studio-preview-status='thumbnail']")).toBeVisible();
+    await expect(page.locator("[data-has-preview-image='true']")).toBeVisible();
+    await expect(thumb).toBeVisible();
+    await expect(thumb).toHaveAttribute("src", /plate_1\.png/);
+    await expect(page.getByText("Wycena gotowa — zdjęcie z pliku 3MF")).toBeVisible();
+    await expect(page.getByText(/Pokazujemy miniaturę zapisaną w pliku 3MF/)).toBeVisible();
+    await expect(page.getByText("Wycena gotowa — bez podglądu 3D")).toHaveCount(0);
+    await expect(page.getByText("Upuść model tutaj")).toHaveCount(0);
+    await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
+    await expect(page.getByText("518 g")).toBeVisible();
+    await expect(page.getByText("180.00")).toBeVisible();
+    await expect(page.getByText("16 g")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Do koszyka" })).toBeEnabled();
+  });
 });

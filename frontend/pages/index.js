@@ -22,12 +22,14 @@ import StudioMaterialPicker from "../components/StudioMaterialPicker";
 import StudioMobileSheet from "../components/StudioMobileSheet";
 import PrinterLayersBand from "../components/PrinterLayersBand";
 import { STL_MATERIALS } from "../lib/filament";
-import { peek3mfPrintProfile } from "../lib/peek3mfProfile";
+import { peek3mfSidecar } from "../lib/peek3mfProfile";
 import {
   isQuotedModel,
   isPreviewSkipped,
   studioVolumeCm3,
+  studioPreviewImageUrl,
   LARGE_3MF_QUOTE_NO_PREVIEW_MSG,
+  LARGE_3MF_QUOTE_THUMBNAIL_MSG,
 } from "../lib/studioQuote";
 import useMediaQuery from "../lib/useMediaQuery";
 
@@ -76,6 +78,7 @@ export default function Home() {
 
   const [selectedFile, setSelectedFile] = useState(null);
   const [modelPreviewUrl, setModelPreviewUrl] = useState(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisData, setAnalysisData] = useState(null);
 
@@ -366,6 +369,7 @@ endsolid fixture
       const file = new File(["x"], "Jaguar v2 Bambu.3mf", { type: "model/3mf" });
       setSelectedFile(file);
       setModelPreviewUrl(null);
+      setPreviewImageUrl(null);
       setInfill(5);
       setLayerHeight(0.2);
       setNozzleSize(0.4);
@@ -390,6 +394,42 @@ endsolid fixture
           infill: 5,
         },
         message: LARGE_3MF_QUOTE_NO_PREVIEW_MSG,
+      });
+      return;
+    }
+
+    if (layout === "preview-skipped-photo") {
+      const file = new File(["x"], "Jaguar v2 Bambu.3mf", { type: "model/3mf" });
+      const platePhoto = "/fixtures/plate_1.png";
+      setSelectedFile(file);
+      setModelPreviewUrl(null);
+      setPreviewImageUrl(platePhoto);
+      setInfill(5);
+      setLayerHeight(0.2);
+      setNozzleSize(0.4);
+      setSelectedMaterial("PLA_MATTE");
+      setAnalysisData({
+        instant_pricing: true,
+        skipped_geometry: false,
+        skipped_colored_preview: true,
+        preview_skipped: true,
+        quote_ready: true,
+        volume_cm3: 842.1,
+        file_key: "layout-jaguar-photo-fixture",
+        original_filename: "Jaguar v2 Bambu.3mf",
+        filament_weight_g: 518,
+        print_time_formatted: "1d 4h",
+        price_breakdown: { unit_price_pln: 180 },
+        preview_image_url: platePhoto,
+        preview_image_source: "Metadata/plate_1.png",
+        file_profile: {
+          filament_colours: ["#080504", "#854A22", "#C4864F", "#DFDFDE"],
+          filament_types: ["PLA Matte", "PLA Basic"],
+          layer_height: 0.2,
+          nozzle_size: 0.4,
+          infill: 5,
+        },
+        message: LARGE_3MF_QUOTE_THUMBNAIL_MSG,
       });
     }
   }, []);
@@ -447,6 +487,7 @@ endsolid fixture
     setRfqSubmitted(false);
     setScalePercent(100);
     setScaleOpen(false);
+    setPreviewImageUrl(null);
 
     const lowerName = file.name.toLowerCase();
     const isDirectPreview =
@@ -468,7 +509,8 @@ endsolid fixture
     let peekedProfile = null;
     if (is3mf) {
       try {
-        peekedProfile = await peek3mfPrintProfile(file);
+        const peeked = await peek3mfSidecar(file);
+        peekedProfile = peeked.profile;
         if (peekedProfile?.filament_types?.length) {
           handleSelectMaterial(materialIdFromFilamentType(peekedProfile.filament_types[0]));
         }
@@ -479,6 +521,7 @@ endsolid fixture
           setSelectedColor(peekedProfile.filament_colours[0]);
           setAnalysisData({ file_profile: peekedProfile });
         }
+        if (peeked.preview?.url) setPreviewImageUrl(peeked.preview.url);
       } catch (peekErr) {
         console.warn("Nie udało się odczytać profilu 3MF z pliku:", peekErr);
       }
@@ -536,6 +579,9 @@ endsolid fixture
         setModelPreviewUrl(resolveAssetUrl(data.preview_stl_url));
       } else if (!data.instant_pricing) {
         setModelPreviewUrl(null);
+      }
+      if (data.preview_image_url) {
+        setPreviewImageUrl(resolveAssetUrl(data.preview_image_url));
       }
     } catch (err) {
       console.error("Błąd zapytania analizy:", err);
@@ -610,6 +656,7 @@ endsolid fixture
     setSelectedFile(null);
     setAnalysisData(null);
     setModelPreviewUrl(null);
+    setPreviewImageUrl(null);
     setRfqSubmitted(false);
     setQuantity(1);
     setScalePercent(100);
@@ -716,6 +763,7 @@ endsolid fixture
   // Weryfikacja wgranego modelu – ukrycie ceny i blokada koszyka przed analizą
   const hasModel = isQuotedModel(analysisData);
   const previewUnavailable = isPreviewSkipped(analysisData, modelPreviewUrl);
+  const embeddedPreviewUrl = studioPreviewImageUrl(analysisData, previewImageUrl);
   const isEmptyStage = !selectedFile && !analysisData && !isAnalyzing;
   const MIN_ORDER_VALUE = 30.00;
   const isBelowMoq = hasModel && parseFloat(totalPrice) < MIN_ORDER_VALUE;
@@ -1122,6 +1170,25 @@ endsolid fixture
                     Analizuję strukturę pliku i geometrię produkcyjną...
                   </span>
                 </div>
+              ) : modelPreviewUrl ? (
+                <CadViewer3D
+                  studio
+                  modelUrl={modelPreviewUrl}
+                  fileName={selectedFile?.name || "model.stl"}
+                  analysisData={analysisData}
+                  selectedColor={selectedColor}
+                  onColorChange={(newHex) => setSelectedColor(newHex)}
+                  materialConfig={matConfig}
+                  availableColors={matConfig?.colors || []}
+                  showSupportsDefault={showSupports}
+                  modelScale={modelScale}
+                />
+              ) : embeddedPreviewUrl && (previewUnavailable || analysisData) ? (
+                <StudioPreviewUnavailable
+                  message={analysisData?.message}
+                  quoteReady={hasModel}
+                  imageUrl={embeddedPreviewUrl}
+                />
               ) : previewUnavailable ? (
                 <StudioPreviewUnavailable
                   message={analysisData?.message}
@@ -1201,19 +1268,6 @@ endsolid fixture
                     </span>
                   </div>
                 </div>
-              ) : modelPreviewUrl ? (
-                <CadViewer3D
-                  studio
-                  modelUrl={modelPreviewUrl}
-                  fileName={selectedFile?.name || "model.stl"}
-                  analysisData={analysisData}
-                  selectedColor={selectedColor}
-                  onColorChange={(newHex) => setSelectedColor(newHex)}
-                  materialConfig={matConfig}
-                  availableColors={matConfig?.colors || []}
-                  showSupportsDefault={showSupports}
-                  modelScale={modelScale}
-                />
               ) : (
                 <StudioEmptyDropzone
                   onBrowse={openFilePicker}
