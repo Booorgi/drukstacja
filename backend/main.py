@@ -1024,6 +1024,7 @@ def _apply_slicer_quote_to_result(
     result["quote_source"] = slice_data.get("engine")
     result["print_time_hours"] = slice_data.get("print_time_hours")
     result["print_time_formatted"] = slice_data.get("print_time_formatted")
+    result["print_time_seconds"] = slice_data.get("print_time_seconds")
     result["filament_weight_g"] = slice_data.get("filament_weight_g")
     result["filament_length_m"] = slice_data.get("filament_length_m")
     result["filament_volume_cm3"] = slice_data.get("filament_volume_cm3")
@@ -1587,6 +1588,7 @@ def reslice_model_endpoint(req: ResliceRequest):
         "engine": slice_data.get("engine"),
         "print_time_hours": slice_data.get("print_time_hours"),
         "print_time_formatted": slice_data.get("print_time_formatted"),
+        "print_time_seconds": slice_data.get("print_time_seconds"),
         "filament_weight_g": slice_data.get("filament_weight_g"),
         "filament_length_m": slice_data.get("filament_length_m"),
         "filament_volume_cm3": slice_data.get("filament_volume_cm3"),

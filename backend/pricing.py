@@ -23,6 +23,7 @@ MOQ koszyka = 30.00 PLN (nie doliczane do ceny sztuki).
 """
 import math
 import os
+import re
 
 from filament_catalog import get_material_rate_per_g, iter_subtypes
 from slicer import estimate_filament_from_geometry
@@ -197,6 +198,122 @@ def calculate_price_from_slicer(
         "formula": "unit = material_cost × markup + hours × hourly + setup",
         "engine": "commercial-margin-v1",
     }
+
+
+_TECH_WEIGHT_RE = re.compile(r"Waga:\s*([\d.]+)\s*g", re.I)
+_TECH_TIME_RE = re.compile(r"Czas:\s*([^|]+)", re.I)
+
+
+def parse_formatted_print_time_hours(formatted: str | None) -> float:
+    if not formatted:
+        return 0.0
+    s = str(formatted).lower()
+    days = re.search(r"(\d+)\s*d", s)
+    hours = re.search(r"(\d+)\s*h", s)
+    mins = re.search(r"(\d+)\s*m", s)
+    return (
+        (int(days.group(1)) * 24 if days else 0)
+        + (int(hours.group(1)) if hours else 0)
+        + (int(mins.group(1)) / 60.0 if mins else 0)
+    )
+
+
+def canonical_print_time_hours(
+    *,
+    formatted: str | None = None,
+    hours: float | None = None,
+    seconds: float | None = None,
+) -> float:
+    """Prefer Bambu prediction seconds, then the displayed formatted time, then numeric hours."""
+    try:
+        sec = float(seconds) if seconds is not None else 0.0
+    except (TypeError, ValueError):
+        sec = 0.0
+    if math.isfinite(sec) and sec > 0:
+        return round(sec / 3600.0, 2)
+    parsed = parse_formatted_print_time_hours(formatted)
+    if parsed > 0:
+        return parsed
+    try:
+        numeric = float(hours) if hours is not None else 0.0
+    except (TypeError, ValueError):
+        numeric = 0.0
+    if math.isfinite(numeric) and numeric > 0:
+        return numeric
+    return 0.0
+
+
+def parse_mm_value(value, default: float) -> float:
+    if value is None or str(value).strip() == "":
+        return default
+    match = re.search(r"([\d.]+)", str(value))
+    if not match:
+        return default
+    try:
+        parsed = float(match.group(1))
+    except ValueError:
+        return default
+    return parsed if math.isfinite(parsed) and parsed > 0 else default
+
+
+def extract_quote_weight_hours(
+    *,
+    filament_weight_g=None,
+    print_time_hours=None,
+    print_time_formatted=None,
+    print_time_seconds=None,
+    technology: str | None = None,
+) -> tuple[float | None, float]:
+    """Pull weight/time from dedicated fields or the studio technology string."""
+    weight = None
+    try:
+        if filament_weight_g is not None and str(filament_weight_g).strip() != "":
+            parsed = float(filament_weight_g)
+            if math.isfinite(parsed) and parsed > 0:
+                weight = parsed
+    except (TypeError, ValueError):
+        weight = None
+
+    tech = technology or ""
+    if weight is None:
+        match = _TECH_WEIGHT_RE.search(tech)
+        if match:
+            try:
+                parsed = float(match.group(1))
+                if math.isfinite(parsed) and parsed > 0:
+                    weight = parsed
+            except ValueError:
+                weight = None
+    tech_formatted = None
+    time_match = _TECH_TIME_RE.search(tech)
+    if time_match:
+        tech_formatted = time_match.group(1).strip()
+    hours = canonical_print_time_hours(
+        formatted=print_time_formatted or tech_formatted,
+        hours=print_time_hours,
+        seconds=print_time_seconds,
+    )
+    return weight, hours
+
+
+def commercial_total_for_order(
+    *,
+    filament_weight_g: float,
+    print_time_hours: float,
+    material: str,
+    quantity: int = 1,
+    layer_height: float = 0.20,
+    nozzle_size: float = 0.4,
+) -> float:
+    quote = calculate_price_from_slicer(
+        print_time_hours=print_time_hours,
+        filament_weight_g=filament_weight_g,
+        material=material or "PLA",
+        quantity=max(1, int(quantity or 1)),
+        layer_height=layer_height,
+        nozzle_size=nozzle_size,
+    )
+    return quote["total_price_pln"]
 
 
 def calculate_price(

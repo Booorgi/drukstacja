@@ -30,7 +30,7 @@ import {
   quoteUnitPriceFromWeight,
   studioFamiliesForWheel,
 } from "../lib/filamentCatalog";
-import { MINIMUM_ORDER_VALUE_PLN } from "../lib/commercialPricing";
+import commercialPricing from "../lib/commercialPricing";
 import {
   peek3mfSidecar,
   canQuoteFromPeekedSliceInfo,
@@ -47,6 +47,7 @@ import {
   studioVolumeCm3,
   studioPreviewImageUrl,
   quoteAnalysisFromPeekedSliceInfo,
+  mergeAnalyzeWithPeekedSliceQuote,
   ANALYZE_TIMEOUT_RFQ_MSG,
   LARGE_3MF_QUOTE_NO_PREVIEW_MSG,
   LARGE_3MF_QUOTE_THUMBNAIL_MSG,
@@ -61,6 +62,8 @@ const {
   isOverPrintBed,
   fitToPrintBedPercent,
 } = printBed;
+
+const { MINIMUM_ORDER_VALUE_PLN, canonicalPrintTimeHours } = commercialPricing;
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -551,6 +554,7 @@ endsolid fixture
         filament_length_m: 49.2,
         print_time_formatted: "5h 6m",
         print_time_hours: 5.1,
+        print_time_seconds: 18372,
         slicer_engine: "bambu-slice-info",
         quote_source: "bambu-slice-info",
         price_breakdown: { unit_price_pln: 20.31 },
@@ -676,7 +680,7 @@ endsolid fixture
             profile: peekedProfile,
             sliceStats: peeked.sliceStats,
             fileName: file.name,
-            ratePerG: matConfig?.ratePerG || 0.27,
+            ratePerG: matConfig?.ratePerG || 0.045,
             previewImageUrl: peeked.preview?.url || null,
           });
           if (peekedSliceQuote) setAnalysisData(peekedSliceQuote);
@@ -710,12 +714,12 @@ endsolid fixture
         httpErr.status = res.status;
         throw httpErr;
       }
-      setAnalysisData({
+      setAnalysisData(mergeAnalyzeWithPeekedSliceQuote({
         ...data,
         source_dimensions_mm: data.dimensions_mm,
         source_volume_cm3: data.volume_cm3,
         source_surface_area_cm2: data.surface_area_cm2,
-      });
+      }, peekedSliceQuote));
 
       if (data.file_profile) {
         const p = data.file_profile;
@@ -952,11 +956,16 @@ endsolid fixture
       nozzleMultiplier,
       printTimeHours: analysisData?.print_time_hours,
       printTimeFormatted: analysisData?.print_time_formatted,
+      printTimeSeconds:
+        analysisData?.print_time_seconds ||
+        analysisData?.file_profile?.slice_stats?.print_time_seconds,
     });
   }, [
     analysisData?.filament_weight_g,
     analysisData?.print_time_hours,
     analysisData?.print_time_formatted,
+    analysisData?.print_time_seconds,
+    analysisData?.file_profile?.slice_stats?.print_time_seconds,
     volume,
     matConfig,
     infill,
@@ -1057,6 +1066,20 @@ endsolid fixture
         clean_supports: true,
         brass_inserts: false,
         quantity: quantity,
+        filament_weight_g: Number(analysisData?.filament_weight_g) || null,
+        print_time_hours: canonicalPrintTimeHours({
+          formatted: analysisData?.print_time_formatted,
+          hours: analysisData?.print_time_hours,
+          seconds:
+            analysisData?.print_time_seconds ||
+            analysisData?.file_profile?.slice_stats?.print_time_seconds,
+        }),
+        print_time_formatted: analysisData?.print_time_formatted || null,
+        print_time_seconds:
+          Number(
+            analysisData?.print_time_seconds ||
+              analysisData?.file_profile?.slice_stats?.print_time_seconds
+          ) || null,
         total_price: parseFloat(totalPrice),
         dimensions_mm: (sourceDimsMm.some((v) => v > 0) ? scaledDimsMm : [60, 60, 40]).map(
           (v) => Number(Number(v).toFixed(2))

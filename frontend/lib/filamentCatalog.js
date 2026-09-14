@@ -1,5 +1,7 @@
 import catalog from "../config/filamentCatalog.json";
-import { commercialUnitPrice, parsePrintTimeHours } from "./commercialPricing";
+import commercialPricing from "./commercialPricing";
+
+const { commercialUnitPrice, parsePrintTimeHours } = commercialPricing;
 
 export const STUDIO_FAMILIES = catalog.families;
 export const STL_MATERIALS = catalog.materials;
@@ -86,6 +88,7 @@ export function quoteUnitPriceFromWeight({
   nozzleMultiplier = 1,
   printTimeHours = 0,
   printTimeFormatted,
+  printTimeSeconds,
 }) {
   let grams = Number(weightG);
   if (!Number.isFinite(grams) || grams <= 0.05) {
@@ -97,7 +100,7 @@ export function quoteUnitPriceFromWeight({
   }
   return commercialUnitPrice({
     weightG: grams,
-    printTimeHours: parsePrintTimeHours(printTimeFormatted, printTimeHours),
+    printTimeHours: parsePrintTimeHours(printTimeFormatted, printTimeHours, printTimeSeconds),
     ratePerG,
     layerMultiplier,
     nozzleMultiplier,

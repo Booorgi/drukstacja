@@ -3,6 +3,9 @@ import { cancelOrder, clearCart } from "../lib/ordersApi";
 import { createCheckout } from "../lib/checkoutApi";
 import { cartLineSubtitle, isShopSkuLine } from "../lib/orderLine";
 import CheckoutAddressForm from "./CheckoutAddressForm";
+import commercialPricing from "../lib/commercialPricing";
+
+const { cartQuotedTotal } = commercialPricing;
 
 function getDeletedIds() {
   if (typeof window === "undefined") return [];
@@ -52,9 +55,7 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
 
   if (!isOpen) return null;
 
-  const total = localItems
-    .reduce((acc, item) => acc + (parseFloat(item.total_price) || 0), 0)
-    .toFixed(2);
+  const total = cartQuotedTotal(localItems).toFixed(2);
   const belowMinimum = localItems.length === 0 || parseFloat(total) < 30.0;
 
   async function removeItem(id) {
@@ -200,7 +201,7 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
                       </span>
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
-                      <span className="text-sm font-black text-slate-900">
+                      <span className="text-sm font-black text-slate-900" data-cart-line-price>
                         {parseFloat(item.total_price || 0).toFixed(2)} zł
                       </span>
                       <button
@@ -241,8 +242,15 @@ export default function CartDrawer({ isOpen, onClose, items = [], onRemoveItem }
 
             <div className="flex justify-between items-baseline">
               <span className="text-sm font-semibold text-slate-500">Razem do zapłaty:</span>
-              <span className="text-2xl font-black text-slate-900">{total} PLN</span>
+              <span className="text-2xl font-black text-slate-900" data-cart-total>
+                {total} PLN
+              </span>
             </div>
+            {localItems.length > 0 ? (
+              <p className="text-[11px] text-slate-400 -mt-2" data-vat-mode="quoted-as-shown">
+                Ceny jak w konfiguratorze — bez doliczania VAT drugi raz.
+              </p>
+            ) : null}
 
             <button
               type="button"

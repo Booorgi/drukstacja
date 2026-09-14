@@ -79,6 +79,7 @@ test.describe("large 3MF skipped preview", () => {
     await expect(page.getByText("146.74 g")).toBeVisible();
     await expect(page.getByText("5h 6m")).toBeVisible();
     await expect(page.getByText("20.31")).toBeVisible();
+    await expect(page.getByText("22.84")).toHaveCount(0);
     await expect(page.getByText("6.60")).toHaveCount(0);
     await expect(page.getByText("39.62")).toHaveCount(0);
     await expect(page.getByText("647.8 g")).toHaveCount(0);
