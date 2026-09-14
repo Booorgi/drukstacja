@@ -3,7 +3,7 @@ import React from "react";
 function ParamRow({ label, children }) {
   return (
     <div>
-      <p className="text-sm font-semibold text-neutral-800 mb-2">{label}</p>
+      <p className="text-sm font-semibold text-zinc-200 mb-2">{label}</p>
       <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
@@ -17,10 +17,10 @@ function Pill({ active, onClick, children, disabled }) {
       onClick={onClick}
       className={`px-3 py-1.5 rounded-full text-sm font-semibold transition ${
         disabled
-          ? "bg-neutral-100 text-neutral-400 cursor-not-allowed"
+          ? "bg-zinc-800 text-zinc-500 cursor-not-allowed"
           : active
-          ? "bg-[#111111] text-white"
-          : "bg-neutral-100 text-neutral-800 hover:bg-neutral-200"
+          ? "bg-[#F97316] text-zinc-950"
+          : "bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
       }`}
     >
       {children}
@@ -46,9 +46,9 @@ export default function StudioPrintParams({
       data-studio-print-params-surface={surface}
       role="dialog"
       aria-label="Parametry druku"
-      className="w-full rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10 space-y-4 md:w-[280px]"
+      className="w-full rounded-2xl bg-zinc-900 text-zinc-100 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.45)] border border-zinc-700 space-y-4 md:w-[280px]"
     >
-      <div className="mx-auto h-1 w-10 rounded-full bg-neutral-200 md:hidden" aria-hidden />
+      <div className="mx-auto h-1 w-10 rounded-full bg-zinc-700 md:hidden" aria-hidden />
       <p className="text-base font-semibold">Parametry druku</p>
 
       <ParamRow label="Dysza">

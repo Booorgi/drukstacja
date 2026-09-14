@@ -32,12 +32,12 @@ export default function StudioColorPicker({
       data-studio-color-picker-surface={surface}
       role="dialog"
       aria-label="Wybierz kolor filamentu"
-      className="w-full rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10 md:w-[280px]"
+      className="w-full rounded-2xl bg-zinc-900 text-zinc-100 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.45)] border border-zinc-700 md:w-[280px]"
     >
-      <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-neutral-200 md:hidden" aria-hidden />
+      <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-zinc-700 md:hidden" aria-hidden />
       <div className="mb-3">
         <p className="text-base font-semibold">Kolor filamentu</p>
-        <p className="mt-0.5 text-xs text-neutral-500">
+        <p className="mt-0.5 text-xs text-zinc-500">
           {selected?.name || "Wybierz kolor"}
           {materialName ? ` · ${materialName}` : ""}
         </p>
@@ -57,13 +57,13 @@ export default function StudioColorPicker({
               aria-pressed={active}
               onClick={() => onSelect?.(color)}
               className={`flex min-h-[72px] min-w-[44px] flex-col items-center justify-start gap-1 rounded-xl px-1 py-1.5 transition ${
-                active ? "bg-neutral-100" : "hover:bg-neutral-50"
+                active ? "bg-zinc-800" : "hover:bg-zinc-800/60"
               }`}
             >
               <span
                 className={`relative flex h-12 w-12 items-center justify-center rounded-full ${
-                  active ? "ring-2 ring-[#111111] ring-offset-2" : "ring-1 ring-black/10"
-                } ${light ? "ring-neutral-300" : ""}`}
+                  active ? "ring-2 ring-[#F97316] ring-offset-2 ring-offset-zinc-900" : "ring-1 ring-zinc-600"
+                } ${light ? "ring-zinc-400" : ""}`}
                 style={
                   color.gradient
                     ? { backgroundImage: color.gradient }
@@ -79,7 +79,7 @@ export default function StudioColorPicker({
                   </span>
                 ) : null}
               </span>
-              <span className="w-full truncate text-center text-[10px] font-medium leading-tight text-neutral-700">
+              <span className="w-full truncate text-center text-[10px] font-medium leading-tight text-zinc-300">
                 {color.name || fill}
               </span>
             </button>

@@ -3,8 +3,15 @@
 @tailwind utilities;
 
 :root {
-  --background: #ebe6dc;
-  --foreground: #111111;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --ds-bg: #09090b;
+  --ds-surface: #18181b;
+  --ds-surface-2: #27272a;
+  --ds-border: #3f3f46;
+  --ds-muted: #a1a1aa;
+  --ds-accent: #f97316;
+  --ds-accent-hover: #ea580c;
   --studio-quote-bar-clearance: 5.75rem;
 }
 
@@ -77,18 +84,18 @@ body {
   }
 }
 
-/* Subtelny, nowoczesny scrollbar */
+/* Subtelny, nowoczesny scrollbar — ciemny motyw */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #18181b;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #3f3f46;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #52525b;
 }

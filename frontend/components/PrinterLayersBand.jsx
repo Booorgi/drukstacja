@@ -4,7 +4,7 @@ const POSTER_SRC = "/videos/printer-layers-poster.jpg";
 const WEBM_SRC = "/videos/printer-layers-loop.webm";
 const MP4_SRC = "/videos/printer-layers-loop.mp4";
 const LOGO_SRC = "/logo-drukstacja.png?v=2";
-const VIDEO_ATMOSPHERE_OPACITY = 0.38;
+const VIDEO_ATMOSPHERE_OPACITY = 0.58;
 const NAV_CLEARANCE_PX = 80;
 
 function prefersReducedMotion() {
@@ -23,7 +23,7 @@ function isHeroOnScreen(section) {
  * Homepage hero: atmospheric printer loop behind the mark + short site copy.
  * Desktop and mobile autoplay a muted loop. prefers-reduced-motion: poster only.
  */
-export default function PrinterLayersBand() {
+export default function PrinterLayersBand({ onUploadClick }) {
   const sectionRef = useRef(null);
   const videoRef = useRef(null);
   const [shouldLoad, setShouldLoad] = useState(false);
@@ -126,6 +126,14 @@ export default function PrinterLayersBand() {
 
   const showVideo = shouldLoad && !reduceMotion;
 
+  function handleUploadClick() {
+    const el = document.getElementById("configurator");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    onUploadClick?.();
+  }
+
   return (
     <section
       ref={sectionRef}
@@ -133,7 +141,7 @@ export default function PrinterLayersBand() {
       data-printer-layers-hero
       data-printer-mode={reduceMotion ? "poster" : "loop"}
       aria-labelledby="printer-layers-heading"
-      className="relative isolate overflow-hidden bg-[#111111]"
+      className="relative isolate overflow-hidden bg-[#09090b]"
     >
       <div className="relative min-h-[calc(100dvh-4rem)] sm:min-h-[calc(100dvh-4.5rem)]">
         <img
@@ -141,7 +149,7 @@ export default function PrinterLayersBand() {
           alt=""
           aria-hidden="true"
           className="absolute inset-0 h-full w-full object-cover object-center"
-          style={{ opacity: 0.22 }}
+          style={{ opacity: 0.4, filter: "brightness(1.22) contrast(1.08) saturate(1.06)" }}
         />
 
         {showVideo && (
@@ -149,7 +157,10 @@ export default function PrinterLayersBand() {
             ref={videoRef}
             data-printer-layers-video
             className="absolute inset-0 h-full w-full object-cover object-center pointer-events-none"
-            style={{ opacity: VIDEO_ATMOSPHERE_OPACITY }}
+            style={{
+              opacity: VIDEO_ATMOSPHERE_OPACITY,
+              filter: "brightness(1.2) contrast(1.1) saturate(1.08)",
+            }}
             poster={POSTER_SRC}
             autoPlay
             muted
@@ -167,9 +178,17 @@ export default function PrinterLayersBand() {
           </video>
         )}
 
-        <div className="absolute inset-0 bg-black/40" aria-hidden="true" />
+        <div className="absolute inset-0 bg-black/28" aria-hidden="true" />
         <div
-          className="absolute inset-0 bg-gradient-to-b from-[#111111]/55 via-transparent to-[#E2E2E2]"
+          className="pointer-events-none absolute inset-0"
+          aria-hidden="true"
+          style={{
+            background:
+              "radial-gradient(ellipse 38% 32% at 62% 40%, rgba(249,115,22,0.22), transparent 58%), radial-gradient(ellipse 22% 20% at 58% 36%, rgba(255,255,255,0.18), transparent 52%)",
+          }}
+        />
+        <div
+          className="absolute inset-0 bg-gradient-to-b from-[#09090b]/50 via-transparent to-[#09090b]"
           aria-hidden="true"
         />
 
@@ -187,8 +206,20 @@ export default function PrinterLayersBand() {
               Wycena druku 3D w studio
             </h2>
             <p className="mt-2 max-w-lg text-sm sm:text-[15px] leading-relaxed text-white/80">
-              Wgraj model, dobierz filament i warstwę — dostaniesz cenę od razu.
+              Wgraj model, dobierz filament i warstwę — cena od razu, bez czekania na maila.
             </p>
+            <button
+              type="button"
+              data-hero-upload-cta
+              onClick={handleUploadClick}
+              className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-semibold text-zinc-950 shadow-[0_10px_28px_rgba(249,115,22,0.28)] transition hover:bg-[#EA580C] hover:shadow-[0_12px_32px_rgba(234,88,12,0.35)]"
+            >
+              Wgraj plik do wyceny
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16.5V18a2 2 0 002 2h12a2 2 0 002-2v-1.5" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>

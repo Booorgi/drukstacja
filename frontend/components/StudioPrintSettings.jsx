@@ -18,7 +18,7 @@ function MaterialDetails({ matConfig, recommendedApps, chemicalResistance, group
         <span className="px-2 py-1 rounded-full bg-white/10 text-xs text-white/70">{groupLabel}</span>
         <span className="px-2 py-1 rounded-full bg-white/10 text-xs text-white/70">FDM</span>
         {matConfig?.badge ? (
-          <span className="px-2 py-1 rounded-full bg-white text-neutral-900 text-xs font-medium">
+          <span className="px-2 py-1 rounded-full bg-[#F97316] text-zinc-950 text-xs font-medium">
             {matConfig.badge}
           </span>
         ) : null}
@@ -78,7 +78,7 @@ export default function StudioPrintSettings({
 
   if (isRfq) {
     return (
-      <div className="rounded-2xl bg-[#2A2A2A] text-white p-5 space-y-4 w-full">
+      <div className="rounded-2xl bg-zinc-900 text-white p-5 space-y-4 w-full border border-zinc-700 shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">
           Wycena inżynierska
         </p>
@@ -89,7 +89,7 @@ export default function StudioPrintSettings({
             <button
               type="button"
               onClick={onResetFile}
-              className="px-5 py-2.5 rounded-full bg-white text-neutral-900 text-sm font-semibold"
+              className="px-5 py-2.5 rounded-full bg-[#F97316] text-zinc-950 text-sm font-semibold"
             >
               Kolejny plik
             </button>
@@ -138,7 +138,7 @@ export default function StudioPrintSettings({
             <button
               type="submit"
               disabled={rfqSubmitting}
-              className="w-full py-3 rounded-full bg-white text-neutral-900 text-sm font-semibold disabled:opacity-50"
+              className="w-full py-3 rounded-full bg-[#F97316] text-zinc-950 text-sm font-semibold disabled:opacity-50"
             >
               {rfqSubmitting ? "Wysyłanie…" : "Wyślij do wyceny"}
             </button>
@@ -164,7 +164,7 @@ export default function StudioPrintSettings({
     <div
       data-material-panel={panelState}
       data-compact={compact ? "true" : "false"}
-      className={`rounded-2xl bg-[#2A2A2A] text-white w-full ${
+      className={`rounded-2xl bg-zinc-900 text-white w-full border border-zinc-700 shadow-[0_12px_32px_rgba(0,0,0,0.4)] ${
         compact && !detailsOpen ? "p-3 space-y-2" : "p-4 space-y-4"
       }`}
     >
@@ -174,7 +174,7 @@ export default function StudioPrintSettings({
           <h2 className="text-lg font-semibold tracking-tight mt-1">{matConfig?.name}</h2>
         </div>
         {compact && !detailsOpen && matConfig?.badge ? (
-          <span className="shrink-0 mt-0.5 px-2 py-1 rounded-full bg-white text-neutral-900 text-xs font-medium">
+          <span className="shrink-0 mt-0.5 px-2 py-1 rounded-full bg-[#F97316] text-zinc-950 text-xs font-medium">
             {matConfig.badge}
           </span>
         ) : null}
@@ -217,7 +217,7 @@ export default function StudioPrintSettings({
           onClick={() => setDetailsOpen((open) => !open)}
           className="w-full rounded-lg bg-white/8 py-1.5 text-[11px] font-semibold text-white/70 hover:bg-white/12 hover:text-white transition"
         >
-          {detailsOpen ? "Mniej" : "Więcej"}
+          {detailsOpen ? "Mniej parametrów" : "Więcej parametrów technicznych"}
         </button>
       ) : null}
     </div>

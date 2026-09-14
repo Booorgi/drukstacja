@@ -15,6 +15,26 @@ function swatchStyle(item) {
     : { backgroundColor: fill };
 }
 
+function rowClass(active) {
+  return `flex min-h-[48px] w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition ${
+    active
+      ? "bg-[#F97316] text-zinc-950"
+      : "bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+  }`;
+}
+
+function swatchRing(active) {
+  return `h-8 w-8 shrink-0 rounded-full ring-1 ${
+    active ? "ring-zinc-950/40" : "ring-zinc-600"
+  }`;
+}
+
+function hintClass(active) {
+  return `mt-0.5 block truncate text-[11px] leading-tight ${
+    active ? "text-zinc-950/70" : "text-zinc-500"
+  }`;
+}
+
 /**
  * Materiał: najpierw rodzina (PLA, PETG, ABS…), potem rodzaj
  * (np. Standard / Wood / Galaxy) gdy rodzina ma podtypy.
@@ -63,9 +83,9 @@ export default function StudioMaterialPicker({
       data-studio-material-step={showingSubtypes ? "subtype" : "family"}
       role="dialog"
       aria-label={title}
-      className="w-full rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10 md:w-[300px]"
+      className="w-full rounded-2xl bg-zinc-900 text-zinc-100 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.45)] border border-zinc-700 md:w-[300px]"
     >
-      <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-neutral-200 md:hidden" aria-hidden />
+      <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-zinc-700 md:hidden" aria-hidden />
       <div className="mb-3 flex items-start gap-2">
         {showingSubtypes ? (
           <button
@@ -75,7 +95,7 @@ export default function StudioMaterialPicker({
               setStep("family");
               setPendingFamily(null);
             }}
-            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
             aria-label="Wróć do materiałów"
           >
             ←
@@ -83,7 +103,7 @@ export default function StudioMaterialPicker({
         ) : null}
         <div className="min-w-0">
           <p className="text-base font-semibold">{title}</p>
-          <p className="mt-0.5 text-xs text-neutral-500">{subtitle}</p>
+          <p className="mt-0.5 text-xs text-zinc-500">{subtitle}</p>
         </div>
       </div>
 
@@ -99,28 +119,14 @@ export default function StudioMaterialPicker({
                 data-studio-material-subtype={sub.id}
                 aria-pressed={active}
                 onClick={() => handleSubtypeClick(sub)}
-                className={`flex min-h-[48px] w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition ${
-                  active
-                    ? "bg-[#111111] text-white"
-                    : "bg-neutral-100 text-neutral-800 hover:bg-neutral-200"
-                }`}
+                className={rowClass(active)}
               >
-                <span
-                  className={`h-8 w-8 shrink-0 rounded-full ring-1 ${
-                    active ? "ring-white/40" : "ring-black/10"
-                  }`}
-                  style={swatchStyle(swatch)}
-                  aria-hidden
-                />
+                <span className={swatchRing(active)} style={swatchStyle(swatch)} aria-hidden />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold leading-tight">
                     {sub.label}
                   </span>
-                  <span
-                    className={`mt-0.5 block truncate text-[11px] leading-tight ${
-                      active ? "text-white/65" : "text-neutral-500"
-                    }`}
-                  >
+                  <span className={hintClass(active)}>
                     {sub.colors?.length || 0} kolorów
                   </span>
                 </span>
@@ -150,31 +156,17 @@ export default function StudioMaterialPicker({
                 data-studio-material-option={fam.id}
                 aria-pressed={active}
                 onClick={() => handleFamilyClick(fam)}
-                className={`flex min-h-[48px] w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition ${
-                  active
-                    ? "bg-[#111111] text-white"
-                    : "bg-neutral-100 text-neutral-800 hover:bg-neutral-200"
-                }`}
+                className={rowClass(active)}
               >
-                <span
-                  className={`h-8 w-8 shrink-0 rounded-full ring-1 ${
-                    active ? "ring-white/40" : "ring-black/10"
-                  }`}
-                  style={swatchStyle(first)}
-                  aria-hidden
-                />
+                <span className={swatchRing(active)} style={swatchStyle(first)} aria-hidden />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold leading-tight">{fam.name}</span>
-                  <span
-                    className={`mt-0.5 block truncate text-[11px] leading-tight ${
-                      active ? "text-white/65" : "text-neutral-500"
-                    }`}
-                  >
+                  <span className={hintClass(active)}>
                     {[groupLabel, kinds].filter(Boolean).join(" · ")}
                   </span>
                 </span>
                 {(fam.subtypes || []).length > 1 ? (
-                  <span className={`shrink-0 text-sm ${active ? "text-white/70" : "text-neutral-400"}`} aria-hidden>
+                  <span className={`shrink-0 text-sm ${active ? "text-zinc-950/70" : "text-zinc-500"}`} aria-hidden>
                     →
                   </span>
                 ) : active ? (

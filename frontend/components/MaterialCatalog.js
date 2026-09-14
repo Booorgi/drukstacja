@@ -1,9 +1,11 @@
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
+import { Flame, Sun, Shield, Coins, X } from "lucide-react";
 
 export const ENGINEERING_MATERIALS = [
   {
     id: "pla",
     configId: "PLA_STANDARD",
+    featured: true,
     name: "PLA",
     chemicalName: "Polylactic Acid",
     status: "available",
@@ -266,32 +268,55 @@ const CATEGORY_FILTERS = [
   { id: "outdoor_uv", label: "Zewnętrzne / UV" },
 ];
 
+const SPEC_ROWS = [
+  { key: "hdt", label: "Temp. HDT", Icon: Flame },
+  { key: "uv", label: "Odporność UV", Icon: Sun },
+  { key: "strength", label: "Wytrzymałość", Icon: Shield },
+  { key: "cost", label: "Koszt", Icon: Coins },
+];
+
 function getBadgeStyle(type) {
   switch (type) {
-    case "danger":
-      return "bg-black/5 text-neutral-700 border-black/10";
-    case "composite":
-      return "bg-black/5 text-neutral-700 border-black/10";
-    case "sliding":
-      return "bg-black/5 text-neutral-700 border-black/10";
     case "warning":
-      return "bg-black/5 text-neutral-600 border-black/10";
-    case "available":
+      return "bg-zinc-800 text-zinc-400 border-zinc-700";
     default:
-      return "bg-black/5 text-neutral-700 border-black/10";
+      return "bg-zinc-800 text-zinc-300 border-zinc-700";
   }
+}
+
+function scrollToConfigurator() {
+  const el = document.getElementById("configurator") || document.getElementById("quote-configurator");
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+}
+
+function SpecGrid({ specs, className = "" }) {
+  return (
+    <div className={`bg-zinc-800/80 p-4 rounded-2xl grid grid-cols-2 gap-3 ${className}`}>
+      {SPEC_ROWS.map(({ key, label, Icon }) => (
+        <div key={key} className="space-y-0.5">
+          <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{label}</div>
+          <div className="text-sm font-semibold text-zinc-100 flex items-center gap-1.5">
+            <Icon className="h-3.5 w-3.5 shrink-0 text-[#F97316]" strokeWidth={2} aria-hidden />
+            <span className="truncate">{specs[key]}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function MaterialCatalog({ onSelectMaterial }) {
   const [activeCategory, setActiveCategory] = useState("all");
+  const [detailsMat, setDetailsMat] = useState(null);
 
   const filteredMaterials = useMemo(() => {
     if (activeCategory === "all") return ENGINEERING_MATERIALS;
     if (activeCategory === "available") {
       return ENGINEERING_MATERIALS.filter((m) => m.status === "available");
-    }
-    if (activeCategory === "coming_soon") {
-      return ENGINEERING_MATERIALS.filter((m) => m.status === "coming_soon");
     }
     return ENGINEERING_MATERIALS.filter((m) => m.categories.includes(activeCategory));
   }, [activeCategory]);
@@ -300,40 +325,24 @@ export default function MaterialCatalog({ onSelectMaterial }) {
     if (mat.configId && onSelectMaterial) {
       onSelectMaterial(mat.configId);
     }
-    const el = document.getElementById("configurator") || document.getElementById("quote-configurator");
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    scrollToConfigurator();
   };
 
-  const handleInquireMaterial = (mat) => {
-    const el = document.getElementById("configurator") || document.getElementById("quote-configurator");
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+  const handleInquireMaterial = () => {
+    scrollToConfigurator();
   };
 
   return (
     <section className="w-full pt-6 pb-6 space-y-8">
       <div className="space-y-3">
-        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-neutral-500">
-          Materiały
-        </p>
-        <h2 className="text-3xl md:text-4xl font-semibold text-neutral-900 tracking-tight">
-          Czym drukujemy?
-        </h2>
-        <p className="text-base md:text-lg text-neutral-600 max-w-3xl leading-relaxed">
-          Oferujemy szeroki wybór materiałów FDM — od taniego PLA po specjalistyczne kompozyty z włóknem
-          węglowym i materiały samogasnące. Filtruj według zastosowania i znajdź idealny materiał dla swojego
-          projektu.
+        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-500">Materiały</p>
+        <h2 className="text-3xl md:text-4xl font-semibold text-zinc-50 tracking-tight">Czym drukujemy?</h2>
+        <p className="text-base md:text-lg text-zinc-400 max-w-3xl leading-relaxed">
+          Od PLA na prototypy po kompozyty z włóknem węglowym. Wybierz tworzywo, wróć do konfiguratora — wycena
+          przeliczy się od razu.
         </p>
       </div>
 
-      {/* 2. FILTRY KATEGORII (POZIOME PILLE) */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
         {CATEGORY_FILTERS.map((cat) => {
           const isActive = activeCategory === cat.id;
@@ -342,8 +351,6 @@ export default function MaterialCatalog({ onSelectMaterial }) {
               ? ENGINEERING_MATERIALS.length
               : cat.id === "available"
               ? ENGINEERING_MATERIALS.filter((m) => m.status === "available").length
-              : cat.id === "coming_soon"
-              ? ENGINEERING_MATERIALS.filter((m) => m.status === "coming_soon").length
               : ENGINEERING_MATERIALS.filter((m) => m.categories.includes(cat.id)).length;
 
           return (
@@ -353,14 +360,14 @@ export default function MaterialCatalog({ onSelectMaterial }) {
               onClick={() => setActiveCategory(cat.id)}
               className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
                 isActive
-                  ? "bg-[#111111] text-white"
-                  : "bg-black/5 text-neutral-600 hover:bg-black/10 hover:text-neutral-900"
+                  ? "bg-[#F97316] text-zinc-950"
+                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100"
               }`}
             >
               <span>{cat.label}</span>
               <span
                 className={`text-[10px] px-1.5 py-0.2 rounded-md font-semibold ${
-                  isActive ? "bg-white/20 text-white" : "bg-black/5 text-neutral-400"
+                  isActive ? "bg-zinc-950/20 text-zinc-950" : "bg-zinc-900 text-zinc-500"
                 }`}
               >
                 {count}
@@ -370,101 +377,76 @@ export default function MaterialCatalog({ onSelectMaterial }) {
         })}
       </div>
 
-      {/* 3. KARTY MATERIAŁÓW (GRID 3 KOLUMNY) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredMaterials.map((mat) => {
           const badgeClass = getBadgeStyle(mat.statusBadge.type);
+          const visibleTags = (mat.tags || []).slice(0, 3);
+          const featured = Boolean(mat.featured);
 
           return (
             <div
               key={mat.id}
-              className="bg-white/50 rounded-3xl p-6 border border-black/5 hover:bg-white/80 transition-all flex flex-col justify-between group"
+              data-material-card={mat.id}
+              data-featured={featured ? "true" : "false"}
+              className={`rounded-3xl p-6 border transition-all flex flex-col justify-between group bg-zinc-900 ${
+                featured
+                  ? "border-[#F97316]/45 shadow-[0_12px_32px_rgba(249,115,22,0.08)]"
+                  : "border-zinc-800 hover:border-zinc-700"
+              }`}
             >
               <div>
-                {/* Nagłówek karty */}
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div>
-                    <h3 className="text-2xl font-semibold text-neutral-900 tracking-tight">
-                      {mat.name}
-                    </h3>
-                    <span className="text-xs text-neutral-500 font-medium block mt-0.5">
-                      {mat.chemicalName}
+                    <h3 className="text-2xl font-semibold text-zinc-50 tracking-tight">{mat.name}</h3>
+                    <span className="text-xs text-zinc-500 font-medium block mt-0.5">{mat.chemicalName}</span>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {featured ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-[#F97316] text-zinc-950">
+                        Najczęściej wybierany
+                      </span>
+                    ) : null}
+                    <span
+                      className={`px-2.5 py-0.8 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${badgeClass}`}
+                    >
+                      {mat.statusBadge.text}
                     </span>
                   </div>
-                  <span
-                    className={`px-2.5 py-0.8 rounded-full text-[10px] font-extrabold uppercase tracking-wider border flex-shrink-0 ${badgeClass}`}
-                  >
-                    {mat.statusBadge.text}
-                  </span>
                 </div>
 
-                {/* Zwięzły opis inżynieryjny */}
-                <p className="text-sm text-neutral-600 leading-relaxed min-h-[64px]">
-                  {mat.desc}
-                </p>
+                <p className="text-sm text-zinc-400 leading-relaxed min-h-[64px]">{mat.desc}</p>
 
-                <div className="bg-black/[0.04] p-4 rounded-2xl grid grid-cols-2 gap-3 my-4">
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                      Temp. HDT
-                    </div>
-                    <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1">
-                      <span>🔥</span>
-                      <span>{mat.specs.hdt}</span>
-                    </div>
-                  </div>
+                <SpecGrid specs={mat.specs} className="my-4" />
 
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                      Odporność UV
-                    </div>
-                    <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1">
-                      <span>☀️</span>
-                      <span>{mat.specs.uv}</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                      Wytrzymałość
-                    </div>
-                    <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1 truncate">
-                      <span>💪</span>
-                      <span className="truncate">{mat.specs.strength}</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                      Koszt
-                    </div>
-                    <div className="text-sm font-semibold text-neutral-800 flex items-center gap-1">
-                      <span>💰</span>
-                      <span>{mat.specs.cost}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tagi zastosowań na dole karty */}
                 <div className="flex flex-wrap gap-1.5 pt-1">
-                  {mat.tags.map((tag, idx) => (
+                  {visibleTags.map((tag) => (
                     <span
-                      key={idx}
-                      className="px-2.5 py-1 rounded-full bg-black/5 text-neutral-600 text-xs font-medium"
+                      key={tag}
+                      className="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-400 text-xs font-medium"
                     >
                       {tag}
                     </span>
                   ))}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setDetailsMat(mat)}
+                  className="mt-2 text-xs font-semibold text-zinc-400 hover:text-[#F97316] transition"
+                >
+                  Więcej parametrów technicznych
+                </button>
               </div>
 
-              {/* Przycisk akcji: Wybierz do wyceny */}
-              <div className="pt-4 mt-2 border-t border-black/5">
+              <div className="pt-4 mt-2 border-t border-zinc-800">
                 {mat.configId ? (
                   <button
                     type="button"
                     onClick={() => handleChooseMaterial(mat)}
-                    className="w-full py-3 px-4 rounded-full text-sm font-semibold transition-all flex items-center justify-center gap-2 bg-[#111111] text-white hover:bg-black cursor-pointer"
+                    className={`w-full py-3 px-4 rounded-full text-sm font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      featured
+                        ? "bg-[#F97316] text-zinc-950 hover:bg-[#EA580C]"
+                        : "bg-transparent text-zinc-200 ring-1 ring-zinc-600 hover:ring-[#F97316] hover:text-[#F97316]"
+                    }`}
                   >
                     <span>Wybierz do wyceny</span>
                     <svg
@@ -484,23 +466,10 @@ export default function MaterialCatalog({ onSelectMaterial }) {
                 ) : (
                   <button
                     type="button"
-                    onClick={() => handleInquireMaterial(mat)}
-                    className="w-full py-3 px-4 rounded-full text-sm font-semibold transition-all flex items-center justify-center gap-2 bg-black/5 text-neutral-700 hover:bg-black/10 cursor-pointer"
+                    onClick={handleInquireMaterial}
+                    className="w-full py-3 px-4 rounded-full text-sm font-semibold transition-all flex items-center justify-center gap-2 bg-transparent text-zinc-300 ring-1 ring-zinc-700 hover:ring-zinc-500 cursor-pointer"
                   >
                     <span>Zapytaj o wycenę (RFQ)</span>
-                    <svg
-                      className="w-3.5 h-3.5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                      />
-                    </svg>
                   </button>
                 )}
               </div>
@@ -508,6 +477,53 @@ export default function MaterialCatalog({ onSelectMaterial }) {
           );
         })}
       </div>
+
+      {detailsMat ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="material-tech-title"
+          data-material-tech-modal
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/70"
+            aria-label="Zamknij parametry techniczne"
+            onClick={() => setDetailsMat(null)}
+          />
+          <div className="relative z-10 w-full max-w-lg rounded-3xl bg-zinc-900 text-zinc-100 border border-zinc-700 shadow-[0_24px_60px_rgba(0,0,0,0.5)] p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Parametry techniczne
+                </p>
+                <h3 id="material-tech-title" className="text-xl font-semibold mt-1">
+                  {detailsMat.name}
+                </h3>
+                <p className="text-xs text-zinc-500">{detailsMat.chemicalName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailsMat(null)}
+                className="rounded-full p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                aria-label="Zamknij"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-sm text-zinc-400 leading-relaxed">{detailsMat.desc}</p>
+            <SpecGrid specs={detailsMat.specs} />
+            <div className="flex flex-wrap gap-1.5">
+              {(detailsMat.tags || []).map((tag) => (
+                <span key={tag} className="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-400 text-xs font-medium">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

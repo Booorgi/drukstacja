@@ -10,6 +10,7 @@ test.describe("homepage printer layers hero", () => {
     await expect(hero.getByRole("img", { name: "drukstacja" })).toBeVisible();
     await expect(hero.getByRole("heading", { name: "Wycena druku 3D w studio" })).toBeVisible();
     await expect(hero.getByText("Wgraj model, dobierz filament i warstwę")).toBeVisible();
+    await expect(hero.getByRole("button", { name: "Wgraj plik do wyceny" })).toBeVisible();
 
     const video = page.locator("[data-printer-layers-video]");
     await expect(video).toBeAttached();

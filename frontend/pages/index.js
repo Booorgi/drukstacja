@@ -74,7 +74,7 @@ function resolveAssetUrl(url) {
 const CadViewer3D = dynamic(() => import("../components/CadViewer3D"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[400px] lg:h-[480px] bg-transparent animate-pulse flex items-center justify-center text-xs font-semibold text-neutral-700">
+    <div className="w-full h-[400px] lg:h-[480px] bg-transparent animate-pulse flex items-center justify-center text-xs font-semibold text-zinc-500">
       Ładowanie podglądu…
     </div>
   ),
@@ -175,6 +175,9 @@ export default function Home() {
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
   const [scaleOpen, setScaleOpen] = useState(false);
   const [scalePercent, setScalePercent] = useState(100);
+  // Stub OMS flag: no dedicated backend column yet. Persisted in `technology`
+  // as "Weryfikacja inżyniera przed drukiem" when the customer checks the box.
+  const [engineerReview, setEngineerReview] = useState(false);
   const fileInputRef = useRef(null);
   const printParamsRef = useRef(null);
   const printParamsSheetRef = useRef(null);
@@ -365,6 +368,33 @@ endsolid fixture
         filament_weight_g: 8.8,
         filament_length_m: 2.94,
         price_breakdown: { unit_price_pln: 38 },
+      });
+      return;
+    }
+
+    if (layout === "below-moq") {
+      const stl = `solid fixture
+facet normal 0 0 1
+  outer loop
+    vertex 0 0 0
+    vertex 10 0 0
+    vertex 0 10 0
+  endloop
+endfacet
+endsolid fixture
+`;
+      const file = new File([stl], "Watch case 1.stl", { type: "model/stl" });
+      setSelectedFile(file);
+      setModelPreviewUrl(URL.createObjectURL(file));
+      setAnalysisData({
+        instant_pricing: true,
+        volume_cm3: 8.8,
+        dimensions_mm: [40, 40, 10],
+        file_key: "layout-below-moq-fixture",
+        print_time_formatted: "54m",
+        filament_weight_g: 8.8,
+        filament_length_m: 2.94,
+        price_breakdown: { unit_price_pln: 18.4 },
       });
       return;
     }
@@ -566,6 +596,7 @@ endsolid fixture
     setScalePercent(100);
     setScaleOpen(false);
     setPreviewImageUrl(null);
+    setEngineerReview(false);
 
     const lowerName = file.name.toLowerCase();
     const isDirectPreview =
@@ -786,6 +817,7 @@ endsolid fixture
     setQuantity(1);
     setScalePercent(100);
     setScaleOpen(false);
+    setEngineerReview(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -958,6 +990,9 @@ endsolid fixture
       setScaleOpen(true);
       return;
     }
+    if (isBelowMoq) {
+      return;
+    }
 
     setAddingToCart(true);
     try {
@@ -972,7 +1007,9 @@ endsolid fixture
             : `FDM Precision ${nozzleSize}mm`
         }${analysisData?.print_time_formatted ? ` | Czas: ${analysisData.print_time_formatted}` : ""}${
           analysisData?.filament_weight_g ? ` | Waga: ${analysisData.filament_weight_g}g` : ""
-        }${scalePercent !== 100 ? ` | Skala: ${scalePercent}%` : ""}`,
+        }${scalePercent !== 100 ? ` | Skala: ${scalePercent}%` : ""}${
+          engineerReview ? " | Weryfikacja inżyniera przed drukiem" : ""
+        }`,
         layer_height: `${layerHeight} mm`,
         infill: infill,
         clean_supports: true,
@@ -1038,7 +1075,7 @@ endsolid fixture
   const fileProfile = analysisData?.file_profile || {};
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#E2E2E2] text-[#111111] font-sans">
+    <div className="min-h-screen flex flex-col bg-zinc-950 text-zinc-100 font-sans">
       <Head>
         <title>drukstacja — wycena druku 3D</title>
       </Head>
@@ -1059,11 +1096,11 @@ endsolid fixture
         onChange={handleFileInputChange}
       />
 
-      <PrinterLayersBand />
+      <PrinterLayersBand onUploadClick={openFilePicker} />
 
       <section
         id="configurator"
-        className="relative scroll-mt-20 bg-[#E2E2E2]"
+        className="relative scroll-mt-20 bg-zinc-950"
         onDragOver={(e) => {
           if (selectedFile || isAnalyzing || analysisData) return;
           e.preventDefault();
@@ -1079,12 +1116,12 @@ endsolid fixture
         <div className="relative max-w-[1400px] mx-auto px-4 sm:px-6 pt-3 sm:pt-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-700">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
                 {analysisData && analysisData.instant_pricing === false
                   ? "Wycena inżynierska"
                   : "Konfigurator druku"}
               </p>
-              <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-neutral-900 mt-0.5">
+              <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-zinc-50 mt-0.5">
                 {selectedFile ? selectedFile.name : "Wgraj model do wyceny"}
               </h1>
             </div>
@@ -1092,7 +1129,7 @@ endsolid fixture
               <button
                 type="button"
                 onClick={handleResetFile}
-                className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-neutral-800 hover:bg-white"
+                className="rounded-full bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-200 ring-1 ring-zinc-700 hover:bg-zinc-700"
               >
                 Zmień plik
               </button>
@@ -1103,7 +1140,7 @@ endsolid fixture
         {/* Stage + quote bar share one surface so the sticky strip is not a fourth layer. */}
         <div
           data-studio-surface
-          className="studio-surface relative mx-3 mb-3 flex flex-col rounded-2xl bg-[#E2E2E2] ring-1 ring-black/5 sm:mx-4"
+          className="studio-surface relative mx-3 mb-3 flex flex-col rounded-2xl bg-zinc-900 ring-1 ring-zinc-800 sm:mx-4"
         >
           <div data-studio-stage className="studio-stage">
           <StudioControlRail
@@ -1305,9 +1342,9 @@ endsolid fixture
 
           <div className="relative flex min-h-[420px] w-full items-center justify-center md:pl-[96px] lg:min-h-[500px] lg:pr-[320px]">
               {isAnalyzing ? (
-                <div className="flex flex-col items-center gap-3 bg-white/85 p-6 rounded-3xl shadow-sm border border-slate-200/80 backdrop-blur-sm">
-                  <div className="w-10 h-10 border-4 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
-                  <span className="text-xs font-bold text-slate-700">
+                <div className="flex flex-col items-center gap-3 bg-zinc-900/90 p-6 rounded-3xl shadow-sm border border-zinc-700 backdrop-blur-sm">
+                  <div className="w-10 h-10 border-4 border-[#F97316] border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs font-bold text-zinc-300">
                     Analizuję strukturę pliku i geometrię produkcyjną...
                   </span>
                 </div>
@@ -1339,7 +1376,7 @@ endsolid fixture
                 />
               ) : analysisData && analysisData.instant_pricing === false ? (
                 /* KARTA DOKUMENTACJI TECHNICZNEJ / PCB / RFQ (STANDARD JLCPCB / PCBWAY) */
-                <div className="w-full max-w-lg bg-white/95 backdrop-blur-md rounded-3xl p-6 md:p-8 border border-slate-200/80 shadow-[0_15px_35px_rgba(0,0,0,0.05)] space-y-5">
+                <div className="w-full max-w-lg bg-zinc-900/95 backdrop-blur-md rounded-3xl p-6 md:p-8 border border-zinc-700 shadow-[0_15px_35px_rgba(0,0,0,0.35)] space-y-5">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3.5">
                       <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-md">
@@ -1358,32 +1395,32 @@ endsolid fixture
                         )}
                       </div>
                       <div>
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500 block">
                           Format zakwalifikowany
                         </span>
-                        <h3 className="text-base font-black text-slate-900">
+                        <h3 className="text-base font-black text-zinc-50">
                           {analysisData.category || "Dokumentacja Inżynierska"}
                         </h3>
                       </div>
                     </div>
                     {analysisData.file_size_mb && (
-                      <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+                      <span className="text-xs font-bold text-zinc-400 bg-zinc-800 px-2.5 py-1 rounded-full">
                         {analysisData.file_size_mb} MB
                       </span>
                     )}
                   </div>
 
                   {/* Wiadomość systemowa */}
-                  <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/70 text-xs font-medium text-amber-900 flex items-start gap-2.5">
+                  <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-800/70 text-xs font-medium text-amber-100 flex items-start gap-2.5">
                     <span className="text-base leading-none">ℹ️</span>
                     <div>
-                      <span className="font-bold block text-amber-950 mb-0.5">Plik przyjęty do wyceny manualnej</span>
+                      <span className="font-bold block text-amber-50 mb-0.5">Plik przyjęty do wyceny manualnej</span>
                       <span>{analysisData.message}</span>
                     </div>
                   </div>
 
                   {/* Standardy Drukstacja RFQ */}
-                  <div className="space-y-2 text-xs font-semibold text-slate-600">
+                  <div className="space-y-2 text-xs font-semibold text-zinc-400">
                     <div className="flex items-center gap-2">
                       <span className="text-emerald-500 font-bold">✓</span>
                       <span>Gwarantowana analiza inżynierska i wycena w <strong>24h</strong></span>
@@ -1398,15 +1435,15 @@ endsolid fixture
                     </div>
                   </div>
 
-                  <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+                  <div className="pt-2 flex items-center justify-between border-t border-zinc-800">
                     <button
                       type="button"
                       onClick={handleResetFile}
-                      className="text-xs font-bold text-[#EF4444] hover:text-red-700 transition flex items-center gap-1 cursor-pointer"
+                      className="text-xs font-bold text-[#F97316] hover:text-orange-300 transition flex items-center gap-1 cursor-pointer"
                     >
                       ← Wgraj inny plik
                     </button>
-                    <span className="text-[11px] font-bold text-slate-400">
+                    <span className="text-[11px] font-bold text-zinc-500">
                       Standard JLCPCB / Drukstacja
                     </span>
                   </div>
@@ -1452,6 +1489,7 @@ endsolid fixture
             isAnalyzing={isAnalyzing}
             isReslicing={isReslicing}
             isBelowMoq={isBelowMoq}
+            diffToMoq={diffToMoq}
             isOversized={isOversized}
             onFitToBed={() => setScalePercent(fitPercent)}
             totalPrice={totalPrice}
@@ -1471,6 +1509,8 @@ endsolid fixture
                 : null
             }
             filamentLength={analysisData?.filament_length_m ? `${analysisData.filament_length_m} m` : null}
+            engineerReview={engineerReview}
+            onEngineerReviewChange={setEngineerReview}
           />
         </div>
       </section>
@@ -1482,22 +1522,22 @@ endsolid fixture
 
       </main>
 
-      <footer className="bg-[#E2E2E2] border-t border-black/5">
+      <footer className="bg-zinc-950 border-t border-zinc-800">
         <div className="max-w-7xl mx-auto px-6 py-14 grid grid-cols-1 md:grid-cols-2 gap-10">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight text-neutral-900 mb-6">Pomoc</h2>
-            <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm text-neutral-700">
-              <Link href="/kontakt" className="hover:text-neutral-900">Kontakt</Link>
-              <Link href="/#materialy" className="hover:text-neutral-900">Materiały</Link>
-              <Link href="/sklep" className="hover:text-neutral-900">Sklep</Link>
-              <Link href="/breloki" className="hover:text-neutral-900">Breloki 3D</Link>
-              <Link href="/orders" className="hover:text-neutral-900">Moje zlecenia</Link>
-              <a href="mailto:kontakt@drukstacja.pl" className="hover:text-neutral-900">kontakt@drukstacja.pl</a>
+            <h2 className="text-2xl font-semibold tracking-tight text-zinc-50 mb-6">Pomoc</h2>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm text-zinc-400">
+              <Link href="/kontakt" className="hover:text-zinc-100">Kontakt</Link>
+              <Link href="/#materialy" className="hover:text-zinc-100">Materiały</Link>
+              <Link href="/sklep" className="hover:text-zinc-100">Sklep</Link>
+              <Link href="/breloki" className="hover:text-zinc-100">Breloki 3D</Link>
+              <Link href="/orders" className="hover:text-zinc-100">Moje zlecenia</Link>
+              <a href="mailto:kontakt@drukstacja.pl" className="hover:text-zinc-100">kontakt@drukstacja.pl</a>
             </div>
           </div>
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight text-neutral-900 mb-6">drukstacja</h2>
-            <p className="text-sm text-neutral-600 max-w-md leading-relaxed">
+            <h2 className="text-2xl font-semibold tracking-tight text-zinc-50 mb-6">drukstacja</h2>
+            <p className="text-sm text-zinc-400 max-w-md leading-relaxed">
               Wycena modelu 3D w studio — materiał, kolor i jakość warstwy jak w konfiguratorze produktu.
             </p>
           </div>
