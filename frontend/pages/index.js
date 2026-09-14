@@ -22,6 +22,14 @@ import StudioMaterialPicker from "../components/StudioMaterialPicker";
 import StudioMobileSheet from "../components/StudioMobileSheet";
 import PrinterLayersBand from "../components/PrinterLayersBand";
 import { STL_MATERIALS } from "../lib/filament";
+import {
+  STUDIO_FAMILIES,
+  familyForMaterial,
+  materialById,
+  materialIdFromFilamentType,
+  quoteUnitPriceFromWeight,
+  studioFamiliesForWheel,
+} from "../lib/filamentCatalog";
 import { peek3mfSidecar } from "../lib/peek3mfProfile";
 import {
   isQuotedModel,
@@ -62,22 +70,6 @@ const CadViewer3D = dynamic(() => import("../components/CadViewer3D"), {
   ),
 });
 
-function materialIdFromFilamentType(type) {
-  const t = String(type || "").toUpperCase();
-  if (t.includes("TPU") || t.includes("FLEX")) return "TPU_FLEX";
-  if (t.includes("ASA")) return "ASA_UV";
-  if (t.includes("ABS")) return "ABS_INDUSTRY";
-  if (t.includes("PA") || t.includes("NYLON") || t.includes("CF")) return "PA12_CF15";
-  if (t.includes("PCTG")) return "PCTG_PRO";
-  if (t.includes("PETG") && t.includes("FR")) return "PETG_FR";
-  if (t.includes("PETG") || t.includes("PET-G")) return "PETG_TOUGH";
-  if (t.includes("SILK")) return "PLA_SILK";
-  if (t.includes("MATTE")) return "PLA_MATTE";
-  if (t.includes("PLA")) return "PLA_STANDARD";
-  return "PLA_STANDARD";
-}
-
-
 export default function Home() {
   const [user, setUser] = useState(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -111,17 +103,11 @@ export default function Home() {
   }, [filteredMaterials, selectedMaterial]);
 
   function handleSelectMaterial(matId) {
-    const targetMat = STL_MATERIALS.find(
-      (m) =>
-        m.id === matId ||
-        m.id.toLowerCase() === String(matId).toLowerCase() ||
-        (m.aliases && m.aliases.some((al) => al.toLowerCase() === String(matId).toLowerCase()))
-    );
+    const targetMat = materialById(matId);
     if (!targetMat) return;
 
     setSelectedMaterial(targetMat.id);
 
-    // Jeśli materiał nie znajduje się w aktualnie aktywnym filtrze grupy, zresetuj grupę do "all"
     if (selectedMaterialGroup !== "all") {
       const isVisibleInGroup =
         selectedMaterialGroup === "tech"
@@ -132,13 +118,11 @@ export default function Home() {
       }
     }
 
-    // Ustaw domyślny kolor wybranego tworzywa
     if (targetMat.colors && targetMat.colors.length > 0) {
       setSelectedColor(targetMat.colors[0].hex);
     }
 
-    // Jeśli wybrano materiał techniczny (inny niż PLA), automatycznie zablokuj dyszę 0.2 mm i wymuś 0.4 mm
-    const isPla = targetMat.id.toUpperCase().includes("PLA");
+    const isPla = String(targetMat.familyId || targetMat.id).toUpperCase() === "PLA";
     if (!isPla) {
       setNozzleSize(0.4);
     }
@@ -198,8 +182,8 @@ export default function Home() {
     setColorPickerOpen(false);
   }
 
-  function handleSelectMaterialFromPicker(mat) {
-    if (mat?.id) handleSelectMaterial(mat.id);
+  function handleSelectMaterialFromPicker(subtype) {
+    if (subtype?.id) handleSelectMaterial(subtype.id);
     setMaterialPickerOpen(false);
   }
 
@@ -212,7 +196,7 @@ export default function Home() {
 
   // Weryfikacja tworzywa PLA dla dyszy 0.2 mm
   const isPlaMaterial = useMemo(() => {
-    return (selectedMaterial || "").toUpperCase().includes("PLA");
+    return String(materialById(selectedMaterial)?.familyId || "").toUpperCase() === "PLA";
   }, [selectedMaterial]);
 
   // Automatyczny powrót do dyszy 0.4 mm przy wyborze materiału nie-PLA
@@ -412,7 +396,7 @@ endsolid fixture
       setInfill(5);
       setLayerHeight(0.2);
       setNozzleSize(0.4);
-      setSelectedMaterial("PLA_MATTE");
+      setSelectedMaterial("PLA_STANDARD");
       setAnalysisData({
         instant_pricing: true,
         skipped_geometry: false,
@@ -446,7 +430,7 @@ endsolid fixture
       setInfill(5);
       setLayerHeight(0.2);
       setNozzleSize(0.4);
-      setSelectedMaterial("PLA_MATTE");
+      setSelectedMaterial("PLA_STANDARD");
       setAnalysisData({
         instant_pricing: true,
         skipped_geometry: false,
@@ -819,8 +803,16 @@ endsolid fixture
   const scaledDimsMm = scaledDimensionsMm(sourceDimsMm, modelScale);
   const isOversized = isQuotedModel(analysisData) && isOverPrintBed(scaledDimsMm);
   const fitPercent = fitToPrintBedPercent(sourceDimsMm);
-  const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
-  const activeColorObj = matConfig?.colors?.find((c) => c.hex === selectedColor) || matConfig?.colors?.[0];
+  const matConfig = materialById(selectedMaterial);
+  const selectedFamily = familyForMaterial(matConfig);
+  const materialCaption =
+    matConfig?.subtypeLabel && matConfig.subtypeLabel !== "Standard" && matConfig.subtypeLabel !== "95A"
+      ? `${matConfig.familyName || selectedFamily?.name} · ${matConfig.subtypeLabel}`
+      : matConfig?.familyName || selectedFamily?.name || matConfig?.name;
+  const colorMaterialLabel = materialCaption;
+  const activeColorObj =
+    matConfig?.colors?.find((c) => String(c.hex).toLowerCase() === String(selectedColor).toLowerCase()) ||
+    matConfig?.colors?.[0];
   const isNozzle02 = Math.abs(nozzleSize - 0.2) < 0.05;
   const layerMultiplier = isNozzle02
     ? (Math.abs(layerHeight - 0.08) < 0.02 ? 1.30 : Math.abs(layerHeight - 0.12) < 0.02 ? 1.15 : 1.0)
@@ -829,20 +821,17 @@ endsolid fixture
   
   // Obliczenie wagi i ceny bazowej (dla 1 sztuki bez rabatu)
   const baseUnitPrice = useMemo(() => {
-    if (analysisData?.price_breakdown?.unit_price_pln != null) {
-      return analysisData.price_breakdown.unit_price_pln;
-    }
-    // Kalibrowany model geometryczny dopasowany do slicera:
-    // np. Watch case (7.16 cm3 przy 20% infill) -> ~9.8g -> 2.65 PLN brutto (dysza 0.4 mm, warstwa 0.20 mm)
-    const density = matConfig?.density || 1.24;
-    const perimeterRatio = 0.72;
-    const infillRatio = (infill / 100) * (1.0 - perimeterRatio);
-    const effectiveVolCm3 = volume * (perimeterRatio + infillRatio);
-    const estWeightG = effectiveVolCm3 * density * 1.42;
-    const ratePerG = matConfig?.ratePerG || 0.27;
-    const matCost = estWeightG * ratePerG * layerMultiplier * nozzleMultiplier;
-    return Math.max(0.80, matCost);
-  }, [analysisData, volume, matConfig, infill, layerMultiplier, nozzleMultiplier]);
+    const ratePerG = matConfig?.ratePerG || (matConfig?.pricePerKg || 45) / 1000;
+    return quoteUnitPriceFromWeight({
+      weightG: analysisData?.filament_weight_g,
+      volumeCm3: volume,
+      infill,
+      density: matConfig?.density || 1.24,
+      ratePerG,
+      layerMultiplier,
+      nozzleMultiplier,
+    });
+  }, [analysisData?.filament_weight_g, volume, matConfig, infill, layerMultiplier, nozzleMultiplier]);
 
   // Czysta liniowa cena bez rabatów ilościowych
   const unitPrice = (Math.round(baseUnitPrice * 100) / 100).toFixed(2);
@@ -973,15 +962,13 @@ endsolid fixture
   }
 
   const colorWheelItems = (matConfig?.colors || []).map((c) => ({
-    id: c.hex,
+    id: c.id || c.hex,
     hex: c.hex,
     name: c.name,
+    gradient: c.gradient,
+    colors: c.colors,
   }));
-  const materialWheelItems = filteredMaterials.map((m) => ({
-    id: m.id,
-    hex: m.colors?.[0]?.hex || "#888888",
-    name: m.name,
-  }));
+  const materialWheelItems = studioFamiliesForWheel();
   const printParamWheelItems = [
     { id: "nozzle", hex: "#2A2A2A", name: `${nozzleSize} mm` },
     { id: "layer", hex: "#E11D2A", name: `${Number(layerHeight).toFixed(2)} mm` },
@@ -1081,7 +1068,7 @@ endsolid fixture
                 <div className="relative z-[80] overflow-visible" ref={materialPickerRef}>
                   <StudioWheel
                     items={materialWheelItems}
-                    value={selectedMaterial}
+                    value={selectedFamily?.id}
                     expanded={materialPickerOpen}
                     onOpen={() => {
                       closeOtherStudioPickers("material");
@@ -1090,14 +1077,16 @@ endsolid fixture
                     size={isEmptyStage ? 42 : 48}
                     muted={isEmptyStage}
                     label="Materiał"
+                    caption={materialCaption}
                   />
                   {materialPickerOpen && isMdUp ? (
                     <div className="absolute top-0 left-full z-[90] ml-3">
                       <StudioMaterialPicker
-                        materials={filteredMaterials}
-                        value={selectedMaterial}
+                        families={STUDIO_FAMILIES}
+                        selectedFamilyId={selectedFamily?.id}
+                        selectedSubtypeId={selectedMaterial}
                         surface="popover"
-                        onSelect={handleSelectMaterialFromPicker}
+                        onSelectSubtype={handleSelectMaterialFromPicker}
                       />
                     </div>
                   ) : null}
@@ -1108,10 +1097,11 @@ endsolid fixture
                     panelRef={materialSheetRef}
                   >
                     <StudioMaterialPicker
-                      materials={filteredMaterials}
-                      value={selectedMaterial}
+                      families={STUDIO_FAMILIES}
+                      selectedFamilyId={selectedFamily?.id}
+                      selectedSubtypeId={selectedMaterial}
                       surface="sheet"
-                      onSelect={handleSelectMaterialFromPicker}
+                      onSelectSubtype={handleSelectMaterialFromPicker}
                     />
                   </StudioMobileSheet>
                 </div>
@@ -1133,7 +1123,7 @@ endsolid fixture
                       <StudioColorPicker
                         colors={colorWheelItems}
                         value={selectedColor}
-                        materialName={matConfig?.name}
+                        materialName={colorMaterialLabel}
                         surface="popover"
                         onSelect={handleSelectColor}
                       />
@@ -1148,7 +1138,7 @@ endsolid fixture
                     <StudioColorPicker
                       colors={colorWheelItems}
                       value={selectedColor}
-                      materialName={matConfig?.name}
+                      materialName={colorMaterialLabel}
                       surface="sheet"
                       onSelect={handleSelectColor}
                     />

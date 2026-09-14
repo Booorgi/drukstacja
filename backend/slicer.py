@@ -17,22 +17,35 @@ except Exception:
 
 # Gęstości tworzyw w g/cm3 do przeliczania masy i długości filamentu 1.75mm
 FILAMENT_DENSITIES = {
-    "PLA": 1.24,
+    "PLA Wood": 1.25,
+    "PLA Silk Dual": 1.23,
+    "PLA Silk Tri": 1.23,
+    "PLA Galaxy": 1.22,
+    "PLA Rainbow": 1.21,
     "PLA Silk": 1.24,
     "PLA Matte": 1.24,
-    "PETG": 1.27,
+    "PLA": 1.24,
     "PETG FR": 1.29,
     "PETG_FR": 1.29,
+    "PETG-CF": 1.30,
+    "PETG CF": 1.30,
+    "PETG": 1.27,
     "PCTG": 1.23,
+    "ABS GF": 1.15,
+    "ABS FR": 1.16,
     "ABS": 1.05,
     "ASA": 1.07,
+    "TPU 95A": 1.21,
     "TPU": 1.21,
     "FLEX": 1.21,
     "PP": 0.90,
     "PA12 CF": 1.15,
     "PA12_CF": 1.15,
     "PA-CF": 1.15,
-    "PETG-CF": 1.30,
+    "PA6 CF": 1.20,
+    "PA6_CF": 1.20,
+    "Easy PA": 1.14,
+    "PC": 1.20,
     "PLA-CF": 1.28,
 }
 
@@ -52,11 +65,29 @@ MATERIAL_PROFILES = {
     "PA-CF": {"temp": 280, "bed_temp": 100, "fan": 10},
     "TPU": {"temp": 220, "bed_temp": 50, "fan": 80},
     "PP": {"temp": 225, "bed_temp": 85, "fan": 50},
+    "PC": {"temp": 270, "bed_temp": 110, "fan": 20},
+    "PA6 CF": {"temp": 280, "bed_temp": 100, "fan": 10},
+    "Easy PA": {"temp": 260, "bed_temp": 80, "fan": 20},
+    "ABS GF": {"temp": 250, "bed_temp": 100, "fan": 15},
+    "ABS FR": {"temp": 250, "bed_temp": 100, "fan": 15},
+    "PETG-CF": {"temp": 250, "bed_temp": 80, "fan": 40},
+    "PLA Wood": {"temp": 205, "bed_temp": 45, "fan": 100},
+    "PLA Silk Dual": {"temp": 220, "bed_temp": 60, "fan": 100},
+    "PLA Galaxy": {"temp": 215, "bed_temp": 60, "fan": 100},
+    "PLA Rainbow": {"temp": 210, "bed_temp": 55, "fan": 100},
 }
 
 
 def get_filament_density(filament_type: str) -> float:
-    """Zwraca gęstość w g/cm3 dla danego tworzywa."""
+    """Zwraca gęstość w g/cm3 dla danego tworzywa (katalog, potem tablica)."""
+    try:
+        from filament_catalog import get_material_density
+
+        density = get_material_density(filament_type)
+        if density:
+            return density
+    except Exception:
+        pass
     name_clean = str(filament_type or "").upper().replace("_", " ").replace("-", " ")
     for k, v in sorted(FILAMENT_DENSITIES.items(), key=lambda x: len(x[0]), reverse=True):
         clean_k = k.upper().replace("_", " ").replace("-", " ")

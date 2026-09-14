@@ -221,8 +221,8 @@ def test_photoset_slice_info_matches_bambu_not_geometry():
         layer_height=0.20,
         nozzle_size=0.4,
     )
-    # PLN śledzi wagę filamentu (146.74 × 0.27), nie objętość bryły (~800 cm³).
-    assert abs(price["unit_price_pln"] - round(146.74 * 0.27, 2)) < 0.02
+    # PLN śledzi wagę filamentu (146.74 × 0.045 z 45 zł/kg), nie objętość bryły (~800 cm³).
+    assert abs(price["unit_price_pln"] - round(146.74 * 0.045, 2)) < 0.02
     assert price["unit_price_pln"] < 80
     geom = estimate_filament_from_geometry(
         volume_cm3=800.0,

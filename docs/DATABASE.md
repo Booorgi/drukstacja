@@ -68,7 +68,7 @@ Istniejące endpointy silnika druku bez zmian kontraktu:
 - `POST /api/analyze-model`, `POST /api/reslice-model`
 - `POST /api/generate-3mf` — po `order_id` zapisuje `production_file_url` **w Railway**
 - `POST /api/orders/upload-geometry`, `GET /api/orders/{id}/download-3mf`
-- `GET /api/filaments` — ten sam `DATABASE_URL`
+- `GET /api/filaments` — ten sam `DATABASE_URL`. Odpowiedź **nie zawiera** `price_per_kg` / `price_per_cm3` (stawki hurtowe tylko w kalkulatorze).
 
 ## API sklepu
 
@@ -177,6 +177,18 @@ python backend/migrate_supabase_orders.py --from-json orders.json
 `id` i `user_id` są zachowywane (`ON CONFLICT (id) DO NOTHING`), więc sesja Supabase nadal mapuje zlecenia użytkownika.
 
 3. Po weryfikacji koszyka i `/orders` można wyłączyć RLS / tabelę `orders` w Supabase (Auth zostaje).
+
+## Katalog filamentów (Sunlu / wyceniarka)
+
+Źródło prawdy: `backend/filament_catalog.py` (rodziny → podtypy → kolory + zł/kg).
+
+| Warstwa | Plik | Rola |
+|---------|------|------|
+| Seed Postgres | `db_setup.SEED_FILAMENTS` = `seed_filaments()` | Upsert kolorów; SKU spoza listy dostają `in_stock=false`. Idempotentne przy starcie FastAPI. |
+| JSON (kopia) | `backend/data/filament_catalog.json` oraz `frontend/config/filamentCatalog.json` | Frontend (koło Materiał / Kolor). Regeneracja: `python3 backend/filament_catalog.py`. |
+| Wycena | `pricing.calculate_price_from_slicer` | `PLN = weight_g × (zł/kg / 1000)`. UI **nie pokazuje** zł/kg. |
+
+PLA w UI jest jedną rodziną; Wood / Silk dual / Tri / Galaxy / Rainbow to podtypy w modalu „Wybierz rodzaj PLA”, nie osobne materiały na liście.
 
 ## Lokalny rozwój
 

@@ -1,75 +1,28 @@
 """
-Drukstacja - Skalibrowany silnik wyceny druku 3D (Standard rynkowy / JLCPCB / Craftcloud)
+Drukstacja - silnik wyceny druku 3D.
+
+PLN = filament_weight_g × (zł/kg / 1000). Stawki hurtowe z katalogu Sunlu
+są tylko do kalkulatora — UI publiczne ich nie pokazuje.
+Waga/czas z slice_info Bambu (#53) zostają; zmienia się wyłącznie stawka materiału.
 """
 import math
 
+from filament_catalog import get_material_rate_per_g, iter_subtypes
 from slicer import estimate_filament_from_geometry
-
-# Stawki rynkowe brutto za gram tworzywa (materiał + prąd + amortyzacja drukarki)
-# Dla PLA: 0.27 PLN/g -> detal ~9.8g (np. Watch case 1.stl) wycenia się na dokładnie ~2.65 PLN brutto
-PRICE_PER_GRAM = {
-    "PLA": 0.27,
-    "PLA Tough": 0.27,
-    "PLA Standard": 0.27,
-    "PLA Silk": 0.29,
-    "PLA Matte": 0.28,
-    "PETG": 0.30,
-    "PETG FR": 0.45,
-    "PETG_FR": 0.45,
-    "PCTG": 0.35,
-    "ABS": 0.26,
-    "ASA": 0.35,
-    "PA12 CF": 0.75,
-    "PA12_CF": 0.75,
-    "PA12-CF": 0.75,
-    "PA-CF": 0.75,
-    "TPU": 0.45,
-    "TPU 95A": 0.45,
-    "FLEX": 0.45,
-    "PP": 0.48,
-    "PETG-CF": 0.55,
-    "PLA-CF": 0.48,
-}
 
 # Parametry globalne polityki zamówień
 MINIMUM_ORDER_VALUE_PLN = 30.00  # Minimalna wartość zamówienia w koszyku (MOQ)
 SMALL_ORDER_SURCHARGE_PLN = 0.0  # Opcjonalna dopłata, jeśli włączona w polityce sklepu
 
-# Domyślne parametry materiałowe (gęstość do przeliczania cm3 na gramy)
-MATERIALS = {
-    "PLA": {"price_per_kg": 90, "density_g_cm3": 1.24, "rate_per_g": 0.27},
-    "PLA Tough": {"price_per_kg": 90, "density_g_cm3": 1.24, "rate_per_g": 0.27},
-    "PLA Matte": {"price_per_kg": 95, "density_g_cm3": 1.22, "rate_per_g": 0.28},
-    "PLA Silk": {"price_per_kg": 105, "density_g_cm3": 1.24, "rate_per_g": 0.29},
-    "PETG": {"price_per_kg": 110, "density_g_cm3": 1.27, "rate_per_g": 0.30},
-    "PETG FR": {"price_per_kg": 180, "density_g_cm3": 1.29, "rate_per_g": 0.45},
-    "PETG_FR": {"price_per_kg": 180, "density_g_cm3": 1.29, "rate_per_g": 0.45},
-    "PCTG": {"price_per_kg": 130, "density_g_cm3": 1.23, "rate_per_g": 0.35},
-    "ABS": {"price_per_kg": 95, "density_g_cm3": 1.05, "rate_per_g": 0.26},
-    "ASA": {"price_per_kg": 120, "density_g_cm3": 1.07, "rate_per_g": 0.35},
-    "PA12 CF": {"price_per_kg": 320, "density_g_cm3": 1.15, "rate_per_g": 0.75},
-    "PA12_CF": {"price_per_kg": 320, "density_g_cm3": 1.15, "rate_per_g": 0.75},
-    "PA-CF": {"price_per_kg": 320, "density_g_cm3": 1.15, "rate_per_g": 0.75},
-    "TPU": {"price_per_kg": 150, "density_g_cm3": 1.21, "rate_per_g": 0.45},
-    "TPU 95A": {"price_per_kg": 150, "density_g_cm3": 1.21, "rate_per_g": 0.45},
-    "PP": {"price_per_kg": 170, "density_g_cm3": 0.90, "rate_per_g": 0.48},
-    "Resin (SLA)": {"price_per_kg": 250, "density_g_cm3": 1.10, "rate_per_g": 0.55},
-}
-
-
-def get_material_rate_per_g(material_name: str) -> float:
-    """Zwraca stawkę za gram dla wybranego typu filamentu."""
-    name_upper = str(material_name or "").upper().replace("_", " ").replace("-", " ")
-    for key, rate in sorted(PRICE_PER_GRAM.items(), key=lambda x: len(x[0]), reverse=True):
-        clean_key = key.upper().replace("_", " ").replace("-", " ")
-        if clean_key in name_upper:
-            return rate
-    return 0.27  # domyślny PLA
-
-
-def calculate_discount_percent(quantity: int) -> int:
-    """Wycena liniowa bez rabatów ilościowych."""
-    return 0
+# Parametry materiałowe z katalogu (gęstość + stawka z zł/kg)
+MATERIALS = {}
+for _family, _subtype in iter_subtypes():
+    MATERIALS[_subtype["slicerType"]] = {
+        "price_per_kg": _subtype["pricePerKg"],
+        "density_g_cm3": _subtype["density"],
+        "rate_per_g": _subtype["ratePerG"],
+    }
+    MATERIALS[_subtype["id"]] = MATERIALS[_subtype["slicerType"]]
 
 
 def estimate_print_time_hours(
@@ -92,6 +45,11 @@ def estimate_print_time_hours(
     return round(extrusion_hours + layer_overhead_hours, 2)
 
 
+def calculate_discount_percent(quantity: int) -> int:
+    """Wycena liniowa bez rabatów ilościowych."""
+    return 0
+
+
 def calculate_price_from_slicer(
     print_time_hours: float,
     filament_weight_g: float,
@@ -102,39 +60,28 @@ def calculate_price_from_slicer(
     price_per_cm3: float = None,
 ) -> dict:
     """
-    Rynkowy model kalkulacji cenowej:
-    - Oparty bezpośrednio na zużyciu tworzywa (filament_weight_g), nie na cm³ bryły CAD
-    - Przy 3MF z slice_info: waga = used_g z Bambu, PLN = waga × stawka/g
-    - 9.8g PLA -> dokładnie 2.65 PLN brutto przy dyszy 0.4 mm i warstwie 0.20 mm
-    - Dysza 0.2 mm: precyzyjny druk o wydłużonym czasie maszynowym (narzut 1.65x)
-    - Czysta wycena liniowa bez rabatów ilościowych (total = unit_price * quantity)
-    - Obsługa MOQ (Minimalna wartość zamówienia = 30.00 PLN)
+    Wycena z wagi filamentu:
+    - PLN = gram × (zł/kg katalogu / 1000); PLA 45 zł/kg → 0.045 PLN/g
+    - slice_info: waga = used_g z Bambu, stawka z wybranego filamentu
+    - Dysza 0.2 mm: narzut czasu maszynowego 1.65x
+    - MOQ 30.00 PLN
     """
     rate_per_g = get_material_rate_per_g(material)
-
-    # 1. Koszt bazowy materiału i energii
     material_cost = filament_weight_g * rate_per_g
 
-    # 2. Mnożnik wysokości warstwy
     if abs(nozzle_size - 0.2) < 0.05:
-        # Profile dla dyszy 0.2 mm
         layer_multiplier = 1.30 if abs(layer_height - 0.08) < 0.02 else (1.15 if abs(layer_height - 0.12) < 0.02 else 1.0)
-        nozzle_multiplier = 1.65  # Odzwierciedla 2.5x dłuższy czas i wolniejszy posuw
+        nozzle_multiplier = 1.65
     else:
-        # Profile standardowe dla dyszy 0.4 mm
         layer_multiplier = 1.25 if abs(layer_height - 0.12) < 0.02 else (0.90 if abs(layer_height - 0.28) < 0.02 else 1.0)
         nozzle_multiplier = 1.0
 
     base_unit_price = material_cost * layer_multiplier * nozzle_multiplier
-
-    # Zabezpieczenie minimalnego kosztu drobiazgu: min 0.80 PLN
     base_unit_price = max(0.80, base_unit_price)
 
-    # 3. Czysta wycena liniowa (bez naliczania progresywnych zniżek)
     unit_price = round(base_unit_price, 2)
     total_price = round(unit_price * quantity, 2)
 
-    # 4. Sprawdzenie progu MOQ (30.00 PLN)
     below_minimum = total_price < MINIMUM_ORDER_VALUE_PLN
     difference_to_minimum = round(max(0.0, MINIMUM_ORDER_VALUE_PLN - total_price), 2)
     suggested_quantity = max(1, math.ceil(MINIMUM_ORDER_VALUE_PLN / max(0.1, unit_price)))

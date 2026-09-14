@@ -43,7 +43,7 @@ export default function StudioColorPicker({
         </p>
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid max-h-[min(52vh,380px)] grid-cols-4 gap-2 overflow-y-auto overscroll-contain pr-0.5">
         {colors.map((color) => {
           const active = isActiveColor(color, value);
           const fill = color.hex || "#d4d4d4";
@@ -64,7 +64,11 @@ export default function StudioColorPicker({
                 className={`relative flex h-12 w-12 items-center justify-center rounded-full ${
                   active ? "ring-2 ring-[#111111] ring-offset-2" : "ring-1 ring-black/10"
                 } ${light ? "ring-neutral-300" : ""}`}
-                style={{ backgroundColor: fill }}
+                style={
+                  color.gradient
+                    ? { backgroundImage: color.gradient }
+                    : { backgroundColor: fill }
+                }
               >
                 {active ? (
                   <span
