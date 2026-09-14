@@ -442,7 +442,8 @@ def slice_result_from_bambu_stats(
     filament_type: str = "PLA",
     nozzle_size: float = 0.4,
 ) -> dict:
-    """Wycena z Metadata/slice_info.config — to te same liczby co w Bambu Studio."""
+    """Zachowane do diagnostyki. /api/analyze-model nie wycenia z slice_info
+    — na Jaguarze dawało to ciche, absurdalnie niskie wagi (albo niepełną płytę)."""
     weight = float(stats.get("filament_weight_g") or 0)
     length = float(stats.get("filament_length_m") or 0)
     seconds = int(stats.get("print_time_seconds") or 0)

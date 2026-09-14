@@ -13,6 +13,7 @@ import StudioPrintSettings from "../components/StudioPrintSettings";
 import StudioPrintParams from "../components/StudioPrintParams";
 import StudioFileProfile from "../components/StudioFileProfile";
 import StudioEmptyDropzone from "../components/StudioEmptyDropzone";
+import StudioPreviewUnavailable from "../components/StudioPreviewUnavailable";
 import StudioControlRail from "../components/StudioControlRail";
 import StudioQuoteBar from "../components/StudioQuoteBar";
 import StudioScale from "../components/StudioScale";
@@ -22,6 +23,13 @@ import StudioMobileSheet from "../components/StudioMobileSheet";
 import PrinterLayersBand from "../components/PrinterLayersBand";
 import { STL_MATERIALS } from "../lib/filament";
 import { peek3mfPrintProfile } from "../lib/peek3mfProfile";
+import {
+  isQuotedModel,
+  isPreviewSkipped,
+  studioVolumeCm3,
+  LARGE_3MF_QUOTE_NO_PREVIEW_MSG,
+  LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG,
+} from "../lib/studioQuote";
 import useMediaQuery from "../lib/useMediaQuery";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -321,13 +329,15 @@ export default function Home() {
     }
   }
 
-  // Opt-in layout fixture so empty vs quoted rail/quote-bar overlap can be
+  // Opt-in layout fixtures so empty vs quoted vs skipped-preview can be
   // checked without the analyze API (`/?studioLayout=quoted`).
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (new URLSearchParams(window.location.search).get("studioLayout") !== "quoted") return;
+    const layout = new URLSearchParams(window.location.search).get("studioLayout");
+    if (!layout) return;
 
-    const stl = `solid fixture
+    if (layout === "quoted") {
+      const stl = `solid fixture
 facet normal 0 0 1
   outer loop
     vertex 0 0 0
@@ -337,19 +347,52 @@ facet normal 0 0 1
 endfacet
 endsolid fixture
 `;
-    const file = new File([stl], "Watch case 1.stl", { type: "model/stl" });
-    setSelectedFile(file);
-    setModelPreviewUrl(URL.createObjectURL(file));
-    setAnalysisData({
-      instant_pricing: true,
-      volume_cm3: 8.8,
-      dimensions_mm: [40, 40, 10],
-      file_key: "layout-fixture",
-      print_time_formatted: "54m",
-      filament_weight_g: 8.8,
-      filament_length_m: 2.94,
-      price_breakdown: { unit_price_pln: 38 },
-    });
+      const file = new File([stl], "Watch case 1.stl", { type: "model/stl" });
+      setSelectedFile(file);
+      setModelPreviewUrl(URL.createObjectURL(file));
+      setAnalysisData({
+        instant_pricing: true,
+        volume_cm3: 8.8,
+        dimensions_mm: [40, 40, 10],
+        file_key: "layout-fixture",
+        print_time_formatted: "54m",
+        filament_weight_g: 8.8,
+        filament_length_m: 2.94,
+        price_breakdown: { unit_price_pln: 38 },
+      });
+      return;
+    }
+
+    if (layout === "preview-skipped" || layout === "preview-skipped-quoted") {
+      const quoted = layout === "preview-skipped-quoted";
+      const file = new File(["x"], "Jaguar v2 Bambu.3mf", { type: "model/3mf" });
+      setSelectedFile(file);
+      setModelPreviewUrl(null);
+      setInfill(6);
+      setLayerHeight(0.2);
+      setNozzleSize(0.4);
+      setAnalysisData({
+        instant_pricing: quoted,
+        skipped_geometry: !quoted,
+        skipped_colored_preview: true,
+        preview_skipped: true,
+        quote_ready: quoted,
+        volume_cm3: quoted ? 842.1 : null,
+        file_key: "layout-jaguar-fixture",
+        original_filename: "Jaguar v2 Bambu.3mf",
+        filament_weight_g: quoted ? 518 : null,
+        print_time_formatted: quoted ? "1d 4h" : null,
+        price_breakdown: quoted ? { unit_price_pln: 180 } : null,
+        file_profile: {
+          filament_colours: ["#080504", "#854A22", "#C4864F", "#DFDFDE"],
+          filament_types: ["PLA Matte", "PLA Basic"],
+          layer_height: 0.2,
+          nozzle_size: 0.4,
+          infill: 6,
+        },
+        message: quoted ? LARGE_3MF_QUOTE_NO_PREVIEW_MSG : LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG,
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -509,11 +552,14 @@ endsolid fixture
           instant_pricing: false,
           type: "rfq_document",
           category: "Model 3D (analiza przekroczona)",
+          preview_skipped: true,
+          quote_ready: false,
           message:
-            "Serwer nie zdążył policzyć geometrii tego 3MF. Profil AMS z pliku zostaje — wyślij RFQ albo spróbuj ponownie.",
+            "Plik wczytany. Ustawienia z projektu zapisane. Serwer nie zdążył policzyć geometrii — bez niej nie podajemy wagi ani ceny. Podgląd niemożliwy ze względu na dużą objętość siatki.",
           file_profile: peekedProfile || {},
           original_filename: file.name,
         });
+        return;
       }
       alert(errorMsg);
     } finally {
@@ -638,7 +684,7 @@ endsolid fixture
     return () => clearTimeout(timer);
   }, [layerHeight, nozzleSize, infill, selectedMaterial, modelScale, analysisData?.preview_stl_key, analysisData?.color_count, analysisData?.painted_ratio]);
 
-  const volume = ((analysisData?.source_volume_cm3 ?? analysisData?.volume_cm3) || 32.5) * (modelScale ** 3);
+  const volume = studioVolumeCm3(analysisData, modelScale);
   const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
   const activeColorObj = matConfig?.colors?.find((c) => c.hex === selectedColor) || matConfig?.colors?.[0];
   const isNozzle02 = Math.abs(nozzleSize - 0.2) < 0.05;
@@ -669,7 +715,8 @@ endsolid fixture
   const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
 
   // Weryfikacja wgranego modelu – ukrycie ceny i blokada koszyka przed analizą
-  const hasModel = Boolean(analysisData && (analysisData.preview_stl_url || analysisData.file_key || analysisData.volume_cm3 != null));
+  const hasModel = isQuotedModel(analysisData);
+  const previewUnavailable = isPreviewSkipped(analysisData, modelPreviewUrl);
   const isEmptyStage = !selectedFile && !analysisData && !isAnalyzing;
   const MIN_ORDER_VALUE = 30.00;
   const isBelowMoq = hasModel && parseFloat(totalPrice) < MIN_ORDER_VALUE;
@@ -1076,6 +1123,11 @@ endsolid fixture
                     Analizuję strukturę pliku i geometrię produkcyjną...
                   </span>
                 </div>
+              ) : previewUnavailable ? (
+                <StudioPreviewUnavailable
+                  message={analysisData?.message}
+                  quoteReady={hasModel}
+                />
               ) : analysisData && analysisData.instant_pricing === false ? (
                 /* KARTA DOKUMENTACJI TECHNICZNEJ / PCB / RFQ (STANDARD JLCPCB / PCBWAY) */
                 <div className="w-full max-w-lg bg-white/95 backdrop-blur-md rounded-3xl p-6 md:p-8 border border-slate-200/80 shadow-[0_15px_35px_rgba(0,0,0,0.05)] space-y-5">
@@ -1216,7 +1268,7 @@ endsolid fixture
               (analysisData?.print_time_hours ? `${analysisData.print_time_hours}h` : null)
             }
             filamentWeight={
-              analysisData?.filament_weight_g
+              analysisData?.filament_weight_g && hasModel
                 ? `${analysisData.filament_weight_g} g`
                 : hasModel
                 ? `${Math.round(volume * 1.24 * (0.35 + (infill / 100) * 0.65))} g`
