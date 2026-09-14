@@ -594,14 +594,14 @@ export default function CadViewer3D({
       materialSwatches = availableColors;
     } else {
       materialSwatches = [
-        { id: "c_black", name: "Głęboka Czerń", hex: "#1A1A1A" },
-        { id: "c_white", name: "Czysta Biel", hex: "#F5F5F5" },
-        { id: "c_grey", name: "Szary Techniczny", hex: "#63666A" },
-        { id: "c_red", name: "Ognista Czerwień", hex: "#D32F2F" },
-        { id: "c_blue", name: "Kobalt Błękit", hex: "#1976D2" },
-        { id: "c_orange", name: "Pomarańcz", hex: "#F57C00" },
-        { id: "c_green", name: "Zieleń", hex: "#388E3C" },
-        { id: "c_gold", name: "Złoty Silk", hex: "#D4AF37" },
+        { id: "c_beige", name: "Beige", hex: "#E8D8C8" },
+        { id: "c_ceramic", name: "Ceramic", hex: "#FFFFFF" },
+        { id: "c_grey", name: "Grey", hex: "#8E9297" },
+        { id: "c_red", name: "Red", hex: "#D81E06" },
+        { id: "c_klein", name: "Klein Blue", hex: "#002FA7" },
+        { id: "c_orange", name: "Sunny Orange", hex: "#FF6B00" },
+        { id: "c_green", name: "Green", hex: "#0E8A37" },
+        { id: "c_midnight", name: "Midnight", hex: "#111215" },
       ];
     }
 
