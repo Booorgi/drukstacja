@@ -28,7 +28,6 @@ import {
   isPreviewSkipped,
   studioVolumeCm3,
   LARGE_3MF_QUOTE_NO_PREVIEW_MSG,
-  LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG,
 } from "../lib/studioQuote";
 import useMediaQuery from "../lib/useMediaQuery";
 
@@ -364,34 +363,33 @@ endsolid fixture
     }
 
     if (layout === "preview-skipped" || layout === "preview-skipped-quoted") {
-      const quoted = layout === "preview-skipped-quoted";
       const file = new File(["x"], "Jaguar v2 Bambu.3mf", { type: "model/3mf" });
       setSelectedFile(file);
       setModelPreviewUrl(null);
-      setInfill(6);
+      setInfill(5);
       setLayerHeight(0.2);
       setNozzleSize(0.4);
       setSelectedMaterial("PLA_MATTE");
       setAnalysisData({
-        instant_pricing: quoted,
-        skipped_geometry: !quoted,
+        instant_pricing: true,
+        skipped_geometry: false,
         skipped_colored_preview: true,
         preview_skipped: true,
-        quote_ready: quoted,
-        volume_cm3: quoted ? 842.1 : null,
+        quote_ready: true,
+        volume_cm3: 842.1,
         file_key: "layout-jaguar-fixture",
         original_filename: "Jaguar v2 Bambu.3mf",
-        filament_weight_g: quoted ? 518 : null,
-        print_time_formatted: quoted ? "1d 4h" : null,
-        price_breakdown: quoted ? { unit_price_pln: 180 } : null,
+        filament_weight_g: 518,
+        print_time_formatted: "1d 4h",
+        price_breakdown: { unit_price_pln: 180 },
         file_profile: {
           filament_colours: ["#080504", "#854A22", "#C4864F", "#DFDFDE"],
           filament_types: ["PLA Matte", "PLA Basic"],
           layer_height: 0.2,
           nozzle_size: 0.4,
-          infill: 6,
+          infill: 5,
         },
-        message: quoted ? LARGE_3MF_QUOTE_NO_PREVIEW_MSG : LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG,
+        message: LARGE_3MF_QUOTE_NO_PREVIEW_MSG,
       });
     }
   }, []);

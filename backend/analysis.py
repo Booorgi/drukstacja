@@ -196,12 +196,10 @@ PAINT_SLOT_CODES = [
 # Awaryjna paleta, gdy plik ma malowanie, ale nie niesie listy filament_colour.
 DEFAULT_AMS_PALETTE = ["#1A1A1A", "#F5F5F5", "#D32F2F", "#1976D2"]
 
-# Progi dla plików Bambu klasy Jaguar: zip bywa < 12 MB, ale XML ma dziesiątki MB
-# i pędzel na każdym trójkącie zjada limit proxy (Failed to fetch po stronie przeglądarki).
+# Progi dla plików Bambu klasy Jaguar: zip bywa < 12 MB, ale XML ma dziesiątki MB.
+# Pędzel i GLB/STL zrywały fetch — siatki NIE pomijamy, bo z niej jest wycena (~518 g).
 PAINT_ZIP_BYTES = 12_000_000
 PAINT_MODEL_UNCOMPRESSED_BYTES = 8_000_000
-SKIP_MESH_ZIP_BYTES = 25_000_000
-SKIP_MESH_MODEL_UNCOMPRESSED_BYTES = 80_000_000
 COLORED_PREVIEW_FACE_LIMIT = 180_000
 COLORED_PREVIEW_ZIP_BYTES = 12_000_000
 COLORED_PREVIEW_MODEL_UNCOMPRESSED_BYTES = 40_000_000
@@ -247,11 +245,9 @@ def should_decode_3mf_paint(zip_bytes: int, max_model_uncompressed: int) -> bool
 
 
 def should_parse_3mf_mesh(zip_bytes: int, max_model_uncompressed: int) -> bool:
-    """Pełny XML siatki pomijamy tylko przy naprawdę ogromnych obiektach (timeout/OOM)."""
-    return (
-        int(zip_bytes or 0) < SKIP_MESH_ZIP_BYTES
-        and int(max_model_uncompressed or 0) < SKIP_MESH_MODEL_UNCOMPRESSED_BYTES
-    )
+    """Wycena Jaguara wymaga XML siatki. Duży plik pomija tylko pędzel i podgląd, nie geometrię."""
+    _ = (zip_bytes, max_model_uncompressed)
+    return True
 
 
 def should_build_colored_preview(
@@ -666,10 +662,9 @@ def _empty_3mf_bundle(file_profile: dict, slice_stats: dict, skipped_paint: bool
 
 def load_3mf_bundle(file_input) -> dict:
     """
-    Wczytuje .3MF: geometrię do slicera oraz opcjonalną siatkę z kolorami AMS (podgląd GLB).
-    Na plikach klasy Jaguar najpierw zbiera profil AMS. Pędzel i GLB pomija, żeby
-    /api/analyze-model zdążył wrócić. slice_info NIE jest źródłem wyceny — przy pominiętej
-    siatce nie ma wiarygodnej wagi ani ceny.
+    Wczytuje .3MF: geometrię do wyceny oraz opcjonalną siatkę z kolorami AMS (podgląd GLB).
+    Na plikach klasy Jaguar pomija pędzel i GLB/STL, ale zawsze parsuje siatkę —
+    z objętości idzie geometry-estimate (~518 g), nie z slice_info i nie z dummy 32.5 cm³.
     """
     file_bytes = _read_file_bytes(file_input)
     objects: List[dict] = []
@@ -677,7 +672,6 @@ def load_3mf_bundle(file_input) -> dict:
     part_extruder: Dict[str, int] = {}
     print_profile: dict = {}
     skipped_paint = False
-    skipped_geometry = False
     slice_stats: dict = {}
     max_model_uncompressed = 0
 
@@ -699,33 +693,20 @@ def load_3mf_bundle(file_input) -> dict:
             if skipped_paint:
                 print(
                     f"[INFO] Duży .3MF (zip={len(file_bytes)} B, model={max_model_uncompressed} B) "
-                    "— pomijam dekodowanie pędzla AMS."
+                    "— pomijam dekodowanie pędzla AMS, siatkę wczytuję do wyceny."
                 )
 
-            parse_mesh = should_parse_3mf_mesh(len(file_bytes), max_model_uncompressed)
-            if not parse_mesh and (slice_stats or print_profile):
-                skipped_geometry = True
-                print(
-                    f"[INFO] Ogromny .3MF (zip={len(file_bytes)} B, model={max_model_uncompressed} B) "
-                    "— pomijam pełny XML siatki, zostawiam profil AMS bez wyceny z slice_info."
-                )
-            else:
-                for mf in target_models:
-                    try:
-                        objects.extend(parse_model_xml_objects(z.read(mf), read_paint=read_paint))
-                    except Exception as parse_err:
-                        print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
+            for mf in target_models:
+                try:
+                    objects.extend(parse_model_xml_objects(z.read(mf), read_paint=read_paint))
+                except Exception as parse_err:
+                    print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
     except Exception as zip_err:
         print(f"[WARN] Błąd inspekcji kontenera ZIP .3MF: {zip_err}")
 
     file_profile = dict(print_profile or {})
     if slice_stats:
         file_profile["slice_stats"] = slice_stats
-
-    if skipped_geometry:
-        if not file_profile.get("filament_colours") and filament_colours:
-            file_profile["filament_colours"] = list(filament_colours)
-        return _empty_3mf_bundle(file_profile, slice_stats, skipped_paint)
 
     if not objects:
         if file_profile.get("filament_colours") or slice_stats:

@@ -12,8 +12,6 @@ import trimesh
 from analysis import (
     COLORED_PREVIEW_FACE_LIMIT,
     DEFAULT_AMS_PALETTE,
-    LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG,
-    analyze_mesh_file,
     decode_paint_slot,
     export_colored_preview_glb,
     load_3mf_bundle,
@@ -327,29 +325,26 @@ def test_preview_glb_has_normals_and_part_colors():
     assert len(gltf["meshes"]) >= 1
 
 
-def test_size_gates_keep_keychain_preview_and_skip_jaguar():
-    """Keychain (~5 MB zip / 34 MB XML / 156k ścianek) zostaje w podglądzie."""
+def test_size_gates_keep_keychain_preview_and_skip_jaguar_preview_only():
+    """Keychain zostaje w podglądzie. Jaguar: siatka TAK (wycena), pędzel/GLB NIE."""
     assert should_decode_3mf_paint(5_500_000, 34_000_000) is False
     assert should_parse_3mf_mesh(5_500_000, 34_000_000) is True
     assert should_build_colored_preview(5_500_000, 34_000_000, 156_000) is True
-    # Jaguar: ogromny XML i/lub setki tysięcy ścianek — bez pędzla i bez GLB.
     assert should_decode_3mf_paint(11_000_000, 90_000_000) is False
-    assert should_parse_3mf_mesh(11_000_000, 90_000_000) is False
+    assert should_parse_3mf_mesh(11_000_000, 90_000_000) is True
     assert should_build_colored_preview(11_000_000, 90_000_000, 400_000) is False
     assert should_build_colored_preview(5_000_000, 10_000_000, COLORED_PREVIEW_FACE_LIMIT) is False
 
 
-def test_huge_3mf_skips_geometry_but_keeps_ams_and_slice_stats():
-    """Przy >80 MB uncompressed .model nie parsujemy XML — profil AMS zostaje, wyceny nie ma."""
-    padding = " " * 80_000_001
-    path = os.path.join(tempfile.mkdtemp(), "jaguar_class.3mf")
+def test_empty_3mf_does_not_invent_weight_from_slice_info():
+    """Brak siatki: profil AMS zostaje, slice_info nie może dać 16 g / fałszywej ceny."""
+    path = os.path.join(tempfile.mkdtemp(), "empty_plate.3mf")
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(
             "3D/3dmodel.model",
             '<?xml version="1.0"?><model xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
             "<resources></resources><build></build></model>",
         )
-        zf.writestr("3D/Objects/object-7607.model", padding)
         zf.writestr(
             "Metadata/project_settings.config",
             json.dumps({
@@ -369,41 +364,30 @@ def test_huge_3mf_skips_geometry_but_keeps_ams_and_slice_stats():
 <config>
   <plate>
     <metadata key="prediction" value="99600"/>
-    <metadata key="weight" value="518.08"/>
-    <filament id="1" type="PLA" color="#080504" used_m="94.99" used_g="301.59"/>
-    <filament id="2" type="PLA" color="#854A22" used_m="65.12" used_g="206.74"/>
+    <metadata key="weight" value="16"/>
+    <filament id="1" type="PLA" color="#080504" used_m="5" used_g="16"/>
   </plate>
 </config>""",
         )
-    bundle = load_3mf_bundle(path)
-    assert bundle["skipped_geometry"] is True
-    assert bundle["mesh"] is None
-    assert bundle["colored_mesh"] is None
-    assert bundle["has_file_colors"] is False
-    assert bundle["quote_ready"] is False
-    assert bundle["preview_skipped"] is True
-    assert bundle["file_profile"]["filament_colours"] == ["#080504", "#854A22", "#C4864F", "#DFDFDE"]
-    assert bundle["file_profile"]["slice_stats"]["filament_weight_g"] > 500
-    assert bundle["color_count"] >= 2
-    assert bundle["filament_colours"] == ["#080504", "#854A22", "#C4864F", "#DFDFDE"]
-
-    geom = analyze_mesh_file(path, ".3mf")
-    assert geom["volume_cm3"] is None
-    assert geom["quote_ready"] is False
-    assert reliable_volume_cm3(geom.get("volume_cm3")) is None
-
-    processed = process_uploaded_file(path, "Jaguar v2 Bambu.3mf", tempfile.mkdtemp())
+    processed = process_uploaded_file(path, "empty.3mf", tempfile.mkdtemp())
     assert processed["instant_pricing"] is False
     assert processed["volume_cm3"] is None
-    assert processed["quote_ready"] is False
-    assert processed.get("filament_weight_g") in (None, 0)
-    assert "Podgląd niemożliwy" in processed["message"]
-    assert processed["message"] == LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
-    assert processed["file_profile"]["filament_types"]
-    # Historyczny błąd UI #49: 0 cm³ + `|| 32.5` + infill 6% = 16 g. Ten path nie może wrócić 16 g.
+    assert processed.get("filament_weight_g") not in (16, 16.0)
     fake_g = round(32.5 * 1.24 * (0.35 + (6 / 100.0) * 0.65))
     assert fake_g == 16
     assert processed.get("filament_weight_g") != 16
+    assert processed["file_profile"]["filament_colours"]
+
+
+def test_real_3mf_keeps_geometry_and_can_skip_only_preview_flags():
+    """Mały 3MF z siatką ma objętość i quote_ready — to ta sama ścieżka co Jaguar bez GLB."""
+    path = _build_3mf(["4"] * 12, ["#080504", "#DFDFDE"])
+    processed = process_uploaded_file(path, "keychain-like.3mf", tempfile.mkdtemp())
+    assert processed["instant_pricing"] is True
+    assert processed["skipped_geometry"] is False
+    assert reliable_volume_cm3(processed.get("volume_cm3")) is not None
+    assert processed["quote_ready"] is True
+    assert processed["mesh_object"] is not None
 
 
 def test_zero_volume_is_not_a_measurement():
