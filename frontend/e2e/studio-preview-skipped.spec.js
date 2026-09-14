@@ -69,7 +69,7 @@ test.describe("large 3MF skipped preview", () => {
     await expect(page.locator("[data-studio-preview-status='thumbnail']")).toBeVisible();
     await expect(page.locator("[data-from-slice-info='true']")).toBeVisible();
     await expect(page.getByText("Wycena gotowa — zdjęcie z pliku 3MF")).toBeVisible();
-    await expect(page.getByText("Waga i czas ze slicera 3MF")).toBeVisible();
+    await expect(page.locator("[data-slice-info-note]")).toBeVisible();
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
     await expect(page.getByText("146.74 g")).toBeVisible();
     await expect(page.getByText("5h 6m")).toBeVisible();
