@@ -103,7 +103,8 @@ def calculate_price_from_slicer(
 ) -> dict:
     """
     Rynkowy model kalkulacji cenowej:
-    - Oparty bezpośrednio na zużyciu tworzywa i amortyzacji
+    - Oparty bezpośrednio na zużyciu tworzywa (filament_weight_g), nie na cm³ bryły CAD
+    - Przy 3MF z slice_info: waga = used_g z Bambu, PLN = waga × stawka/g
     - 9.8g PLA -> dokładnie 2.65 PLN brutto przy dyszy 0.4 mm i warstwie 0.20 mm
     - Dysza 0.2 mm: precyzyjny druk o wydłużonym czasie maszynowym (narzut 1.65x)
     - Czysta wycena liniowa bez rabatów ilościowych (total = unit_price * quantity)

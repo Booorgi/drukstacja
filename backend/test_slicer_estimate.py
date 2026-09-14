@@ -9,6 +9,7 @@ from slicer import (
     run_slicer,
     slice_result_from_bambu_stats,
     slice_result_from_geometry,
+    validated_bambu_slice_stats,
 )
 
 
@@ -168,7 +169,7 @@ def test_jaguar_skip_preview_still_quotes_from_geometry():
 
 
 def test_bambu_slice_info_matches_studio_totals():
-    """Helper zostaje do diagnostyki; /api/analyze-model nie używa go jako wyceny."""
+    """Dodatnia slice_info → te same waga/czas co Bambu Studio (Jaguar 518 g / 1d 3h 40m)."""
     stats = slice_result_from_bambu_stats(
         {
             "filament_weight_g": 518.08,
@@ -182,10 +183,68 @@ def test_bambu_slice_info_matches_studio_totals():
         nozzle_size=0.4,
     )
     assert stats["engine"] == "bambu-slice-info"
-    assert abs(stats["filament_weight_g"] - 518.1) < 0.2
+    assert abs(stats["filament_weight_g"] - 518.08) < 0.05
     assert abs(stats["filament_length_m"] - 163.2) < 0.05
     assert stats["print_time_formatted"] == "1d 3h 40m"
     assert 27.5 <= stats["print_time_hours"] <= 27.8
+
+
+def test_photoset_slice_info_matches_bambu_not_geometry():
+    """Photoset_Iphone_support.3mf: slice_info 146.74 g / 18372 s, nie 600 g+ z bryły CAD."""
+    stats = validated_bambu_slice_stats({
+        "filament_weight_g": 146.74,
+        "filament_length_m": 49.20,
+        "print_time_seconds": 18372,
+        "color_count": 1,
+    })
+    assert stats is not None
+    quote = slice_result_from_bambu_stats(
+        stats,
+        infill=15,
+        layer_height=0.20,
+        filament_type="PLA",
+        nozzle_size=0.4,
+    )
+    assert quote["engine"] == "bambu-slice-info"
+    assert abs(quote["filament_weight_g"] - 146.74) < 0.05
+    assert abs(quote["filament_length_m"] - 49.20) < 0.05
+    assert quote["print_time_formatted"] == "5h 6m"
+    assert 5.0 <= quote["print_time_hours"] <= 5.2
+    assert quote["filament_weight_g"] < 200
+
+    from pricing import calculate_price_from_slicer
+    price = calculate_price_from_slicer(
+        print_time_hours=quote["print_time_hours"],
+        filament_weight_g=quote["filament_weight_g"],
+        material="PLA",
+        quantity=1,
+        layer_height=0.20,
+        nozzle_size=0.4,
+    )
+    # PLN śledzi wagę filamentu (146.74 × 0.27), nie objętość bryły (~800 cm³).
+    assert abs(price["unit_price_pln"] - round(146.74 * 0.27, 2)) < 0.02
+    assert price["unit_price_pln"] < 80
+    geom = estimate_filament_from_geometry(
+        volume_cm3=800.0,
+        surface_area_cm2=520.0,
+        dimensions_mm=[100.0, 100.0, 80.0],
+        infill=15,
+        layer_height=0.20,
+        nozzle_size=0.4,
+        filament_type="PLA",
+        support_needed=True,
+        color_count=1,
+    )
+    assert geom["filament_weight_g"] > 400
+    assert quote["filament_weight_g"] < geom["filament_weight_g"] * 0.5
+
+
+def test_validated_slice_info_rejects_empty_and_zero():
+    assert validated_bambu_slice_stats(None) is None
+    assert validated_bambu_slice_stats({}) is None
+    assert validated_bambu_slice_stats({"filament_weight_g": 0, "print_time_seconds": 0}) is None
+    assert validated_bambu_slice_stats({"filament_weight_g": 0, "print_time_seconds": 100, "filament_length_m": 0}) is None
+    assert validated_bambu_slice_stats({"filament_weight_g": 16.0, "print_time_seconds": 0}) is not None
 
 
 if __name__ == "__main__":

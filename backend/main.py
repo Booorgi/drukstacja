@@ -40,7 +40,13 @@ from analysis import (
 )
 from pricing import calculate_price, calculate_price_from_slicer, MATERIALS
 from storage import upload_file_to_r2, get_file_url, download_file_from_r2, save_production_3mf_file
-from slicer import convert_step_to_stl, run_slicer, slice_result_from_geometry
+from slicer import (
+    convert_step_to_stl,
+    run_slicer,
+    slice_result_from_bambu_stats,
+    slice_result_from_geometry,
+    validated_bambu_slice_stats,
+)
 from orientation import auto_orient_mesh
 from packager_3mf import generate_production_3mf, sanitize_filename
 from db import get_db_connection
@@ -1068,8 +1074,13 @@ async def analyze_model_endpoint(
             skip_colored_preview = bool(result.get("skipped_colored_preview"))
             preview_skipped = bool(result.get("preview_skipped") or result.get("skipped_geometry"))
 
+            bambu_stats = validated_bambu_slice_stats(
+                ((result.get("file_profile") or {}).get("slice_stats"))
+            )
+
             if raw_mesh is None and result.get("instant_pricing") is True:
-                # Bez siatki nie ma wiarygodnej wyceny — nie bierzemy wagi z slice_info Bambu.
+                # Bez siatki: RFQ. slice_info bez geometrii nie zastępuje wyceny
+                # (pusta płyta + leftover 16 g to nie zamówienie).
                 result["instant_pricing"] = False
                 result["quote_ready"] = False
                 result["preview_skipped"] = True
@@ -1079,7 +1090,11 @@ async def analyze_model_endpoint(
                     False, bool(result.get("preview_image_url"))
                 )
 
-            if raw_mesh is not None and reliable_volume_cm3(result.get("volume_cm3")) is None:
+            if (
+                raw_mesh is not None
+                and bambu_stats is None
+                and reliable_volume_cm3(result.get("volume_cm3")) is None
+            ):
                 result["instant_pricing"] = False
                 result["quote_ready"] = False
                 result["volume_cm3"] = None
@@ -1106,7 +1121,7 @@ async def analyze_model_endpoint(
                     if skip_preview_export:
                         print(
                             f"[INFO] Gęsta siatka ({result.get('triangle_count')} ścianek) "
-                            "— pomijam eksport STL/GLB podglądu, zostawiam wycenę z geometrii."
+                            "— pomijam eksport STL/GLB podglądu, wycena z slice_info albo geometrii."
                         )
                         colored_mesh = None
                         preview_skipped = True
@@ -1197,12 +1212,22 @@ async def analyze_model_endpoint(
                     if file_profile.get("filament_types"):
                         filament_type = str(file_profile["filament_types"][0])
 
-                    # Wycena z geometrii / slicera. slice_info Bambu nie jest źródłem wagi.
-                    # Jaguar: bez STL/GLB → geometry-estimate z volume_cm3 (~842 cm³ → ~518 g).
+                    # 1) Dodatnia slice_info Bambu (waga/czas z 3MF) — jak Studio.
+                    # 2) Inaczej geometria / Prusa: STL, STEP, 3MF bez slice_info.
+                    # Nigdy: volume_cm3==0 → estymator (historyczne fałszywe 16 g).
                     try:
-                        if skip_preview_export and reliable_volume_cm3(result.get("volume_cm3")):
+                        vol = reliable_volume_cm3(result.get("volume_cm3"))
+                        if bambu_stats:
+                            slice_data = slice_result_from_bambu_stats(
+                                bambu_stats,
+                                infill=int(infill),
+                                layer_height=float(layer_height),
+                                filament_type=filament_type,
+                                nozzle_size=float(nozzle_size),
+                            )
+                        elif skip_preview_export and vol:
                             slice_data = slice_result_from_geometry(
-                                volume_cm3=float(result["volume_cm3"]),
+                                volume_cm3=float(vol),
                                 surface_area_cm2=float(result.get("surface_area_cm2") or 0.0),
                                 dimensions_mm=result.get("dimensions_mm"),
                                 infill=int(infill),
@@ -1213,7 +1238,7 @@ async def analyze_model_endpoint(
                                 support_needed=True,
                                 painted_ratio=painted_ratio,
                             )
-                        else:
+                        elif vol or not skip_preview_export:
                             slice_data = run_slicer(
                                 oriented_stl_path,
                                 infill=int(infill),
@@ -1228,7 +1253,11 @@ async def analyze_model_endpoint(
                                 surface_area_cm2=result.get("surface_area_cm2"),
                                 dimensions_mm=result.get("dimensions_mm"),
                             )
+                        else:
+                            raise RuntimeError("Brak slice_info i wiarygodnej objętości — bez wyceny.")
+                        from_slice_info = slice_data.get("engine") == "bambu-slice-info"
                         result["slicer_engine"] = slice_data.get("engine")
+                        result["quote_source"] = slice_data.get("engine")
                         result["print_time_hours"] = slice_data.get("print_time_hours")
                         result["print_time_formatted"] = slice_data.get("print_time_formatted")
                         result["filament_weight_g"] = slice_data.get("filament_weight_g")
@@ -1243,7 +1272,7 @@ async def analyze_model_endpoint(
                         result["flush_cm3"] = slice_data.get("flush_cm3") or 0
                         result["support_cm3"] = slice_data.get("support_cm3") or 0
 
-                        # Wycena na podstawie metadanych ze slicera
+                        # PLN z wagi filamentu (Bambu used_g albo estymator), nie z cm³ bryły CAD.
                         price_info = calculate_price_from_slicer(
                             print_time_hours=result["print_time_hours"] or 1.0,
                             filament_weight_g=result["filament_weight_g"] or 20.0,
@@ -1262,8 +1291,18 @@ async def analyze_model_endpoint(
                         ):
                             result["preview_skipped"] = True
                             result["message"] = skipped_preview_status_message(
-                                True, bool(result.get("preview_image_url"))
+                                True,
+                                bool(result.get("preview_image_url")),
+                                from_slice_info=from_slice_info,
                             )
+                        elif from_slice_info:
+                            base_msg = result.get("message") or ""
+                            if "ze slicera 3MF" not in base_msg:
+                                result["message"] = (
+                                    f"{base_msg} Waga i czas ze slicera 3MF.".strip()
+                                    if base_msg
+                                    else "Waga i czas ze slicera 3MF."
+                                )
                     except Exception as slice_err:
                         print(f"[WARN] Slicer error: {slice_err}")
                         result["print_time_hours"] = None

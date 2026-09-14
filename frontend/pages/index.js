@@ -26,10 +26,12 @@ import { peek3mfSidecar } from "../lib/peek3mfProfile";
 import {
   isQuotedModel,
   isPreviewSkipped,
+  isBambuSliceQuote,
   studioVolumeCm3,
   studioPreviewImageUrl,
   LARGE_3MF_QUOTE_NO_PREVIEW_MSG,
   LARGE_3MF_QUOTE_THUMBNAIL_MSG,
+  SLICE_INFO_QUOTE_NOTE,
 } from "../lib/studioQuote";
 import useMediaQuery from "../lib/useMediaQuery";
 
@@ -431,6 +433,51 @@ endsolid fixture
         },
         message: LARGE_3MF_QUOTE_THUMBNAIL_MSG,
       });
+      return;
+    }
+
+    if (layout === "preview-skipped-sliced") {
+      const file = new File(["x"], "Photoset_Iphone_support.3mf", { type: "model/3mf" });
+      const platePhoto = "/fixtures/plate_1.png";
+      setSelectedFile(file);
+      setModelPreviewUrl(null);
+      setPreviewImageUrl(platePhoto);
+      setInfill(15);
+      setLayerHeight(0.2);
+      setNozzleSize(0.4);
+      setSelectedMaterial("PLA_STANDARD");
+      setAnalysisData({
+        instant_pricing: true,
+        skipped_geometry: false,
+        skipped_colored_preview: true,
+        preview_skipped: true,
+        quote_ready: true,
+        volume_cm3: 842.1,
+        file_key: "layout-photoset-sliced-fixture",
+        original_filename: "Photoset_Iphone_support.3mf",
+        filament_weight_g: 146.74,
+        filament_length_m: 49.2,
+        print_time_formatted: "5h 6m",
+        print_time_hours: 5.1,
+        slicer_engine: "bambu-slice-info",
+        quote_source: "bambu-slice-info",
+        price_breakdown: { unit_price_pln: 39.62 },
+        preview_image_url: platePhoto,
+        preview_image_source: "Metadata/plate_1.png",
+        file_profile: {
+          filament_colours: ["#E05028"],
+          filament_types: ["PLA Basic"],
+          layer_height: 0.2,
+          nozzle_size: 0.4,
+          infill: 15,
+          slice_stats: {
+            filament_weight_g: 146.74,
+            filament_length_m: 49.2,
+            print_time_seconds: 18372,
+          },
+        },
+        message: `${LARGE_3MF_QUOTE_THUMBNAIL_MSG} ${SLICE_INFO_QUOTE_NOTE}`,
+      });
     }
   }, []);
 
@@ -762,6 +809,7 @@ endsolid fixture
 
   // Weryfikacja wgranego modelu – ukrycie ceny i blokada koszyka przed analizą
   const hasModel = isQuotedModel(analysisData);
+  const fromSliceInfo = isBambuSliceQuote(analysisData);
   const previewUnavailable = isPreviewSkipped(analysisData, modelPreviewUrl);
   const embeddedPreviewUrl = studioPreviewImageUrl(analysisData, previewImageUrl);
   const isEmptyStage = !selectedFile && !analysisData && !isAnalyzing;
@@ -981,6 +1029,7 @@ endsolid fixture
                 layerHeight={fileProfile.layer_height || layerHeight}
                 nozzleSize={fileProfile.nozzle_size || nozzleSize}
                 infill={fileProfile.infill ?? infill}
+                fromSliceInfo={fromSliceInfo}
               />
             ) : (
               <>
@@ -1188,11 +1237,13 @@ endsolid fixture
                   message={analysisData?.message}
                   quoteReady={hasModel}
                   imageUrl={embeddedPreviewUrl}
+                  fromSliceInfo={fromSliceInfo}
                 />
               ) : previewUnavailable ? (
                 <StudioPreviewUnavailable
                   message={analysisData?.message}
                   quoteReady={hasModel}
+                  fromSliceInfo={fromSliceInfo}
                 />
               ) : analysisData && analysisData.instant_pricing === false ? (
                 /* KARTA DOKUMENTACJI TECHNICZNEJ / PCB / RFQ (STANDARD JLCPCB / PCBWAY) */
@@ -1323,8 +1374,6 @@ endsolid fixture
             filamentWeight={
               analysisData?.filament_weight_g && hasModel
                 ? `${analysisData.filament_weight_g} g`
-                : hasModel
-                ? `${Math.round(volume * 1.24 * (0.35 + (infill / 100) * 0.65))} g`
                 : null
             }
             filamentLength={analysisData?.filament_length_m ? `${analysisData.filament_length_m} m` : null}
