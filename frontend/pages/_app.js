@@ -47,9 +47,6 @@ export default function MyApp({ Component, pageProps }) {
             z-index: 40;
             flex-shrink: 0;
           }
-          html[data-printer-hero-active] [data-studio-quote-bar] {
-            position: relative !important;
-          }
         `}</style>
       </Head>
       <Component {...pageProps} />

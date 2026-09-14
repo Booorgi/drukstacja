@@ -20,7 +20,7 @@ import StudioScale from "../components/StudioScale";
 import StudioColorPicker from "../components/StudioColorPicker";
 import StudioMaterialPicker from "../components/StudioMaterialPicker";
 import StudioMobileSheet from "../components/StudioMobileSheet";
-import PrinterLayersBand from "../components/PrinterLayersBand";
+import HomeHubTiles from "../components/HomeHubTiles";
 import { STL_MATERIALS } from "../lib/filament";
 import { peek3mfSidecar } from "../lib/peek3mfProfile";
 import {
@@ -922,7 +922,7 @@ endsolid fixture
         onChange={handleFileInputChange}
       />
 
-      <PrinterLayersBand />
+      <HomeHubTiles />
 
       <section
         id="configurator"
