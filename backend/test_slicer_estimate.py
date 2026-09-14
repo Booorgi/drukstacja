@@ -128,6 +128,7 @@ def test_dense_mesh_skips_prusa_cli():
 
 
 def test_bambu_slice_info_matches_studio_totals():
+    """Helper zostaje do diagnostyki; /api/analyze-model nie używa go jako wyceny."""
     stats = slice_result_from_bambu_stats(
         {
             "filament_weight_g": 518.08,

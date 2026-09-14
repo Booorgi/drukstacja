@@ -12,9 +12,13 @@ import trimesh
 from analysis import (
     COLORED_PREVIEW_FACE_LIMIT,
     DEFAULT_AMS_PALETTE,
+    LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG,
+    analyze_mesh_file,
     decode_paint_slot,
     export_colored_preview_glb,
     load_3mf_bundle,
+    process_uploaded_file,
+    reliable_volume_cm3,
     should_build_colored_preview,
     should_decode_3mf_paint,
     should_parse_3mf_mesh,
@@ -108,7 +112,7 @@ def test_3mf_exposes_file_profile():
 
 
 def test_3mf_reads_bambu_slice_info():
-    """Wycena 3MF ma brać czas i wagę z cięcia Bambu, nie z przybliżonej geometrii."""
+    """slice_info zostaje na profilu (diagnostyka), ale nie jest źródłem wyceny."""
     path = _build_3mf(["4"] * 12, ["#111111", "#EEEEEE"])
     with zipfile.ZipFile(path, "a") as zf:
         zf.writestr(
@@ -132,6 +136,9 @@ def test_3mf_reads_bambu_slice_info():
     assert abs(stats["filament_length_m"] - 163.2) < 0.2
     assert stats["print_time_seconds"] == 99600
     assert stats["color_count"] == 4
+    assert bundle["skipped_geometry"] is False
+    assert bundle["mesh"] is not None
+    assert bundle["quote_ready"] is True
 
 
 def test_standard_profile_keeps_file_infill():
@@ -156,6 +163,8 @@ def test_load_3mf_bundle_paints_ams_parts():
     bundle = load_3mf_bundle(SAMPLE)
     assert bundle["part_count"] == 4
     assert bundle["has_file_colors"] is True
+    assert bundle["preview_skipped"] is False
+    assert bundle["quote_ready"] is True
     assert bundle["filament_colours"] == ["#080504", "#854A22", "#C4864F", "#DFDFDE"]
     assert bundle["color_count"] == 4
     colored = bundle["colored_mesh"]
@@ -331,7 +340,7 @@ def test_size_gates_keep_keychain_preview_and_skip_jaguar():
 
 
 def test_huge_3mf_skips_geometry_but_keeps_ams_and_slice_stats():
-    """Przy >80 MB uncompressed .model nie parsujemy XML — zostaje profil i slice_info."""
+    """Przy >80 MB uncompressed .model nie parsujemy XML — profil AMS zostaje, wyceny nie ma."""
     padding = " " * 80_000_001
     path = os.path.join(tempfile.mkdtemp(), "jaguar_class.3mf")
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -347,7 +356,11 @@ def test_huge_3mf_skips_geometry_but_keeps_ams_and_slice_stats():
                 "filament_colour": ["#080504", "#854A22", "#C4864F", "#DFDFDE"],
                 "layer_height": 0.2,
                 "nozzle_diameter": ["0.4"],
-                "sparse_infill_density": "20%",
+                "sparse_infill_density": "6%",
+                "filament_settings_id": [
+                    "Bambu PLA Matte @BBL A1",
+                    "Bambu PLA Basic @BBL A1",
+                ],
             }),
         )
         zf.writestr(
@@ -367,10 +380,45 @@ def test_huge_3mf_skips_geometry_but_keeps_ams_and_slice_stats():
     assert bundle["mesh"] is None
     assert bundle["colored_mesh"] is None
     assert bundle["has_file_colors"] is False
+    assert bundle["quote_ready"] is False
+    assert bundle["preview_skipped"] is True
     assert bundle["file_profile"]["filament_colours"] == ["#080504", "#854A22", "#C4864F", "#DFDFDE"]
     assert bundle["file_profile"]["slice_stats"]["filament_weight_g"] > 500
     assert bundle["color_count"] >= 2
     assert bundle["filament_colours"] == ["#080504", "#854A22", "#C4864F", "#DFDFDE"]
+
+    geom = analyze_mesh_file(path, ".3mf")
+    assert geom["volume_cm3"] is None
+    assert geom["quote_ready"] is False
+    assert reliable_volume_cm3(geom.get("volume_cm3")) is None
+
+    processed = process_uploaded_file(path, "Jaguar v2 Bambu.3mf", tempfile.mkdtemp())
+    assert processed["instant_pricing"] is False
+    assert processed["volume_cm3"] is None
+    assert processed["quote_ready"] is False
+    assert processed.get("filament_weight_g") in (None, 0)
+    assert "Podgląd niemożliwy" in processed["message"]
+    assert processed["message"] == LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
+    assert processed["file_profile"]["filament_types"]
+    # Historyczny błąd UI #49: 0 cm³ + `|| 32.5` + infill 6% = 16 g. Ten path nie może wrócić 16 g.
+    fake_g = round(32.5 * 1.24 * (0.35 + (6 / 100.0) * 0.65))
+    assert fake_g == 16
+    assert processed.get("filament_weight_g") != 16
+
+
+def test_zero_volume_is_not_a_measurement():
+    assert reliable_volume_cm3(0) is None
+    assert reliable_volume_cm3(0.0) is None
+    assert reliable_volume_cm3(None) is None
+    assert reliable_volume_cm3(842.1) == 842.1
+
+
+def test_frontend_zero_volume_default_was_sixteen_grams():
+    """Reprodukcja #49 na Jaguarze: volume_cm3=0 → JS `|| 32.5` × 6% infill → 16 g / ~11 zł."""
+    default_cm3 = 32.5
+    infill = 6
+    fake_g = round(default_cm3 * 1.24 * (0.35 + (infill / 100.0) * 0.65))
+    assert fake_g == 16
 
 
 def test_export_colored_glb_refuses_jaguar_face_count():

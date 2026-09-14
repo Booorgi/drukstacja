@@ -29,6 +29,9 @@ from analysis import (
     analyze_file,
     export_colored_preview_glb,
     COLORED_PREVIEW_FACE_LIMIT,
+    LARGE_3MF_QUOTE_NO_PREVIEW_MSG,
+    LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG,
+    reliable_volume_cm3,
     ALL_SUPPORTED_EXTENSIONS,
     INSTANT_3D_EXTENSIONS,
     INSTANT_MESH_EXTENSIONS,
@@ -38,7 +41,7 @@ from analysis import (
 )
 from pricing import calculate_price, calculate_price_from_slicer, MATERIALS
 from storage import upload_file_to_r2, get_file_url, download_file_from_r2, save_production_3mf_file
-from slicer import convert_step_to_stl, run_slicer, slice_result_from_bambu_stats
+from slicer import convert_step_to_stl, run_slicer
 from orientation import auto_orient_mesh
 from packager_3mf import generate_production_3mf, sanitize_filename
 from db import get_db_connection
@@ -1016,67 +1019,27 @@ async def analyze_model_endpoint(
 
             colored_mesh = result.pop("colored_mesh", None)
             skip_colored_preview = bool(result.get("skipped_colored_preview"))
-            file_profile_early = result.get("file_profile") or {}
-            slice_stats_early = file_profile_early.get("slice_stats") or {}
+            preview_skipped = bool(result.get("preview_skipped") or result.get("skipped_geometry"))
 
-            # Gęsty 3MF bez siatki: wycena z slice_info Bambu, bez podglądu GLB/STL.
-            if raw_mesh is None and result.get("instant_pricing") is True and slice_stats_early.get("filament_weight_g"):
-                try:
-                    if file_profile_early.get("layer_height"):
-                        layer_height = float(file_profile_early["layer_height"])
-                    if file_profile_early.get("nozzle_size"):
-                        nozzle_size = float(file_profile_early["nozzle_size"])
-                    if file_profile_early.get("infill") is not None:
-                        infill = int(file_profile_early["infill"])
-                    if file_profile_early.get("filament_types"):
-                        filament_type = str(file_profile_early["filament_types"][0])
-                    color_count = int(
-                        result.get("color_count")
-                        or len(result.get("filament_colours") or [])
-                        or len(file_profile_early.get("filament_colours") or [])
-                        or 1
-                    )
-                    slice_data = slice_result_from_bambu_stats(
-                        slice_stats_early,
-                        infill=int(infill),
-                        layer_height=float(layer_height),
-                        filament_type=filament_type,
-                        nozzle_size=float(nozzle_size),
-                    )
-                    result["slicer_engine"] = slice_data.get("engine")
-                    result["print_time_hours"] = slice_data.get("print_time_hours")
-                    result["print_time_formatted"] = slice_data.get("print_time_formatted")
-                    result["filament_weight_g"] = slice_data.get("filament_weight_g")
-                    result["filament_length_m"] = slice_data.get("filament_length_m")
-                    result["filament_volume_cm3"] = slice_data.get("filament_volume_cm3")
-                    result["layer_height"] = float(layer_height)
-                    result["nozzle_size"] = float(nozzle_size)
-                    result["infill"] = int(infill)
-                    result["filament_type"] = filament_type
-                    result["has_supports"] = slice_data.get("has_supports", False)
-                    result["support_lines"] = []
-                    result["flush_cm3"] = slice_data.get("flush_cm3") or 0
-                    result["support_cm3"] = slice_data.get("support_cm3") or 0
-                    result["color_count"] = color_count
-                    result["has_file_colors"] = False
-                    result["preview_glb_url"] = None
-                    result["preview_stl_url"] = None
-                    price_info = calculate_price_from_slicer(
-                        print_time_hours=result["print_time_hours"] or 1.0,
-                        filament_weight_g=result["filament_weight_g"] or 20.0,
-                        material=filament_type,
-                        quantity=1,
-                        layer_height=float(layer_height),
-                        nozzle_size=float(nozzle_size),
-                    )
-                    result["price_breakdown"] = price_info
-                    result["unit_price"] = price_info["unit_price_pln"]
-                    result["message"] = (
-                        "Duży plik 3MF: wycena z zapisanego cięcia Bambu. "
-                        "Podgląd wielokolorowy pominięty, żeby analiza zdążyła wrócić."
-                    )
-                except Exception as meta_err:
-                    print(f"[WARN] Wycena 3MF z samego slice_info nie powiodła się: {meta_err}")
+            if raw_mesh is None and result.get("instant_pricing") is True:
+                # Bez siatki nie ma wiarygodnej wyceny — nie bierzemy wagi z slice_info Bambu.
+                result["instant_pricing"] = False
+                result["quote_ready"] = False
+                result["preview_skipped"] = True
+                result["preview_glb_url"] = None
+                result["preview_stl_url"] = None
+                if not result.get("message"):
+                    result["message"] = LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
+
+            if raw_mesh is not None and reliable_volume_cm3(result.get("volume_cm3")) is None:
+                result["instant_pricing"] = False
+                result["quote_ready"] = False
+                result["volume_cm3"] = None
+                result["preview_skipped"] = bool(
+                    result.get("preview_skipped") or skip_colored_preview or preview_skipped
+                )
+                if result.get("preview_skipped"):
+                    result["message"] = LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
 
             if raw_mesh is not None and result.get("instant_pricing") is True:
                 try:
@@ -1092,9 +1055,11 @@ async def analyze_model_endpoint(
                     if dense_preview:
                         print(
                             f"[INFO] Gęsta siatka ({result.get('triangle_count')} ścianek) "
-                            "— pomijam eksport STL/GLB podglądu, zostawiam wycenę."
+                            "— pomijam eksport STL/GLB podglądu, zostawiam wycenę z geometrii."
                         )
                         colored_mesh = None
+                        preview_skipped = True
+                        result["preview_skipped"] = True
                     else:
                         oriented_mesh.export(oriented_stl_path)
                         preview_stl_key = f"models/{unique_id}_oriented.stl"
@@ -1152,8 +1117,10 @@ async def analyze_model_endpoint(
                         elif colored_mesh is not None:
                             print(
                                 f"[INFO] Pomijam eksport GLB ({preview_face_count} ścianek) "
-                                "— analiza i wycena idą dalej."
+                                "— analiza i wycena z geometrii idą dalej."
                             )
+                            preview_skipped = True
+                            result["preview_skipped"] = True
                     # Liczba slotow AMS i gestosc malowania - NIE zalezna od tego,
                     # czy GLB wrocil (to tylko podglad). Wycena musi doliczyc plykanie.
                     color_count = int(
@@ -1179,32 +1146,23 @@ async def analyze_model_endpoint(
                     if file_profile.get("filament_types"):
                         filament_type = str(file_profile["filament_types"][0])
 
-                    # Slicing: 3MF z Bambu ma już wynik cięcia w slice_info.config
+                    # Wycena wyłącznie z geometrii / slicera. slice_info Bambu nie jest
+                    # źródłem wagi — na Jaguarze dawało absurdalne 16 g albo niepełną płytę.
                     try:
-                        slice_stats = file_profile.get("slice_stats") or {}
-                        if slice_stats.get("filament_weight_g"):
-                            slice_data = slice_result_from_bambu_stats(
-                                slice_stats,
-                                infill=int(infill),
-                                layer_height=float(layer_height),
-                                filament_type=filament_type,
-                                nozzle_size=float(nozzle_size),
-                            )
-                        else:
-                            slice_data = run_slicer(
-                                oriented_stl_path,
-                                infill=int(infill),
-                                layer_height=float(layer_height),
-                                nozzle_size=float(nozzle_size),
-                                filament_type=filament_type,
-                                color_count=color_count,
-                                support_needed=True,
-                                painted_ratio=painted_ratio,
-                                triangle_count=result.get("triangle_count"),
-                                volume_cm3=result.get("volume_cm3"),
-                                surface_area_cm2=result.get("surface_area_cm2"),
-                                dimensions_mm=result.get("dimensions_mm"),
-                            )
+                        slice_data = run_slicer(
+                            oriented_stl_path,
+                            infill=int(infill),
+                            layer_height=float(layer_height),
+                            nozzle_size=float(nozzle_size),
+                            filament_type=filament_type,
+                            color_count=color_count,
+                            support_needed=True,
+                            painted_ratio=painted_ratio,
+                            triangle_count=result.get("triangle_count"),
+                            volume_cm3=result.get("volume_cm3"),
+                            surface_area_cm2=result.get("surface_area_cm2"),
+                            dimensions_mm=result.get("dimensions_mm"),
+                        )
                         result["slicer_engine"] = slice_data.get("engine")
                         result["print_time_hours"] = slice_data.get("print_time_hours")
                         result["print_time_formatted"] = slice_data.get("print_time_formatted")
@@ -1231,6 +1189,14 @@ async def analyze_model_endpoint(
                         )
                         result["price_breakdown"] = price_info
                         result["unit_price"] = price_info["unit_price_pln"]
+                        result["quote_ready"] = True
+                        if (
+                            preview_skipped
+                            and not result.get("preview_stl_url")
+                            and not result.get("preview_glb_url")
+                        ):
+                            result["preview_skipped"] = True
+                            result["message"] = LARGE_3MF_QUOTE_NO_PREVIEW_MSG
                     except Exception as slice_err:
                         print(f"[WARN] Slicer error: {slice_err}")
                         result["print_time_hours"] = None
@@ -1252,6 +1218,7 @@ async def analyze_model_endpoint(
         # 4. Przypadek B: Dokument RFQ (Rysunek 2D, PCB Gerber, CAD BIM itp.)
         if result.get("instant_pricing") is not True:
             result["instant_pricing"] = False
+            result["quote_ready"] = False
             result["type"] = "rfq_document"
             result["preview_stl_key"] = None
             result["preview_stl_url"] = None
@@ -1259,9 +1226,17 @@ async def analyze_model_endpoint(
             result["preview_glb_url"] = None
             result["orientation"] = None
             result["print_time_exact"] = None
+            result["filament_weight_g"] = None
             result["filament_weight_g_exact"] = None
             result["has_supports"] = False
             result["support_lines"] = []
+            result["price_breakdown"] = None
+            result["unit_price"] = None
+            if result.get("preview_skipped") or result.get("skipped_geometry"):
+                result["preview_skipped"] = True
+                result["volume_cm3"] = None
+                if not result.get("message"):
+                    result["message"] = LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
 
         result.pop("mesh_object", None)
         result.pop("colored_mesh", None)
