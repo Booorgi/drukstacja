@@ -1,3 +1,8 @@
+/**
+ * MOCK / szkic UI konkurencji (Craftcloud-like).
+ * To NIE jest żywy koszyk Drukstacji — nie importować w pages/.
+ * Ceny tu (VAT 23% na netcie, stałe 3.19 PLN) nie mają związku z commercial-margin-v1.
+ */
 import React, { useState } from 'react';
 import { 
   ArrowLeft, CheckCircle2, ChevronRight, Search, Info, Plus, Minus, 

@@ -9,6 +9,9 @@ import { supabase } from "../lib/supabaseClient";
 import { fetchCartOrders } from "../lib/ordersApi";
 import { createCheckout } from "../lib/checkoutApi";
 import { cartLineSubtitle, isShopSkuLine } from "../lib/orderLine";
+import commercialPricing from "../lib/commercialPricing";
+
+const { cartQuotedTotal } = commercialPricing;
 
 export default function CheckoutPage() {
   const [user, setUser] = useState(null);
@@ -47,7 +50,7 @@ export default function CheckoutPage() {
     setLoading(false);
   }
 
-  const total = cartItems.reduce((acc, item) => acc + (parseFloat(item.total_price) || 0), 0);
+  const total = cartQuotedTotal(cartItems);
 
   async function handleCheckout(address) {
     setError("");

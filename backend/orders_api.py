@@ -21,6 +21,11 @@ from pydantic import BaseModel, Field
 
 from auth import AuthUser, get_current_user, get_optional_user
 from db import get_db_connection
+from pricing import (
+    commercial_total_for_order,
+    extract_quote_weight_hours,
+    parse_mm_value,
+)
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
 
@@ -58,6 +63,10 @@ class OrderCreate(BaseModel):
     status: str = "in_cart"
     nozzle_size: str | None = None
     production_file_url: str | None = None
+    filament_weight_g: float | None = None
+    print_time_hours: float | None = None
+    print_time_formatted: str | None = None
+    print_time_seconds: float | None = None
 
 
 class OrderUpdate(BaseModel):
@@ -125,6 +134,45 @@ def _ensure_printable_dimensions(payload: OrderCreate) -> None:
         return
     if dimensions_exceed_print_bed(payload.dimensions_mm):
         raise HTTPException(status_code=400, detail=PRINT_BED_OVERSIZE_DETAIL)
+
+
+def _is_client_priced_line(payload: OrderCreate) -> bool:
+    tech = (payload.technology or "").strip()
+    material = payload.material or ""
+    file_name = payload.file_name or ""
+    if tech == "shop_sku":
+        return True
+    if payload.status == "rfq_pending":
+        return True
+    if "Wycena Inżynierska" in material or file_name.startswith("[RFQ]"):
+        return True
+    return False
+
+
+def apply_server_print_price(payload: OrderCreate) -> None:
+    """Studio print lines use commercial_unit_price. Client total_price is not trusted.
+
+    Breloki / RFQ / shop SKUs without weight+time keep the client amount.
+    """
+    if payload.status != "in_cart" or _is_client_priced_line(payload):
+        return
+    weight, hours = extract_quote_weight_hours(
+        filament_weight_g=payload.filament_weight_g,
+        print_time_hours=payload.print_time_hours,
+        print_time_formatted=payload.print_time_formatted,
+        print_time_seconds=payload.print_time_seconds,
+        technology=payload.technology,
+    )
+    if weight is None or hours <= 0:
+        return
+    payload.total_price = commercial_total_for_order(
+        filament_weight_g=weight,
+        print_time_hours=hours,
+        material=payload.material or "PLA",
+        quantity=payload.quantity or 1,
+        layer_height=parse_mm_value(payload.layer_height, 0.20),
+        nozzle_size=parse_mm_value(payload.nozzle_size, 0.4),
+    )
 
 
 def _validate_status(status: str | None, allowed: tuple[str, ...]) -> str:
@@ -259,6 +307,7 @@ def create_order(payload: OrderCreate, user: AuthUser = Depends(get_current_user
     status = _validate_status(payload.status, CREATE_STATUSES)
     payload.status = status
     _ensure_printable_dimensions(payload)
+    apply_server_print_price(payload)
     conn = require_db()
     try:
         with conn:
@@ -350,33 +399,6 @@ def update_order(order_id: str, payload: OrderUpdate, user: AuthUser = Depends(g
     if "dimensions_mm" in updates:
         updates["dimensions_mm"] = _normalize_dimensions(updates["dimensions_mm"])
 
-    set_parts = []
-    values = []
-    for column in (
-        "file_name",
-        "material",
-        "technology",
-        "layer_height",
-        "infill",
-        "clean_supports",
-        "brass_inserts",
-        "quantity",
-        "total_price",
-        "dimensions_mm",
-        "status",
-        "nozzle_size",
-        "production_file_url",
-    ):
-        if column in updates:
-            set_parts.append(f"{column} = %s")
-            values.append(updates[column])
-
-    if not set_parts:
-        raise HTTPException(status_code=400, detail="Brak dozwolonych pól do aktualizacji.")
-
-    set_parts.append("updated_at = NOW()")
-    values.extend([order_id, user.id])
-
     conn = require_db()
     try:
         with conn:
@@ -394,6 +416,34 @@ def update_order(order_id: str, payload: OrderUpdate, user: AuthUser = Depends(g
                         status_code=409,
                         detail="Tego zlecenia nie można już anulować z poziomu koszyka.",
                     )
+                tech = (existing.get("technology") or "").strip()
+                if "total_price" in updates and tech != "shop_sku":
+                    # Client cannot restamp a print line (VAT-on-gross, double setup, etc.).
+                    updates.pop("total_price")
+                set_parts = []
+                values = []
+                for column in (
+                    "file_name",
+                    "material",
+                    "technology",
+                    "layer_height",
+                    "infill",
+                    "clean_supports",
+                    "brass_inserts",
+                    "quantity",
+                    "total_price",
+                    "dimensions_mm",
+                    "status",
+                    "nozzle_size",
+                    "production_file_url",
+                ):
+                    if column in updates:
+                        set_parts.append(f"{column} = %s")
+                        values.append(updates[column])
+                if not set_parts:
+                    raise HTTPException(status_code=400, detail="Brak dozwolonych pól do aktualizacji.")
+                set_parts.append("updated_at = NOW()")
+                values.extend([order_id, user.id])
                 cur.execute(
                     f"""
                     UPDATE orders

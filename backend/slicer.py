@@ -542,6 +542,7 @@ def slice_result_from_bambu_stats(
         "engine": BAMBU_SLICE_ENGINE,
         "print_time_hours": hours_float,
         "print_time_formatted": time_formatted,
+        "print_time_seconds": max(seconds, 0),
         "filament_weight_g": round(weight, 2),
         "filament_length_m": round(length, 2),
         "filament_volume_cm3": volume_cm3,

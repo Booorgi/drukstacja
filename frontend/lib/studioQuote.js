@@ -1,7 +1,13 @@
+import commercialPricing from "./commercialPricing";
+import quoteSync from "./quoteSync.cjs";
+
+const { commercialUnitPrice, canonicalPrintTimeHours } = commercialPricing;
+
 /** Objętość 0 / null nie jest pomiarem — historyczny `|| 32.5` dawał 16 g przy 6% infill. */
-export const MIN_RELIABLE_VOLUME_CM3 = 0.05;
-export const BAMBU_SLICE_ENGINE = "bambu-slice-info";
+export const MIN_RELIABLE_VOLUME_CM3 = quoteSync.MIN_RELIABLE_VOLUME_CM3;
+export const BAMBU_SLICE_ENGINE = quoteSync.BAMBU_SLICE_ENGINE;
 export const SLICE_INFO_QUOTE_NOTE = "Waga i czas ze slicera 3MF.";
+export const mergeAnalyzeWithPeekedSliceQuote = quoteSync.mergeAnalyzeWithPeekedSliceQuote;
 
 export const LARGE_3MF_QUOTE_NO_PREVIEW_MSG =
   "Plik wczytany. Ustawienia zapisane. Wycena gotowa. Podgląd niemożliwy ze względu na dużą objętość siatki / CPS.";
@@ -20,13 +26,7 @@ export function isReliableVolumeCm3(value) {
   return Number.isFinite(n) && n > MIN_RELIABLE_VOLUME_CM3;
 }
 
-export function isBambuSliceQuote(analysisData) {
-  if (!analysisData) return false;
-  const engine = analysisData.slicer_engine || analysisData.quote_source;
-  if (engine !== BAMBU_SLICE_ENGINE) return false;
-  const grams = Number(analysisData.filament_weight_g);
-  return Number.isFinite(grams) && grams > MIN_RELIABLE_VOLUME_CM3;
-}
+export const isBambuSliceQuote = quoteSync.isBambuSliceQuote;
 
 export function studioVolumeCm3(analysisData, modelScale = 1) {
   if (!analysisData) return 0;
@@ -79,14 +79,18 @@ export function quoteAnalysisFromPeekedSliceInfo({
   profile,
   sliceStats,
   fileName,
-  ratePerG = 0.27,
+  ratePerG = 0.045,
   previewImageUrl = null,
 } = {}) {
   const grams = Number(sliceStats && sliceStats.filament_weight_g);
   if (!Number.isFinite(grams) || grams <= MIN_RELIABLE_VOLUME_CM3) return null;
   const seconds = Number(sliceStats.print_time_seconds) || 0;
-  const hours = seconds > 0 ? Math.round((seconds / 3600) * 100) / 100 : 0;
-  const unit = Math.max(0.8, Math.round(grams * Number(ratePerG || 0.27) * 100) / 100);
+  const hours = canonicalPrintTimeHours({ seconds });
+  const unit = commercialUnitPrice({
+    weightG: grams,
+    printTimeHours: hours,
+    ratePerG: Number(ratePerG) || 0.045,
+  });
   const hasThumb = Boolean(previewImageUrl);
   return {
     instant_pricing: true,
@@ -102,9 +106,10 @@ export function quoteAnalysisFromPeekedSliceInfo({
     quote_source: BAMBU_SLICE_ENGINE,
     filament_weight_g: grams,
     filament_length_m: Number(sliceStats.filament_length_m) || 0,
+    print_time_seconds: seconds,
     print_time_hours: hours,
     print_time_formatted: formatPrintTimeFromSeconds(seconds),
-    price_breakdown: { unit_price_pln: unit },
+    price_breakdown: { unit_price_pln: unit, engine: "commercial-margin-v1" },
     unit_price: unit,
     preview_image_url: previewImageUrl || undefined,
     message: hasThumb

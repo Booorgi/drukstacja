@@ -63,7 +63,7 @@ test.describe("homepage dark UX", () => {
     await revealStudio(page);
 
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
-    await expect(page.locator("[data-quote-total]")).toBeVisible();
+    await expect(page.locator("[data-quote-total]")).toHaveText("38.00");
     await expect(page.locator("[data-engineer-review]")).toBeVisible();
     await expect(page.locator("[data-engineer-review]")).toContainText(
       "Nie masz pewności? Zaznacz darmową weryfikację przez inżyniera przed startem druku"

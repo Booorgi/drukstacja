@@ -72,6 +72,7 @@ def test_photoset_scales_from_slice_info_weight_and_time():
     assert 5.0 <= quote["print_time_hours"] <= 5.2
     expected = _expected(PHOTOSET_G, PHOTOSET_H)
     assert abs(quote["unit_price_pln"] - expected) < 0.02
+    assert abs(quote["unit_price_pln"] - 20.31) < 0.02
     assert 18.0 <= quote["unit_price_pln"] <= 24.0
     assert quote["unit_price_pln"] < 80
     assert quote["below_minimum"] is True
@@ -136,7 +137,7 @@ def test_frontend_defaults_stay_in_sync():
     js_path = Path(__file__).resolve().parents[1] / "frontend" / "lib" / "commercialPricing.js"
     text = js_path.read_text(encoding="utf-8")
     def grab(name):
-        match = re.search(rf"export const {name} = ([0-9.]+);", text)
+        match = re.search(rf"(?:export )?const {name} = ([0-9.]+);", text)
         assert match, name
         return float(match.group(1))
 
@@ -153,6 +154,74 @@ def test_env_override_is_documented_and_readable():
         WHALE_G, WHALE_H, PLA_RATE, markup=3.0, machine_hourly=0.0, setup_fee=0.0
     )
     assert abs(custom["unit_price_pln"] - round(WHALE_G * PLA_RATE * 3.0, 2)) < 0.02
+
+
+def test_canonical_hours_prefer_formatted_over_stale_geometry_hours():
+    from pricing import canonical_print_time_hours, extract_quote_weight_hours, commercial_total_for_order
+
+    stale = canonical_print_time_hours(formatted="5h 6m", hours=7.633)
+    assert abs(stale - 5.1) < 0.02
+    from_seconds = canonical_print_time_hours(
+        formatted="5h 6m", hours=7.633, seconds=18372
+    )
+    assert abs(from_seconds - round(18372 / 3600.0, 2)) < 0.001
+
+    weight, hours = extract_quote_weight_hours(
+        technology="FDM Precision 0.4mm | Czas: 5h 6m | Waga: 146.74g",
+        print_time_hours=7.633,
+    )
+    assert abs(weight - 146.74) < 0.01
+    assert abs(hours - 5.1) < 0.02
+
+    unit = commercial_total_for_order(
+        filament_weight_g=146.74,
+        print_time_hours=hours,
+        material="PLA",
+        quantity=1,
+        layer_height=0.20,
+        nozzle_size=0.4,
+    )
+    assert abs(unit - 20.31) < 0.02
+    assert unit != round(146.74 * 0.045 * 2 + 7.633 + 2, 2)
+
+
+def test_order_payload_reprices_35_02_without_database():
+    from orders_api import OrderCreate, apply_server_print_price
+
+    payload = OrderCreate(
+        file_name="Photoset_Iphone_support.3mf",
+        material="PLA Standard (Pomarańczowy)",
+        technology="FDM Precision 0.4mm | Czas: 5h 6m | Waga: 146.74g",
+        layer_height="0.20 mm",
+        infill=15,
+        quantity=1,
+        total_price=35.02,
+        filament_weight_g=146.74,
+        print_time_hours=7.633,
+        print_time_formatted="5h 6m",
+        print_time_seconds=18372,
+        nozzle_size="0.4",
+        status="in_cart",
+    )
+    apply_server_print_price(payload)
+    assert abs(payload.total_price - 20.31) < 0.02
+    assert payload.total_price != 35.02
+
+
+def test_photoset_qty1_studio_equals_line_equals_cart_total():
+    from pricing import commercial_total_for_order
+
+    unit = commercial_total_for_order(
+        filament_weight_g=PHOTOSET_G,
+        print_time_hours=PHOTOSET_H,
+        material="PLA",
+        quantity=1,
+        layer_height=0.20,
+        nozzle_size=0.4,
+    )
+    assert abs(unit - 20.31) < 0.02
+    cart_total = unit  # qty 1, no VAT multiplier, no shipping
+    assert cart_total == unit
 
 
 if __name__ == "__main__":

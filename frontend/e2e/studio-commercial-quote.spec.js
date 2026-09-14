@@ -29,4 +29,19 @@ test.describe("studio commercial quote", () => {
     await expect(page.getByText(/zł\/kg/i)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Do koszyka" })).toBeDisabled();
   });
+
+  test("Photoset fixture stays on 20.31 — not 22.84 stale hours or 35.02 volume", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/?studioLayout=preview-skipped-sliced");
+    await revealStudio(page);
+
+    const bar = page.locator("[data-studio-quote-bar]");
+    await expect(bar.locator("[data-quote-total]")).toHaveText("20.31");
+    await expect(bar.getByText("146.74 g")).toBeVisible();
+    await expect(bar.getByText("5h 6m")).toBeVisible();
+    await expect(page.getByText("22.84")).toHaveCount(0);
+    await expect(page.getByText("35.02")).toHaveCount(0);
+    await expect(page.getByText("45.53")).toHaveCount(0);
+    await expect(bar).toHaveAttribute("data-below-moq", "true");
+  });
 });

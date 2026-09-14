@@ -209,3 +209,57 @@ def test_create_allows_model_on_print_bed_limit(client, user_a):
     )
     assert res.status_code == 200, res.text
     assert res.json()["order"]["dimensions_mm"] == [256.0, 256.0, 256.0]
+
+
+def test_photoset_print_line_ignores_client_price_and_vat():
+    """Studio quote == cart unit == cart total for qty 1 (commercial 20.31, not 35.02 / 45.53)."""
+    from pricing import commercial_total_for_order
+
+    expected = commercial_total_for_order(
+        filament_weight_g=146.74,
+        print_time_hours=18372 / 3600.0,
+        material="PLA",
+        quantity=1,
+        layer_height=0.20,
+        nozzle_size=0.4,
+    )
+    assert abs(expected - 20.31) < 0.02
+
+
+def test_print_cart_reprices_client_35_02_to_commercial(client, user_a):
+    _, headers = user_a
+    res = client.post(
+        "/api/orders",
+        headers=headers,
+        json=cart_payload(
+            file_name="Photoset_Iphone_support.3mf",
+            material="PLA Standard (Pomarańczowy)",
+            technology="FDM Precision 0.4mm | Czas: 5h 6m | Waga: 146.74g",
+            layer_height="0.20 mm",
+            infill=15,
+            quantity=1,
+            total_price=35.02,
+            filament_weight_g=146.74,
+            print_time_hours=7.633,
+            print_time_formatted="5h 6m",
+            print_time_seconds=18372,
+            nozzle_size="0.4",
+            dimensions_mm=[220.1, 234.19, 119],
+        ),
+    )
+    assert res.status_code == 200, res.text
+    order = res.json()["order"]
+    assert abs(order["total_price"] - 20.31) < 0.02
+    assert order["total_price"] != 35.02
+    assert abs(order["total_price"] * 1.23 - 45.53) > 1  # no VAT-on-gross
+
+    listed = client.get("/api/orders?status=in_cart", headers=headers).json()["orders"]
+    assert len(listed) == 1
+    assert listed[0]["total_price"] == order["total_price"]
+
+    patched = client.patch(
+        f"/api/orders/{order['id']}",
+        headers=headers,
+        json={"total_price": 45.53},
+    )
+    assert patched.status_code == 400 or abs(patched.json()["order"]["total_price"] - 20.31) < 0.02
