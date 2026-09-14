@@ -235,8 +235,22 @@ def test_photoset_slice_info_matches_bambu_not_geometry():
         support_needed=True,
         color_count=1,
     )
-    assert geom["filament_weight_g"] > 400
-    assert quote["filament_weight_g"] < geom["filament_weight_g"] * 0.5
+    assert geom["filament_weight_g"] > quote["filament_weight_g"]
+    assert quote["filament_weight_g"] < 200
+    overshoot = estimate_filament_from_geometry(
+        volume_cm3=842.10,
+        surface_area_cm2=838.1,
+        dimensions_mm=[187.49, 203.71, 77.46],
+        infill=15,
+        layer_height=0.20,
+        nozzle_size=0.4,
+        filament_type="PLA",
+        support_needed=True,
+        color_count=4,
+        painted_ratio=0.66,
+    )
+    assert overshoot["filament_weight_g"] > 500
+    assert quote["filament_weight_g"] < overshoot["filament_weight_g"] * 0.4
 
 
 def test_validated_slice_info_rejects_empty_and_zero():

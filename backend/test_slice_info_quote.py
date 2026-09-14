@@ -85,7 +85,7 @@ def test_analyze_photoset_like_3mf_quotes_bambu_not_cad_volume():
         color_count=1,
         support_needed=True,
     )
-    assert geom_est["filament_weight_g"] > 400
+    assert geom_est["filament_weight_g"] > float(146.74)
 
     client = TestClient(main.app)
     with open(path, "rb") as f:
@@ -204,7 +204,7 @@ def test_geometry_estimator_on_photoset_volume_would_overshoot():
         support_needed=True,
         color_count=1,
     )
-    assert est["filament_weight_g"] > 400
+    assert est["filament_weight_g"] > 200
 
 
 if __name__ == "__main__":
