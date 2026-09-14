@@ -62,7 +62,7 @@ test.describe("studio color picker", () => {
     await expect(materials.getByText("Wybierz rodzaj PLA")).toBeVisible();
     await materials.locator('[data-studio-material-subtype="PLA_WOOD"]').click();
     await expect(materials).toHaveCount(0);
-    await expect(rail.locator("span").filter({ hasText: /Wood/ })).toBeVisible();
+    await expect(rail.locator("span").filter({ hasText: "PLA · Wood" })).toBeVisible();
 
     await paramsWheel.click();
     await expect(page.getByText("Parametry druku")).toBeVisible();

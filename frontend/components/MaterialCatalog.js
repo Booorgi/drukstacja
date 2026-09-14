@@ -261,7 +261,6 @@ export const ENGINEERING_MATERIALS = [
 const CATEGORY_FILTERS = [
   { id: "all", label: "Wszystkie" },
   { id: "available", label: "Dostępne teraz" },
-  { id: "coming_soon", label: "Wkrótce" },
   { id: "sliding", label: "Ślizgowe" },
   { id: "high_temp", label: "Wysoka temp." },
   { id: "outdoor_uv", label: "Zewnętrzne / UV" },

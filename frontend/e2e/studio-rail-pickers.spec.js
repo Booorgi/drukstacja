@@ -109,7 +109,7 @@ test.describe("studio rail pickers", () => {
 
     await pickPlaWood(materials);
     await expect(materials).toHaveCount(0);
-    await expect(rail.locator("span").filter({ hasText: /Wood/ })).toBeVisible();
+    await expect(rail.locator("span").filter({ hasText: "PLA · Wood" })).toBeVisible();
 
     await paramsWheel.click();
     const params = page.locator('[data-studio-print-params-surface="popover"]');
@@ -142,7 +142,7 @@ test.describe("studio rail pickers", () => {
     await pickPlaWood(picker);
     await expect(picker).toHaveCount(0);
     await expect(
-      page.locator("[data-studio-control-rail-frame]").locator("span").filter({ hasText: /Wood/ })
+      page.locator("[data-studio-control-rail-frame]").locator("span").filter({ hasText: "PLA · Wood" })
     ).toBeVisible();
   });
 
@@ -165,7 +165,7 @@ test.describe("studio rail pickers", () => {
     await pickPlaWood(sheet);
     await expect(sheet).toHaveCount(0);
     await expect(
-      page.locator("[data-studio-control-rail-frame]").locator("span").filter({ hasText: /Wood/ })
+      page.locator("[data-studio-control-rail-frame]").locator("span").filter({ hasText: "PLA · Wood" })
     ).toBeVisible();
   });
 
