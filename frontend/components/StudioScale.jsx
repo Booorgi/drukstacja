@@ -1,8 +1,14 @@
 import React from "react";
+import printBed from "../lib/printBed";
+
+const {
+  PRINT_BED_MM,
+  scaledDimensionsMm,
+  isOverPrintBed,
+  fitToPrintBedPercent,
+} = printBed;
 
 const PRESETS = [10, 25, 50, 100];
-const BED_MM = 256;
-const FIT_MM = 220;
 
 function formatMm(value) {
   if (value == null || Number.isNaN(Number(value))) return "—";
@@ -18,17 +24,18 @@ export default function StudioScale({
   surface = "popover",
 }) {
   const factor = scalePercent / 100;
-  const scaled = (sourceDimensionsMm || [0, 0, 0]).map((v) => Number(v) * factor);
-  const maxDim = Math.max(0, ...scaled);
-  const sourceMax = Math.max(0, ...(sourceDimensionsMm || [0, 0, 0]).map(Number));
-  const oversized = maxDim > BED_MM;
-  const fitPercent =
-    sourceMax > 0 ? Math.max(5, Math.min(200, Math.round((FIT_MM / sourceMax) * 100))) : 100;
+  const scaled = scaledDimensionsMm(sourceDimensionsMm, factor);
+  const oversized = isOverPrintBed(scaled);
+  const fitPercent = fitToPrintBedPercent(sourceDimensionsMm);
+  const canFit = oversized && fitPercent !== scalePercent && !isOverPrintBed(
+    scaledDimensionsMm(sourceDimensionsMm, fitPercent / 100)
+  );
 
   return (
     <div
       data-studio-scale
       data-studio-scale-surface={surface}
+      data-oversize={oversized ? "true" : "false"}
       role="dialog"
       aria-label="Skala modelu"
       className="w-full rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.18)] border border-black/10 space-y-4 md:w-[280px]"
@@ -79,19 +86,29 @@ export default function StudioScale({
         </div>
       </div>
 
-      <div className="rounded-xl bg-neutral-50 px-3 py-2 text-[12px] text-neutral-700">
-        <p className="font-semibold text-neutral-800 mb-0.5">Po skali</p>
+      <div
+        className={`rounded-xl px-3 py-2 text-[12px] ${
+          oversized ? "bg-red-50 text-red-800" : "bg-neutral-50 text-neutral-700"
+        }`}
+      >
+        <p className={`font-semibold mb-0.5 ${oversized ? "text-red-900" : "text-neutral-800"}`}>
+          Po skali
+        </p>
         <p className="tabular-nums">
           {formatMm(scaled[0])} × {formatMm(scaled[1])} × {formatMm(scaled[2])} mm
         </p>
+        <p className={`mt-1 text-[11px] ${oversized ? "text-red-700" : "text-neutral-500"}`}>
+          Stół roboczy {PRINT_BED_MM} × {PRINT_BED_MM} × {PRINT_BED_MM} mm
+        </p>
         {oversized ? (
-          <p className="mt-1.5 text-[11px] text-amber-700">
-            Nie mieści się na stole {BED_MM} mm.
+          <p className="mt-1.5 text-[11px] font-semibold text-red-800">
+            Nie mieści się na stole {PRINT_BED_MM} × {PRINT_BED_MM} × {PRINT_BED_MM} mm.
+            Zmniejsz skalę, zanim dodasz model do koszyka.
           </p>
         ) : null}
       </div>
 
-      {sourceMax > FIT_MM ? (
+      {canFit ? (
         <button
           type="button"
           onClick={() => setScalePercent(fitPercent)}

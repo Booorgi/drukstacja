@@ -186,3 +186,26 @@ def test_client_cannot_set_shipped_status(client, user_a):
         json={"status": "shipped"},
     )
     assert patched.status_code == 400
+
+
+def test_create_rejects_model_larger_than_print_bed(client, user_a):
+    _, headers = user_a
+    res = client.post(
+        "/api/orders",
+        headers=headers,
+        json=cart_payload(dimensions_mm=[388.6, 343.1, 393.9]),
+    )
+    assert res.status_code == 400
+    assert "256" in res.json()["detail"]
+    assert "Zmniejsz skalę" in res.json()["detail"]
+
+
+def test_create_allows_model_on_print_bed_limit(client, user_a):
+    _, headers = user_a
+    res = client.post(
+        "/api/orders",
+        headers=headers,
+        json=cart_payload(dimensions_mm=[256, 256, 256]),
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["order"]["dimensions_mm"] == [256.0, 256.0, 256.0]
