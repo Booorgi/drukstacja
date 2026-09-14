@@ -41,7 +41,7 @@ from analysis import (
 )
 from pricing import calculate_price, calculate_price_from_slicer, MATERIALS
 from storage import upload_file_to_r2, get_file_url, download_file_from_r2, save_production_3mf_file
-from slicer import convert_step_to_stl, run_slicer
+from slicer import convert_step_to_stl, run_slicer, slice_result_from_geometry
 from orientation import auto_orient_mesh
 from packager_3mf import generate_production_3mf, sanitize_filename
 from db import get_db_connection
@@ -1044,6 +1044,7 @@ async def analyze_model_endpoint(
             if raw_mesh is not None and result.get("instant_pricing") is True:
                 try:
                     dense_preview = int(result.get("triangle_count") or len(raw_mesh.faces) or 0) >= COLORED_PREVIEW_FACE_LIMIT
+                    skip_preview_export = bool(dense_preview or preview_skipped)
                     oriented_mesh, orientation_info = auto_orient_mesh(raw_mesh)
                     oriented_stl_path = os.path.join(tmp_dir, f"{unique_id}_oriented.stl")
                     result["orientation"] = orientation_info
@@ -1052,7 +1053,7 @@ async def analyze_model_endpoint(
                     result["preview_stl_key"] = None
                     result["preview_stl_url"] = None
 
-                    if dense_preview:
+                    if skip_preview_export:
                         print(
                             f"[INFO] Gęsta siatka ({result.get('triangle_count')} ścianek) "
                             "— pomijam eksport STL/GLB podglądu, zostawiam wycenę z geometrii."
@@ -1146,23 +1147,37 @@ async def analyze_model_endpoint(
                     if file_profile.get("filament_types"):
                         filament_type = str(file_profile["filament_types"][0])
 
-                    # Wycena wyłącznie z geometrii / slicera. slice_info Bambu nie jest
-                    # źródłem wagi — na Jaguarze dawało absurdalne 16 g albo niepełną płytę.
+                    # Wycena z geometrii / slicera. slice_info Bambu nie jest źródłem wagi.
+                    # Jaguar: bez STL/GLB → geometry-estimate z volume_cm3 (~842 cm³ → ~518 g).
                     try:
-                        slice_data = run_slicer(
-                            oriented_stl_path,
-                            infill=int(infill),
-                            layer_height=float(layer_height),
-                            nozzle_size=float(nozzle_size),
-                            filament_type=filament_type,
-                            color_count=color_count,
-                            support_needed=True,
-                            painted_ratio=painted_ratio,
-                            triangle_count=result.get("triangle_count"),
-                            volume_cm3=result.get("volume_cm3"),
-                            surface_area_cm2=result.get("surface_area_cm2"),
-                            dimensions_mm=result.get("dimensions_mm"),
-                        )
+                        if skip_preview_export and reliable_volume_cm3(result.get("volume_cm3")):
+                            slice_data = slice_result_from_geometry(
+                                volume_cm3=float(result["volume_cm3"]),
+                                surface_area_cm2=float(result.get("surface_area_cm2") or 0.0),
+                                dimensions_mm=result.get("dimensions_mm"),
+                                infill=int(infill),
+                                layer_height=float(layer_height),
+                                filament_type=filament_type,
+                                nozzle_size=float(nozzle_size),
+                                color_count=color_count,
+                                support_needed=True,
+                                painted_ratio=painted_ratio,
+                            )
+                        else:
+                            slice_data = run_slicer(
+                                oriented_stl_path,
+                                infill=int(infill),
+                                layer_height=float(layer_height),
+                                nozzle_size=float(nozzle_size),
+                                filament_type=filament_type,
+                                color_count=color_count,
+                                support_needed=True,
+                                painted_ratio=painted_ratio,
+                                triangle_count=result.get("triangle_count"),
+                                volume_cm3=result.get("volume_cm3"),
+                                surface_area_cm2=result.get("surface_area_cm2"),
+                                dimensions_mm=result.get("dimensions_mm"),
+                            )
                         result["slicer_engine"] = slice_data.get("engine")
                         result["print_time_hours"] = slice_data.get("print_time_hours")
                         result["print_time_formatted"] = slice_data.get("print_time_formatted")

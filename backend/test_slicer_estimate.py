@@ -4,7 +4,12 @@ import tempfile
 
 import trimesh
 
-from slicer import estimate_filament_from_geometry, run_slicer, slice_result_from_bambu_stats
+from slicer import (
+    estimate_filament_from_geometry,
+    run_slicer,
+    slice_result_from_bambu_stats,
+    slice_result_from_geometry,
+)
 
 
 def test_jaguar_matches_bambu_ballpark():
@@ -125,6 +130,41 @@ def test_dense_mesh_skips_prusa_cli():
     )
     assert data["engine"] == "geometry-estimate"
     assert data["filament_weight_g"] > 0
+
+
+def test_jaguar_skip_preview_still_quotes_from_geometry():
+    """Ta sama ścieżka co /api/analyze-model przy skip GLB/STL: ~842 cm³ → ~518 g, nie 16 g."""
+    data = slice_result_from_geometry(
+        volume_cm3=842.10,
+        surface_area_cm2=838.1,
+        dimensions_mm=[187.49, 203.71, 77.46],
+        infill=5,
+        layer_height=0.20,
+        filament_type="PLA",
+        nozzle_size=0.4,
+        color_count=4,
+        support_needed=True,
+        painted_ratio=0.66,
+    )
+    assert data["engine"] == "geometry-estimate"
+    assert 470 <= data["filament_weight_g"] <= 570, data
+    assert data["filament_weight_g"] != 16
+    missing_stl = run_slicer(
+        os.path.join(tempfile.mkdtemp(), "never-exported.stl"),
+        triangle_count=400_000,
+        volume_cm3=842.10,
+        surface_area_cm2=838.1,
+        dimensions_mm=[187.49, 203.71, 77.46],
+        infill=5,
+        layer_height=0.20,
+        nozzle_size=0.4,
+        filament_type="PLA",
+        color_count=4,
+        painted_ratio=0.66,
+        support_needed=True,
+    )
+    assert missing_stl["engine"] == "geometry-estimate"
+    assert 470 <= missing_stl["filament_weight_g"] <= 570, missing_stl
 
 
 def test_bambu_slice_info_matches_studio_totals():

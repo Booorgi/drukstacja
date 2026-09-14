@@ -13,31 +13,32 @@ async function revealStudio(page) {
 }
 
 test.describe("large 3MF skipped preview", () => {
-  test("shows Polish status and does not invent 16 g / 11 zł", async ({ page }) => {
+  test("Jaguar-class: real quote, Polish no-preview status, no 16 g / 11 zł", async ({ page }) => {
     await page.goto("/?studioLayout=preview-skipped");
-    await revealStudio(page);
-
-    await expect(page.locator("[data-studio-preview-status='skipped']")).toBeVisible();
-    await expect(page.getByText(/Podgląd niemożliwy ze względu na dużą objętość siatki/)).toBeVisible();
-    await expect(page.getByText("Upuść model tutaj")).toHaveCount(0);
-    await expect(page.getByText("Zapisany profil druku")).toBeVisible();
-    await expect(page.locator("[data-quote-state='rfq']")).toBeVisible();
-    await expect(page.getByText("11.62")).toHaveCount(0);
-    await expect(page.getByText("16 g")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Do koszyka" })).toHaveCount(0);
-  });
-
-  test("geometry quote stays visible when only the 3D preview is skipped", async ({ page }) => {
-    await page.goto("/?studioLayout=preview-skipped-quoted");
     await revealStudio(page);
 
     await expect(page.locator("[data-studio-preview-status='skipped']")).toBeVisible();
     await expect(page.locator("[data-quote-ready='true']")).toBeVisible();
     await expect(page.getByText("Wycena gotowa — bez podglądu 3D")).toBeVisible();
     await expect(page.getByText(/Podgląd niemożliwy ze względu na dużą objętość siatki/)).toBeVisible();
+    await expect(page.getByText("Upuść model tutaj")).toHaveCount(0);
+    await expect(page.getByText("Zapisany profil druku")).toBeVisible();
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
     await expect(page.getByText("518 g")).toBeVisible();
+    await expect(page.getByText("180.00")).toBeVisible();
+    await expect(page.getByText("11.62")).toHaveCount(0);
     await expect(page.getByText("16 g")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Do koszyka" })).toBeEnabled();
+  });
+
+  test("preview-skipped-quoted alias matches the same Jaguar quote path", async ({ page }) => {
+    await page.goto("/?studioLayout=preview-skipped-quoted");
+    await revealStudio(page);
+
+    await expect(page.locator("[data-studio-preview-status='skipped']")).toBeVisible();
+    await expect(page.getByText("Wycena gotowa — bez podglądu 3D")).toBeVisible();
+    await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
+    await expect(page.getByText("518 g")).toBeVisible();
     await expect(page.getByRole("button", { name: "Do koszyka" })).toBeEnabled();
   });
 });
