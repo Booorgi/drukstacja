@@ -435,6 +435,54 @@ DENSE_SLICE_FACES = 80000
 DENSE_STL_BYTES = 18 * 1024 * 1024
 
 
+BAMBU_SLICE_ENGINE = "bambu-slice-info"
+MIN_BAMBU_SLICE_WEIGHT_G = 0.05
+MIN_BAMBU_SLICE_SECONDS = 1
+
+
+def validated_bambu_slice_stats(stats) -> dict | None:
+    """Metadata/slice_info.config liczy się tylko przy dodatniej wadze i/lub prediction.
+
+    Puste / 0 g / 0 s nie jest wyceną — to klasa błędu 0 cm³ → fałszywe 16 g
+    z estymatora objętości, nie liczby z Bambu.
+    """
+    if not isinstance(stats, dict) or not stats:
+        return None
+    try:
+        weight = float(stats.get("filament_weight_g") or 0)
+    except (TypeError, ValueError):
+        weight = 0.0
+    try:
+        seconds = int(float(stats.get("print_time_seconds") or 0))
+    except (TypeError, ValueError):
+        seconds = 0
+    try:
+        length = float(stats.get("filament_length_m") or 0)
+    except (TypeError, ValueError):
+        length = 0.0
+    if not math.isfinite(weight) or weight < 0:
+        weight = 0.0
+    if not math.isfinite(length) or length < 0:
+        length = 0.0
+    if seconds < 0:
+        seconds = 0
+    has_weight = weight > MIN_BAMBU_SLICE_WEIGHT_G
+    has_time = seconds >= MIN_BAMBU_SLICE_SECONDS
+    if not has_weight and not has_time:
+        return None
+    # Sam prediction bez filamentu nie jest cięciem płyty.
+    if not has_weight and length <= 0.05:
+        return None
+    return {
+        "filament_weight_g": round(weight, 2) if has_weight else 0.0,
+        "filament_length_m": round(length, 2),
+        "print_time_seconds": seconds,
+        "color_count": max(1, int(stats.get("color_count") or 1)),
+        "flush_cm3": float(stats.get("flush_cm3") or 0),
+        "support_cm3": float(stats.get("support_cm3") or 0),
+    }
+
+
 def slice_result_from_bambu_stats(
     stats: dict,
     infill: int = 20,
@@ -442,8 +490,11 @@ def slice_result_from_bambu_stats(
     filament_type: str = "PLA",
     nozzle_size: float = 0.4,
 ) -> dict:
-    """Zachowane do diagnostyki. /api/analyze-model nie wycenia z slice_info
-    — na Jaguarze dawało to ciche, absurdalnie niskie wagi (albo niepełną płytę)."""
+    """Wycena z ostatniego cięcia Bambu/Orca (Metadata/slice_info.config).
+
+    /api/analyze-model preferuje to nad estymatorem objętości, gdy liczby są
+    dodatnie. Cena PLN idzie z wagi filamentu (zużycie), nie z bryły CAD.
+    """
     weight = float(stats.get("filament_weight_g") or 0)
     length = float(stats.get("filament_length_m") or 0)
     seconds = int(stats.get("print_time_seconds") or 0)
@@ -457,10 +508,10 @@ def slice_result_from_bambu_stats(
     volume_cm3 = round(weight / max(density, 0.01), 2) if weight else 0.0
     return {
         "success": True,
-        "engine": "bambu-slice-info",
+        "engine": BAMBU_SLICE_ENGINE,
         "print_time_hours": hours_float,
         "print_time_formatted": time_formatted,
-        "filament_weight_g": round(weight, 1),
+        "filament_weight_g": round(weight, 2),
         "filament_length_m": round(length, 2),
         "filament_volume_cm3": volume_cm3,
         "layer_height": layer_height,

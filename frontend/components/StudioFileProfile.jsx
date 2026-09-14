@@ -6,6 +6,7 @@ export default function StudioFileProfile({
   layerHeight,
   nozzleSize,
   infill,
+  fromSliceInfo = false,
 }) {
   return (
     <div className="w-[220px] rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)] border border-black/10 space-y-3">
@@ -52,6 +53,9 @@ export default function StudioFileProfile({
           .filter(Boolean)
           .join(" · ") || "Parametry z projektu Bambu / Orca"}
       </div>
+      {fromSliceInfo ? (
+        <p data-slice-info-note className="text-xs text-neutral-500">Waga i czas ze slicera 3MF</p>
+      ) : null}
     </div>
   );
 }

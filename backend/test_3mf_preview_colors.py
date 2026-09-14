@@ -110,7 +110,7 @@ def test_3mf_exposes_file_profile():
 
 
 def test_3mf_reads_bambu_slice_info():
-    """slice_info zostaje na profilu (diagnostyka), ale nie jest źródłem wyceny."""
+    """slice_info na profilu: waga/czas Bambu. /api/analyze-model używa ich gdy siatka jest."""
     path = _build_3mf(["4"] * 12, ["#111111", "#EEEEEE"])
     with zipfile.ZipFile(path, "a") as zf:
         zf.writestr(
@@ -337,7 +337,7 @@ def test_size_gates_keep_keychain_preview_and_skip_jaguar_preview_only():
 
 
 def test_empty_3mf_does_not_invent_weight_from_slice_info():
-    """Brak siatki: profil AMS zostaje, slice_info nie może dać 16 g / fałszywej ceny."""
+    """Brak siatki: RFQ. leftover slice_info 16 g nie jest wyceną (to nie 0 cm³ → 16 g z JS)."""
     path = os.path.join(tempfile.mkdtemp(), "empty_plate.3mf")
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(

@@ -171,6 +171,8 @@ def test_status_copy_softens_when_thumbnail_present():
     assert "miniaturę" in skipped_preview_status_message(False, True)
     assert "Podgląd niemożliwy" in skipped_preview_status_message(True, False)
     assert "bez niej nie podajemy" in skipped_preview_status_message(False, False)
+    assert "ze slicera 3MF" in skipped_preview_status_message(True, True, from_slice_info=True)
+    assert "ze slicera 3MF" not in skipped_preview_status_message(True, True)
 
 
 def test_keychain_draft_keeps_live_3d_and_exposes_thumbnail():

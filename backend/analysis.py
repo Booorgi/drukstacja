@@ -225,6 +225,7 @@ LARGE_3MF_NO_QUOTE_THUMBNAIL_MSG = (
     "Podgląd 3D pominięty ze względu na dużą objętość siatki / CPS. "
     "Pokazujemy miniaturę zapisaną w pliku 3MF."
 )
+SLICE_INFO_QUOTE_NOTE = "Waga i czas ze slicera 3MF."
 
 # Miniatury Bambu/MakerWorld są zwykle 20–200 KB. Dummy plate_1.png z packagera (~0.6 KB)
 # to jednolity kwadrat — nie pokazujemy go jako zdjęcia modelu.
@@ -465,10 +466,18 @@ def extract_3mf_preview_image(file_input) -> Optional[dict]:
         return None
 
 
-def skipped_preview_status_message(quote_ready: bool, has_thumbnail: bool) -> str:
+def skipped_preview_status_message(
+    quote_ready: bool,
+    has_thumbnail: bool,
+    from_slice_info: bool = False,
+) -> str:
     if has_thumbnail:
-        return LARGE_3MF_QUOTE_THUMBNAIL_MSG if quote_ready else LARGE_3MF_NO_QUOTE_THUMBNAIL_MSG
-    return LARGE_3MF_QUOTE_NO_PREVIEW_MSG if quote_ready else LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
+        msg = LARGE_3MF_QUOTE_THUMBNAIL_MSG if quote_ready else LARGE_3MF_NO_QUOTE_THUMBNAIL_MSG
+    else:
+        msg = LARGE_3MF_QUOTE_NO_PREVIEW_MSG if quote_ready else LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
+    if quote_ready and from_slice_info:
+        return f"{msg} {SLICE_INFO_QUOTE_NOTE}"
+    return msg
 
 
 def decode_paint_slot(code: str) -> int:
@@ -797,7 +806,7 @@ def _extract_3mf_slice_info(zf: zipfile.ZipFile) -> dict:
         return {}
 
     return {
-        "filament_weight_g": round(float(used_g), 1),
+        "filament_weight_g": round(float(used_g), 2),
         "filament_length_m": round(float(used_m), 2),
         "print_time_seconds": int(prediction_s or 0),
         "color_count": max(used_slots, 1),
@@ -879,8 +888,9 @@ def _empty_3mf_bundle(
 def load_3mf_bundle(file_input) -> dict:
     """
     Wczytuje .3MF: geometrię do wyceny oraz opcjonalną siatkę z kolorami AMS (podgląd GLB).
-    Na plikach klasy Jaguar pomija pędzel i GLB/STL, ale zawsze parsuje siatkę —
-    z objętości idzie geometry-estimate (~518 g), nie z slice_info i nie z dummy 32.5 cm³.
+    Na plikach klasy Jaguar pomija pędzel i GLB/STL, ale zawsze parsuje siatkę.
+    Dodatnia slice_info (waga/czas Bambu) wygrywa z estymatorem objętości w /api/analyze-model;
+    bez siatki nie ma wyceny (RFQ — nie 0 cm³ → 16 g).
     """
     file_bytes = _read_file_bytes(file_input)
     objects: List[dict] = []

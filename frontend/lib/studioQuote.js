@@ -1,5 +1,7 @@
 /** Objętość 0 / null nie jest pomiarem — historyczny `|| 32.5` dawał 16 g przy 6% infill. */
 export const MIN_RELIABLE_VOLUME_CM3 = 0.05;
+export const BAMBU_SLICE_ENGINE = "bambu-slice-info";
+export const SLICE_INFO_QUOTE_NOTE = "Waga i czas ze slicera 3MF.";
 
 export const LARGE_3MF_QUOTE_NO_PREVIEW_MSG =
   "Plik wczytany. Ustawienia zapisane. Wycena gotowa. Podgląd niemożliwy ze względu na dużą objętość siatki / CPS.";
@@ -18,6 +20,14 @@ export function isReliableVolumeCm3(value) {
   return Number.isFinite(n) && n > MIN_RELIABLE_VOLUME_CM3;
 }
 
+export function isBambuSliceQuote(analysisData) {
+  if (!analysisData) return false;
+  const engine = analysisData.slicer_engine || analysisData.quote_source;
+  if (engine !== BAMBU_SLICE_ENGINE) return false;
+  const grams = Number(analysisData.filament_weight_g);
+  return Number.isFinite(grams) && grams > MIN_RELIABLE_VOLUME_CM3;
+}
+
 export function studioVolumeCm3(analysisData, modelScale = 1) {
   if (!analysisData) return 0;
   const raw = analysisData.source_volume_cm3 ?? analysisData.volume_cm3;
@@ -29,6 +39,7 @@ export function isQuotedModel(analysisData) {
   if (!analysisData) return false;
   if (analysisData.instant_pricing === false) return false;
   if (analysisData.skipped_geometry || analysisData.quote_ready === false) return false;
+  if (isBambuSliceQuote(analysisData)) return true;
   return isReliableVolumeCm3(analysisData.source_volume_cm3 ?? analysisData.volume_cm3);
 }
 

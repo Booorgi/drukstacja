@@ -1,5 +1,5 @@
 import React from "react";
-import { LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG } from "../lib/studioQuote";
+import { LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG, SLICE_INFO_QUOTE_NOTE } from "../lib/studioQuote";
 
 /**
  * Status in the studio stage when a 3MF loaded (AMS / profile kept) but GLB/STL
@@ -10,9 +10,11 @@ export default function StudioPreviewUnavailable({
   message,
   quoteReady = false,
   imageUrl = null,
+  fromSliceInfo = false,
 }) {
   const text = String(message || LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG).trim();
   const hasImage = Boolean(imageUrl);
+  const showSliceNote = Boolean(fromSliceInfo && quoteReady && !text.includes("ze slicera 3MF"));
 
   const title = hasImage
     ? quoteReady
@@ -27,6 +29,7 @@ export default function StudioPreviewUnavailable({
       data-studio-preview-status={hasImage ? "thumbnail" : "skipped"}
       data-has-preview-image={hasImage ? "true" : "false"}
       data-quote-ready={quoteReady ? "true" : "false"}
+      data-from-slice-info={fromSliceInfo && quoteReady ? "true" : "false"}
       role="status"
       className={
         hasImage
@@ -58,6 +61,9 @@ export default function StudioPreviewUnavailable({
       <div className="space-y-2 px-4">
         <p className="text-[17px] font-semibold tracking-tight text-neutral-900">{title}</p>
         <p className="text-sm leading-relaxed text-neutral-600">{text}</p>
+        {showSliceNote ? (
+          <p className="text-xs text-neutral-500">{SLICE_INFO_QUOTE_NOTE}</p>
+        ) : null}
       </div>
     </div>
   );
