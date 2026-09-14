@@ -30,13 +30,23 @@ import {
   quoteUnitPriceFromWeight,
   studioFamiliesForWheel,
 } from "../lib/filamentCatalog";
-import { peek3mfSidecar } from "../lib/peek3mfProfile";
+import {
+  peek3mfSidecar,
+  canQuoteFromPeekedSliceInfo,
+} from "../lib/peek3mfProfile";
+import {
+  fetchAnalyzeModelWithRetry,
+  analyzeClientOutcome,
+  logAnalyzeAttempt,
+} from "../lib/analyzeModelRetry.cjs";
 import {
   isQuotedModel,
   isPreviewSkipped,
   isBambuSliceQuote,
   studioVolumeCm3,
   studioPreviewImageUrl,
+  quoteAnalysisFromPeekedSliceInfo,
+  ANALYZE_TIMEOUT_RFQ_MSG,
   LARGE_3MF_QUOTE_NO_PREVIEW_MSG,
   LARGE_3MF_QUOTE_THUMBNAIL_MSG,
   SLICE_INFO_QUOTE_NOTE,
@@ -566,15 +576,25 @@ endsolid fixture
       setModelPreviewUrl(null);
     }
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("layer_height", String(layerHeight));
-    formData.append("nozzle_size", String(nozzleSize));
-    formData.append("infill", String(infill));
-    formData.append("filament_type", matConfig?.name?.split(" ")[0] || "PLA");
+    const formFields = {
+      layer_height: String(layerHeight),
+      nozzle_size: String(nozzleSize),
+      infill: String(infill),
+      filament_type: matConfig?.name?.split(" ")[0] || "PLA",
+    };
+    const buildAnalyzeBody = () => {
+      const next = new FormData();
+      next.append("file", file);
+      next.append("layer_height", formFields.layer_height);
+      next.append("nozzle_size", formFields.nozzle_size);
+      next.append("infill", formFields.infill);
+      next.append("filament_type", formFields.filament_type);
+      return next;
+    };
 
     const is3mf = file.name.toLowerCase().endsWith(".3mf");
     let peekedProfile = null;
+    let peekedSliceQuote = null;
     if (is3mf) {
       try {
         const peeked = await peek3mfSidecar(file);
@@ -587,25 +607,32 @@ endsolid fixture
         if (peekedProfile?.infill != null) setInfill(peekedProfile.infill);
         if (peekedProfile?.filament_colours?.length) {
           setSelectedColor(peekedProfile.filament_colours[0]);
-          setAnalysisData({ file_profile: peekedProfile });
         }
         if (peeked.preview?.url) setPreviewImageUrl(peeked.preview.url);
+        if (canQuoteFromPeekedSliceInfo(peeked.sliceStats, peeked.maxModelUncompressed)) {
+          peekedSliceQuote = quoteAnalysisFromPeekedSliceInfo({
+            profile: peekedProfile,
+            sliceStats: peeked.sliceStats,
+            fileName: file.name,
+            ratePerG: matConfig?.ratePerG || 0.27,
+            previewImageUrl: peeked.preview?.url || null,
+          });
+          if (peekedSliceQuote) setAnalysisData(peekedSliceQuote);
+        } else if (peekedProfile?.filament_colours?.length) {
+          setAnalysisData({ file_profile: peekedProfile });
+        }
       } catch (peekErr) {
         console.warn("Nie udało się odczytać profilu 3MF z pliku:", peekErr);
       }
     }
 
-    // 180 s to ostatnia deska ratunku w przeglądarce. Railway zrywa bezczynne HTTP
-    // po ~5 min; Failed to fetch zwykle znaczy, że worker padł / proxy ucięło
-    // odpowiedź wcześniej (gęsty XML + GLB), bez nagłówków CORS.
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), is3mf ? 180000 : 55000);
-
+    // Railway zrywa HTTP ~60 s. Jedna próba 50 s × 3 dla 3MF; FormData od nowa.
+    // Sukces (nawet wolny JSON) nigdy nie jest traktowany jako „za duży plik”.
     try {
-      const res = await fetch(`${API_URL || ""}/api/analyze-model`, {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
+      const res = await fetchAnalyzeModelWithRetry({
+        url: `${API_URL || ""}/api/analyze-model`,
+        buildBody: buildAnalyzeBody,
+        is3mf,
       });
 
       const raw = await res.text();
@@ -617,7 +644,9 @@ endsolid fixture
       }
 
       if (!res.ok) {
-        throw new Error(data.detail || data.message || "Błąd analizy modelu.");
+        const httpErr = new Error(data.detail || data.message || "Błąd analizy modelu.");
+        httpErr.status = res.status;
+        throw httpErr;
       }
       setAnalysisData({
         ...data,
@@ -651,24 +680,53 @@ endsolid fixture
       if (data.preview_image_url) {
         setPreviewImageUrl(resolveAssetUrl(data.preview_image_url));
       }
+      const previewUrl = data.preview_glb_url || data.preview_stl_url || null;
+      logAnalyzeAttempt({
+        file: file.name,
+        ok: true,
+        engine: data.slicer_engine || data.quote_source || null,
+        weight: data.filament_weight_g,
+        preview: previewUrl ? (data.preview_glb_url ? "glb" : "stl") : "none",
+        reason: analyzeClientOutcome({
+          ok: true,
+          instantPricing: data.instant_pricing,
+          quoteReady: data.quote_ready,
+          previewUrl,
+          peekedQuote: peekedSliceQuote,
+        }),
+      });
     } catch (err) {
       console.error("Błąd zapytania analizy:", err);
       const isAbort = err?.name === "AbortError";
       const isNetworkErr = err.message === "Failed to fetch" || err.name === "TypeError";
+      const retryableHttp = [408, 429, 502, 503, 504].includes(Number(err?.status));
       const errorMsg = isAbort
         ? "Analiza gęstego pliku 3MF trwa dłużej niż zwykle. Spróbuj ponownie za chwilę."
-        : isNetworkErr
-        ? "Nie udało się połączyć z serwerem analizy (przekroczony limit czasu lub zbyt duży plik). Możesz ponowić próbę lub przesłać plik do bezpłatnej wyceny manualnej (RFQ)."
+        : isNetworkErr || retryableHttp
+        ? "Nie udało się połączyć z serwerem analizy (limit czasu albo chwilowa awaria). Spróbuj ponownie albo wyślij plik do wyceny inżynierskiej."
         : `Błąd analizy pliku: ${err.message}`;
-      if ((isAbort || isNetworkErr) && is3mf) {
+      const outcome = analyzeClientOutcome({
+        ok: false,
+        peekedQuote: peekedSliceQuote,
+      });
+      logAnalyzeAttempt({
+        file: file.name,
+        ok: false,
+        reason: outcome,
+        message: err?.message,
+      });
+      if ((isAbort || isNetworkErr || retryableHttp) && is3mf) {
+        if (peekedSliceQuote) {
+          setAnalysisData(peekedSliceQuote);
+          return;
+        }
         setAnalysisData({
           instant_pricing: false,
           type: "rfq_document",
           category: "Model 3D (analiza przekroczona)",
           preview_skipped: true,
           quote_ready: false,
-          message:
-            "Plik wczytany. Ustawienia z projektu zapisane. Serwer nie zdążył policzyć geometrii — bez niej nie podajemy wagi ani ceny. Podgląd niemożliwy ze względu na dużą objętość siatki.",
+          message: ANALYZE_TIMEOUT_RFQ_MSG,
           file_profile: peekedProfile || {},
           original_filename: file.name,
         });
@@ -676,7 +734,6 @@ endsolid fixture
       }
       alert(errorMsg);
     } finally {
-      clearTimeout(timeoutId);
       setIsAnalyzing(false);
     }
   }

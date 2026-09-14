@@ -336,6 +336,20 @@ def test_size_gates_keep_keychain_preview_and_skip_jaguar_preview_only():
     assert should_build_colored_preview(5_000_000, 10_000_000, COLORED_PREVIEW_FACE_LIMIT) is False
 
 
+def test_sliced_heavy_3mf_skips_mesh_parse():
+    """Pocięty Jaguar (~90 MB XML) pomija siatkę. Keychain/lampara (~34 MB) zostaje do 3D."""
+    from analysis import should_skip_heavy_3mf_mesh_parse
+
+    stats = {"filament_weight_g": 146.74, "print_time_seconds": 18372, "filament_length_m": 49.2}
+    assert should_skip_heavy_3mf_mesh_parse(5_500_000, 34_000_000, stats) is False
+    assert should_parse_3mf_mesh(5_500_000, 34_000_000, stats) is True
+    assert should_skip_heavy_3mf_mesh_parse(11_000_000, 90_000_000, stats) is True
+    assert should_parse_3mf_mesh(11_000_000, 90_000_000, stats) is False
+    assert should_skip_heavy_3mf_mesh_parse(200_000, 50_000, stats) is False
+    assert should_parse_3mf_mesh(200_000, 50_000, stats) is True
+    assert should_skip_heavy_3mf_mesh_parse(11_000_000, 90_000_000, None) is False
+
+
 def test_empty_3mf_does_not_invent_weight_from_slice_info():
     """Brak siatki: RFQ. leftover slice_info 16 g nie jest wyceną (to nie 0 cm³ → 16 g z JS)."""
     path = os.path.join(tempfile.mkdtemp(), "empty_plate.3mf")
