@@ -337,12 +337,14 @@ def test_size_gates_keep_keychain_preview_and_skip_jaguar_preview_only():
 
 
 def test_sliced_heavy_3mf_skips_mesh_parse():
-    """Pocięty duży 3MF: slice_info zamiast XML siatki (timeout proxy ~60 s)."""
+    """Pocięty Jaguar (~90 MB XML) pomija siatkę. Keychain/lampara (~34 MB) zostaje do 3D."""
     from analysis import should_skip_heavy_3mf_mesh_parse
 
     stats = {"filament_weight_g": 146.74, "print_time_seconds": 18372, "filament_length_m": 49.2}
-    assert should_skip_heavy_3mf_mesh_parse(5_500_000, 34_000_000, stats) is True
-    assert should_parse_3mf_mesh(5_500_000, 34_000_000, stats) is False
+    assert should_skip_heavy_3mf_mesh_parse(5_500_000, 34_000_000, stats) is False
+    assert should_parse_3mf_mesh(5_500_000, 34_000_000, stats) is True
+    assert should_skip_heavy_3mf_mesh_parse(11_000_000, 90_000_000, stats) is True
+    assert should_parse_3mf_mesh(11_000_000, 90_000_000, stats) is False
     assert should_skip_heavy_3mf_mesh_parse(200_000, 50_000, stats) is False
     assert should_parse_3mf_mesh(200_000, 50_000, stats) is True
     assert should_skip_heavy_3mf_mesh_parse(11_000_000, 90_000_000, None) is False

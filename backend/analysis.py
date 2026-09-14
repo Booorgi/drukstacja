@@ -10,6 +10,7 @@ Obsługuje:
 import os
 import io
 import json
+import time
 import zipfile
 import tarfile
 from pathlib import Path
@@ -265,11 +266,14 @@ def should_decode_3mf_paint(zip_bytes: int, max_model_uncompressed: int) -> bool
     )
 
 
-# Poniżej tego progu XML siatki zjada limit proxy Railway (~60 s): lxml + trimesh + STL/GLB.
-HEAVY_3MF_MESH_PARSE_BYTES = 2_000_000
-HEAVY_3MF_ZIP_PARSE_BYTES = 4_000_000
+# Jaguar-class only. Keychain ~34 MB XML i lampy Vintage parsuje się w kilka sekund
+# i muszą dostać podgląd 3D. Próg 2 MB wycinał 3D przy plikach, które zdążają
+# wrócić przed limitem proxy (~60 s). 90 MB Jaguar zostaje na slice_info bez trimesh.
+HEAVY_3MF_MESH_PARSE_BYTES = 40_000_000
+HEAVY_3MF_ZIP_PARSE_BYTES = 12_000_000
 # Pusta płyta Bambu ma .model rzędu setek bajtów. 8 KB+ to realna siatka, nie leftover slice_info.
 MIN_3MF_MESH_PAYLOAD_BYTES = 8_192
+MESH_PARSE_ATTEMPTS = 2
 
 
 def _validated_slice_stats(stats) -> Optional[dict]:
@@ -279,18 +283,22 @@ def _validated_slice_stats(stats) -> Optional[dict]:
     return validated_bambu_slice_stats(stats)
 
 
+def can_quote_from_slice_info(slice_stats, max_model_uncompressed: int) -> bool:
+    """slice_info jest wyceną tylko przy realnym ładunku siatki — nie przy pustej płycie."""
+    if _validated_slice_stats(slice_stats) is None:
+        return False
+    return int(max_model_uncompressed or 0) >= MIN_3MF_MESH_PAYLOAD_BYTES
+
+
 def should_skip_heavy_3mf_mesh_parse(
     zip_bytes: int,
     max_model_uncompressed: int,
     slice_stats=None,
 ) -> bool:
-    """Pocięty 3MF z dużym XML: wycena ze slice_info, bez drzewa XML / trimesh / GLB."""
-    if _validated_slice_stats(slice_stats) is None:
+    """Pocięty 3MF klasy Jaguar: wycena ze slice_info, bez drzewa XML / trimesh / GLB."""
+    if not can_quote_from_slice_info(slice_stats, max_model_uncompressed):
         return False
-    return (
-        int(max_model_uncompressed or 0) >= HEAVY_3MF_MESH_PARSE_BYTES
-        or int(zip_bytes or 0) >= HEAVY_3MF_ZIP_PARSE_BYTES
-    )
+    return int(max_model_uncompressed or 0) >= HEAVY_3MF_MESH_PARSE_BYTES
 
 
 def should_parse_3mf_mesh(
@@ -302,6 +310,17 @@ def should_parse_3mf_mesh(
     return not should_skip_heavy_3mf_mesh_parse(
         zip_bytes, max_model_uncompressed, slice_stats
     )
+
+
+def analyze_outcome_reason(result: dict) -> str:
+    """Jedna etykieta do logów: quoted | quoted_no_preview | rfq."""
+    quoted = bool(result.get("instant_pricing") and result.get("quote_ready"))
+    has_preview = bool(result.get("preview_glb_url") or result.get("preview_stl_url"))
+    if quoted and has_preview:
+        return "quoted"
+    if quoted:
+        return "quoted_no_preview"
+    return "rfq"
 
 
 def should_build_colored_preview(
@@ -969,13 +988,41 @@ def _slice_info_quote_bundle(
     }
 
 
+def _parse_3mf_model_objects(z: zipfile.ZipFile, target_models, read_paint: bool) -> List[dict]:
+    """Czyta XML siatki; jedna ponowna próba przy przejściowym błędzie odczytu."""
+    parsed: List[dict] = []
+    last_err = None
+    for attempt in range(1, MESH_PARSE_ATTEMPTS + 1):
+        parsed = []
+        last_err = None
+        try:
+            for mf in target_models:
+                try:
+                    parsed.extend(parse_model_xml_objects(z.read(mf), read_paint=read_paint))
+                except Exception as parse_err:
+                    last_err = parse_err
+                    print(f"[WARN] Błąd parsowania XML {mf} attempt={attempt}: {parse_err}")
+            if parsed:
+                return parsed
+            if last_err is None:
+                return parsed
+        except Exception as read_err:
+            last_err = read_err
+            print(f"[WARN] Błąd odczytu .model attempt={attempt}: {read_err}")
+        if attempt < MESH_PARSE_ATTEMPTS:
+            print(f"[INFO] Ponawiam parsowanie XML 3MF (attempt={attempt + 1}).")
+    if last_err:
+        print(f"[WARN] XML siatki 3MF nie wszedł po {MESH_PARSE_ATTEMPTS} próbach: {last_err}")
+    return parsed
+
+
 def load_3mf_bundle(file_input) -> dict:
     """
     Wczytuje .3MF: geometrię do wyceny oraz opcjonalną siatkę z kolorami AMS (podgląd GLB).
 
-    Pocięte projekty Bambu (dodatnia slice_info) z ciężkim XML omijają trimesh —
-    waga/czas są już w Metadata/slice_info.config. Pełna siatka zostaje dla STL/gołego
-    3MF i małych plików (Keychain GLB). Pusta płyta + leftover 16 g → RFQ.
+    Pocięte projekty Bambu klasy Jaguar (slice_info + ogromny XML) omijają trimesh —
+    waga/czas są już w Metadata/slice_info.config. Lampy Vintage / Keychain parsuje
+    siatkę, żeby został podgląd 3D. Pusta płyta + leftover 16 g → RFQ.
     """
     file_bytes = _read_file_bytes(file_input)
     objects: List[dict] = []
@@ -987,6 +1034,7 @@ def load_3mf_bundle(file_input) -> dict:
     max_model_uncompressed = 0
     preview_image: Optional[dict] = None
     skipped_heavy_mesh = False
+    parse_started = time.monotonic()
 
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as z:
@@ -1010,38 +1058,56 @@ def load_3mf_bundle(file_input) -> dict:
             if skip_heavy:
                 skipped_heavy_mesh = True
                 print(
-                    f"[INFO] Pocięty .3MF (zip={len(file_bytes)} B, model={max_model_uncompressed} B) "
-                    "— pomijam XML siatki, wycena ze slice_info."
+                    f"[INFO] Pocięty .3MF klasy Jaguar (zip={len(file_bytes)} B, "
+                    f"model={max_model_uncompressed} B) — pomijam XML siatki, wycena ze slice_info."
                 )
             else:
                 if skipped_paint:
                     print(
                         f"[INFO] Duży .3MF (zip={len(file_bytes)} B, model={max_model_uncompressed} B) "
-                        "— pomijam dekodowanie pędzla AMS, siatkę wczytuję do wyceny."
+                        "— pomijam dekodowanie pędzla AMS, siatkę wczytuję do wyceny i podglądu."
                     )
-                for mf in target_models:
-                    try:
-                        objects.extend(parse_model_xml_objects(z.read(mf), read_paint=read_paint))
-                    except Exception as parse_err:
-                        print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
+                objects = _parse_3mf_model_objects(z, target_models, read_paint)
     except Exception as zip_err:
         print(f"[WARN] Błąd inspekcji kontenera ZIP .3MF: {zip_err}")
 
+    parse_s = time.monotonic() - parse_started
     file_profile = dict(print_profile or {})
     if slice_stats:
         file_profile["slice_stats"] = slice_stats
 
-    if skipped_heavy_mesh and _validated_slice_stats(slice_stats):
-        if max_model_uncompressed < MIN_3MF_MESH_PAYLOAD_BYTES:
-            print("[WARN] slice_info bez ładunku siatki — RFQ, nie leftover waga.")
-            return _empty_3mf_bundle(file_profile, slice_stats, skipped_paint, preview_image)
+    slice_quote_ok = can_quote_from_slice_info(slice_stats, max_model_uncompressed)
+
+    if skipped_heavy_mesh and slice_quote_ok:
+        print(
+            f"[ANALYZE] 3mf_parse elapsed_s={parse_s:.2f} objects=0 skipped_heavy=1 "
+            f"reason=quoted_no_preview"
+        )
         return _slice_info_quote_bundle(file_profile, slice_stats, skipped_paint, preview_image)
 
     if not objects:
+        if slice_quote_ok:
+            print(
+                f"[WARN] XML siatki 3MF nie wszedł (elapsed_s={parse_s:.2f}) — "
+                "wycena ze slice_info, bez RFQ."
+            )
+            print(
+                f"[ANALYZE] 3mf_parse elapsed_s={parse_s:.2f} objects=0 skipped_heavy=0 "
+                f"reason=quoted_no_preview"
+            )
+            return _slice_info_quote_bundle(file_profile, slice_stats, skipped_paint, preview_image)
         if file_profile.get("filament_colours") or slice_stats or preview_image:
             print("[WARN] Brak siatki 3MF — zwracam profil AMS bez geometrii i bez wyceny.")
+            print(
+                f"[ANALYZE] 3mf_parse elapsed_s={parse_s:.2f} objects=0 skipped_heavy=0 reason=rfq"
+            )
             return _empty_3mf_bundle(file_profile, slice_stats, skipped_paint, preview_image)
         raise ValueError("Nie udało się odczytać geometrii 3D z pliku .3MF.")
+
+    print(
+        f"[ANALYZE] 3mf_parse elapsed_s={parse_s:.2f} objects={len(objects)} "
+        f"skipped_heavy=0 reason=mesh_ok"
+    )
 
     meshes = [o["mesh"] for o in objects]
     mesh = meshes[0] if len(meshes) == 1 else trimesh.util.concatenate(meshes)
