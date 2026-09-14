@@ -46,7 +46,7 @@ test.describe("studio print-bed dimension limit", () => {
     await expect(warning).toHaveCount(0);
     await expect(dims).toHaveAttribute("data-oversize", "false");
     await expect(dims).toContainText("X 248.7");
-    await expect(page.locator('[data-studio-wheel="Skala"]')).toContainText("64%");
+    await expect(page.locator("[data-studio-control-rail-frame]").getByText("64%")).toBeVisible();
     await expect(cta).toBeEnabled();
   });
 

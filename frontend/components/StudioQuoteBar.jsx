@@ -29,7 +29,11 @@ export default function StudioQuoteBar({
   const cartBlocked = !hasModel || addingToCart || isAnalyzing || isOversized;
 
   return (
-    <div data-studio-quote-bar className="sticky bottom-0 z-40 px-3 pb-2 pt-1 sm:px-4">
+    <div
+      data-studio-quote-bar
+      data-oversize={isOversized && hasModel ? "true" : "false"}
+      className="sticky bottom-0 z-40 px-3 pb-2 pt-1 sm:px-4"
+    >
       <div
         data-quote-state={quoteState}
         data-quote-surface="studio"
