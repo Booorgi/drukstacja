@@ -645,13 +645,14 @@ export default function CadViewer3D({
         gl={{ preserveDrawingBuffer: true, antialias: true }}
         className="w-full h-full cursor-grab active:cursor-grabbing"
       >
-        <color attach="background" args={[studio ? "#E2E2E2" : "#F8FAFC"]} />
+        <color attach="background" args={[studio ? "#18181b" : "#F8FAFC"]} />
 
         {/* Zrównoważone oświetlenie studyjne */}
-        <ambientLight intensity={0.9} />
-        <directionalLight position={[70, 110, 80]} intensity={1.35} castShadow />
-        <directionalLight position={[-70, 60, -60]} intensity={0.55} />
-        <directionalLight position={[0, -40, 0]} intensity={0.25} />
+        <ambientLight intensity={studio ? 0.95 : 0.9} />
+        <directionalLight position={[70, 110, 80]} intensity={studio ? 1.45 : 1.35} castShadow />
+        <directionalLight position={[-70, 60, -60]} intensity={studio ? 0.7 : 0.55} />
+        <directionalLight position={[0, -40, 0]} intensity={studio ? 0.35 : 0.25} />
+        {studio ? <hemisphereLight args={["#3f3f46", "#18181b", 0.55]} /> : null}
 
         {/* Model 3D */}
         <Bounds fit observe margin={1.85}>
@@ -674,7 +675,7 @@ export default function CadViewer3D({
 
         {/* Siatka pomiarowa stołu roboczego (256 × 256 mm) */}
         <gridHelper
-          args={studio ? [PRINT_BED_MM, 16, "#C8C8C8", "#D6D6D6"] : [260, 26, "#94A3B8", "#E2E8F0"]}
+          args={studio ? [PRINT_BED_MM, 16, "#52525b", "#3f3f46"] : [260, 26, "#94A3B8", "#E2E8F0"]}
           position={[0, 0, 0]}
         />
         {studio ? (
@@ -682,7 +683,7 @@ export default function CadViewer3D({
             <lineSegments>
               <edgesGeometry args={[new THREE.BoxGeometry(PRINT_BED_MM, PRINT_BED_MM, PRINT_BED_MM)]} />
               <lineBasicMaterial
-                color={oversized ? "#DC2626" : "#A3A3A3"}
+                color={oversized ? "#F87171" : "#71717a"}
                 transparent
                 opacity={oversized ? 0.85 : 0.35}
               />
@@ -1006,20 +1007,26 @@ export default function CadViewer3D({
 
       {studio && (
         <div className="absolute top-2 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5 pointer-events-auto">
-          <div className="bg-[#111111]/85 backdrop-blur-xl border border-white/10 rounded-full px-1.5 py-0.5 shadow-lg flex items-center gap-0.5">
+          <div
+            data-studio-scene-nav
+            className="flex items-center gap-1.5"
+          >
             <button
               type="button"
               onClick={() => setResetTrigger((prev) => prev + 1)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-white/80 hover:text-white hover:bg-white/10 text-xs font-medium transition"
+              className="flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900/90 px-2.5 py-1 text-xs font-medium text-zinc-300 shadow-lg shadow-black/30 backdrop-blur-xl transition hover:border-zinc-500 hover:text-zinc-50"
               title="Wycentruj model"
             >
               Centrum
             </button>
             <button
               type="button"
+              data-scene-nav="cad"
               onClick={() => setIsWireframe(!isWireframe)}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
-                isWireframe ? "bg-white text-neutral-900" : "text-white/80 hover:text-white hover:bg-white/10"
+              className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium shadow-lg shadow-black/30 backdrop-blur-xl transition ${
+                isWireframe
+                  ? "border-[#F97316] bg-[#F97316] text-zinc-950"
+                  : "border-zinc-700 bg-zinc-900/90 text-zinc-300 hover:border-zinc-500 hover:text-zinc-50"
               }`}
               title="Widok siatki CAD"
             >
@@ -1027,13 +1034,14 @@ export default function CadViewer3D({
             </button>
             <button
               type="button"
+              data-scene-nav="wymiary"
               onClick={() => setShowBBox(!showBBox)}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
+              className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium shadow-lg shadow-black/30 backdrop-blur-xl transition ${
                 showDimensionOverlay
                   ? oversized
-                    ? "bg-red-500 text-white"
-                    : "bg-emerald-500 text-white"
-                  : "text-white/80 hover:text-white hover:bg-white/10"
+                    ? "border-red-500 bg-red-500 text-white"
+                    : "border-[#F97316] bg-[#F97316] text-zinc-950"
+                  : "border-zinc-700 bg-zinc-900/90 text-zinc-300 hover:border-zinc-500 hover:text-zinc-50"
               }`}
               title="Pokaż wymiary XYZ modelu"
             >
@@ -1041,9 +1049,12 @@ export default function CadViewer3D({
             </button>
             <button
               type="button"
+              data-scene-nav="podpory"
               onClick={() => setShowSupports(!showSupports)}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
-                showSupports ? "bg-[#EF4444] text-white" : "text-white/80 hover:text-white hover:bg-white/10"
+              className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium shadow-lg shadow-black/30 backdrop-blur-xl transition ${
+                showSupports
+                  ? "border-[#F97316] bg-[#F97316] text-zinc-950"
+                  : "border-zinc-700 bg-zinc-900/90 text-zinc-300 hover:border-zinc-500 hover:text-zinc-50"
               }`}
               title="Podświetl nawisy wymagające podpór"
             >
@@ -1056,19 +1067,19 @@ export default function CadViewer3D({
               data-oversize={oversized ? "true" : "false"}
               className={`px-3 py-1 text-[11px] font-semibold shadow-sm ${
                 oversized
-                  ? "rounded-2xl bg-red-50 text-red-900 border border-red-200"
-                  : "rounded-full bg-white/90 text-neutral-800 border border-white/70"
+                  ? "rounded-2xl bg-red-950/80 text-red-100 border border-red-800"
+                  : "rounded-full bg-zinc-900/90 text-zinc-100 border border-zinc-700"
               }`}
             >
               <div>
-                <span className={overflowAxes.x ? "text-red-600" : "text-blue-600"}>X {dimensions[0]}</span>
-                <span className="mx-1.5 text-neutral-400">·</span>
-                <span className={overflowAxes.y ? "text-red-600" : "text-emerald-600"}>Y {dimensions[1]}</span>
-                <span className="mx-1.5 text-neutral-400">·</span>
-                <span className={overflowAxes.z ? "text-red-600" : "text-amber-600"}>Z {dimensions[2]} mm</span>
+                <span className={overflowAxes.x ? "text-red-400" : "text-sky-400"}>X {dimensions[0]}</span>
+                <span className="mx-1.5 text-zinc-500">·</span>
+                <span className={overflowAxes.y ? "text-red-400" : "text-emerald-400"}>Y {dimensions[1]}</span>
+                <span className="mx-1.5 text-zinc-500">·</span>
+                <span className={overflowAxes.z ? "text-red-400" : "text-amber-300"}>Z {dimensions[2]} mm</span>
               </div>
               {oversized ? (
-                <p data-print-bed-limit className="mt-0.5 text-center text-[10px] font-semibold text-red-700">
+                <p data-print-bed-limit className="mt-0.5 text-center text-[10px] font-semibold text-red-300">
                   Stół roboczy {PRINT_BED_MM} × {PRINT_BED_MM} × {PRINT_BED_MM} mm — model za duży
                 </p>
               ) : showBBox ? (

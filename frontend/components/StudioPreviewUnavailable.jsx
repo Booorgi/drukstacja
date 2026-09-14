@@ -33,12 +33,12 @@ export default function StudioPreviewUnavailable({
       role="status"
       className={
         hasImage
-          ? "mx-4 flex w-full max-w-[640px] flex-col items-center gap-4 rounded-[28px] border border-neutral-200 bg-white/95 px-4 pb-6 pt-4 text-center shadow-sm"
-          : "mx-4 flex w-full max-w-[520px] min-h-[300px] flex-col items-center justify-center gap-4 rounded-[28px] border-2 border-dashed border-neutral-400 bg-white/90 px-8 py-10 text-center shadow-sm"
+          ? "mx-4 flex w-full max-w-[640px] flex-col items-center gap-4 rounded-[28px] border border-zinc-700 bg-zinc-900/95 px-4 pb-6 pt-4 text-center shadow-[0_12px_32px_rgba(0,0,0,0.35)]"
+          : "mx-4 flex w-full max-w-[520px] min-h-[300px] flex-col items-center justify-center gap-4 rounded-[28px] border-2 border-dashed border-zinc-600 bg-zinc-900/80 px-8 py-10 text-center shadow-sm"
       }
     >
       {hasImage ? (
-        <div className="relative w-full overflow-hidden rounded-2xl bg-neutral-100">
+        <div className="relative w-full overflow-hidden rounded-2xl bg-zinc-800">
           <img
             data-studio-preview-thumbnail
             src={imageUrl}
@@ -48,7 +48,7 @@ export default function StudioPreviewUnavailable({
         </div>
       ) : (
         <span
-          className="flex h-14 w-14 items-center justify-center rounded-2xl border border-neutral-300 bg-neutral-50 text-neutral-700"
+          className="flex h-14 w-14 items-center justify-center rounded-2xl border border-zinc-600 bg-zinc-800 text-zinc-200"
           aria-hidden
         >
           <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.6">
@@ -59,10 +59,10 @@ export default function StudioPreviewUnavailable({
       )}
 
       <div className="space-y-2 px-4">
-        <p className="text-[17px] font-semibold tracking-tight text-neutral-900">{title}</p>
-        <p className="text-sm leading-relaxed text-neutral-600">{text}</p>
+        <p className="text-[17px] font-semibold tracking-tight text-zinc-50">{title}</p>
+        <p className="text-sm leading-relaxed text-zinc-400">{text}</p>
         {showSliceNote ? (
-          <p className="text-xs text-neutral-500">{SLICE_INFO_QUOTE_NOTE}</p>
+          <p className="text-xs text-zinc-500">{SLICE_INFO_QUOTE_NOTE}</p>
         ) : null}
       </div>
     </div>

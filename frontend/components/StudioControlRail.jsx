@@ -32,8 +32,8 @@ export default function StudioControlRail({
           framed
             ? `rounded-2xl px-3 py-2 ring-1 md:px-2 md:py-2.5 ${
                 empty
-                  ? "bg-white/35 ring-black/5"
-                  : "bg-white/80 shadow-sm ring-black/10"
+                  ? "bg-zinc-900/55 ring-zinc-700/70"
+                  : "bg-zinc-900/90 shadow-[0_12px_28px_rgba(0,0,0,0.35)] ring-zinc-700"
               }`
             : ""
         } ${empty ? "opacity-50" : "opacity-100"}`}
@@ -41,7 +41,7 @@ export default function StudioControlRail({
         {empty ? (
           <p
             id="studio-control-rail-hint"
-            className="max-w-[104px] text-center text-[9px] font-semibold uppercase tracking-[0.14em] text-neutral-500"
+            className="max-w-[104px] text-center text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-500"
           >
             Najpierw wgraj model
           </p>

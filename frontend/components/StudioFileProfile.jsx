@@ -9,15 +9,15 @@ export default function StudioFileProfile({
   fromSliceInfo = false,
 }) {
   return (
-    <div className="w-[220px] rounded-2xl bg-white text-neutral-900 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)] border border-black/10 space-y-3">
+    <div className="w-[220px] rounded-2xl bg-zinc-900 text-zinc-100 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.4)] border border-zinc-700 space-y-3">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">Z pliku 3MF</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Z pliku 3MF</p>
         <p className="text-sm font-semibold mt-1">Zapisany profil druku</p>
       </div>
 
       {colours.length > 0 ? (
         <div>
-          <p className="text-xs font-semibold text-neutral-500 mb-2">Kolory AMS</p>
+          <p className="text-xs font-semibold text-zinc-500 mb-2">Kolory AMS</p>
           <div className="flex flex-wrap gap-2">
             {colours.map((hex) => (
               <span
@@ -33,10 +33,10 @@ export default function StudioFileProfile({
 
       {filamentTypes.length > 0 ? (
         <div>
-          <p className="text-xs font-semibold text-neutral-500 mb-2">Materiały</p>
+          <p className="text-xs font-semibold text-zinc-500 mb-2">Materiały</p>
           <div className="flex flex-wrap gap-1.5">
             {filamentTypes.map((type) => (
-              <span key={type} className="px-2.5 py-1 rounded-full bg-neutral-100 text-sm font-medium">
+              <span key={type} className="px-2.5 py-1 rounded-full bg-zinc-800 text-sm font-medium text-zinc-200">
                 {type}
               </span>
             ))}
@@ -44,7 +44,7 @@ export default function StudioFileProfile({
         </div>
       ) : null}
 
-      <div className="text-sm text-neutral-700 leading-relaxed">
+      <div className="text-sm text-zinc-300 leading-relaxed">
         {[
           nozzleSize ? `${nozzleSize} mm` : null,
           layerHeight ? `${Number(layerHeight).toFixed(2)} mm` : null,
@@ -54,7 +54,7 @@ export default function StudioFileProfile({
           .join(" · ") || "Parametry z projektu Bambu / Orca"}
       </div>
       {fromSliceInfo ? (
-        <p data-slice-info-note className="text-xs text-neutral-500">Waga i czas ze slicera 3MF</p>
+        <p data-slice-info-note className="text-xs text-zinc-500">Waga i czas ze slicera 3MF</p>
       ) : null}
     </div>
   );

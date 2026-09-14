@@ -57,10 +57,10 @@ export default function StudioWheel({
     <div className={`flex flex-col items-center gap-1 ${className}`}>
       <div
         data-studio-wheel={label || undefined}
-        className={`relative cursor-pointer overflow-visible rounded-full bg-white ring-1 ring-black/5 ${
+        className={`relative cursor-pointer overflow-visible rounded-full bg-zinc-800 ring-1 ring-zinc-600 ${
           muted
-            ? "shadow-[0_2px_10px_rgba(0,0,0,0.08)]"
-            : "shadow-[0_8px_28px_rgba(0,0,0,0.18)]"
+            ? "shadow-[0_2px_10px_rgba(0,0,0,0.25)]"
+            : "shadow-[0_8px_28px_rgba(0,0,0,0.4)]"
         }`}
         style={{ width: size, height: size }}
         role={onOpen ? "button" : undefined}
@@ -108,7 +108,7 @@ export default function StudioWheel({
                   <path
                     d={arcPath(cx, cy, 46.5, start + 1.2, end - 1.2)}
                     fill="none"
-                    stroke="#111111"
+                    stroke="#F97316"
                     strokeWidth="5.5"
                     strokeLinecap="butt"
                   />
@@ -116,11 +116,11 @@ export default function StudioWheel({
               </g>
             );
           })}
-          <circle cx={cx} cy={cy} r={inner} fill="#ffffff" />
+          <circle cx={cx} cy={cy} r={inner} fill="#27272a" />
           {selected?.hex ? (
-            <circle cx={cx} cy={cy} r={inner - 4} fill={selected.hex} stroke="#111111" strokeWidth="1.6" />
+            <circle cx={cx} cy={cy} r={inner - 4} fill={selected.hex} stroke="#F97316" strokeWidth="1.6" />
           ) : (
-            <circle cx={cx} cy={cy} r={3} fill="#111111" />
+            <circle cx={cx} cy={cy} r={3} fill="#F97316" />
           )}
         </svg>
       </div>
@@ -128,7 +128,7 @@ export default function StudioWheel({
         <div className="max-w-[80px] text-center">
           <span
             className={`block text-[11px] font-semibold leading-tight ${
-              muted ? "text-neutral-500" : "text-neutral-900"
+              muted ? "text-zinc-500" : "text-zinc-100"
             }`}
           >
             {label}
@@ -136,7 +136,7 @@ export default function StudioWheel({
           {subtitle ? (
             <span
               className={`mt-0.5 block text-[9px] leading-tight ${
-                muted ? "text-neutral-400" : "text-neutral-600"
+                muted ? "text-zinc-600" : "text-zinc-400"
               }`}
             >
               {subtitle}

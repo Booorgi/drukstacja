@@ -62,15 +62,15 @@ export default function StudioEmptyDropzone({ onBrowse, onFileSelected }) {
       onDrop={handleDrop}
       className={`group mx-4 flex w-full max-w-[480px] min-h-[300px] cursor-pointer flex-col items-center justify-center gap-4 rounded-[28px] border-2 border-dashed px-8 py-10 text-center transition duration-200 ${
         isDragActive
-          ? "scale-[1.01] border-[#111111] bg-white shadow-lg shadow-black/15 ring-4 ring-black/5"
-          : "border-neutral-500 bg-white/85 shadow-sm hover:border-[#111111] hover:bg-white hover:shadow-md hover:shadow-black/10 hover:ring-4 hover:ring-black/5"
+          ? "scale-[1.01] border-[#F97316] bg-zinc-900 shadow-lg shadow-black/40 ring-4 ring-[#F97316]/15"
+          : "border-zinc-600 bg-zinc-900/80 shadow-sm hover:border-[#F97316] hover:bg-zinc-900 hover:shadow-md hover:shadow-black/30 hover:ring-4 hover:ring-[#F97316]/10"
       }`}
     >
       <span
         className={`flex h-14 w-14 items-center justify-center rounded-2xl border transition ${
           isDragActive
-            ? "border-[#111111] bg-[#111111] text-white"
-            : "border-neutral-400 bg-white text-neutral-700 group-hover:border-[#111111] group-hover:bg-[#111111] group-hover:text-white"
+            ? "border-[#F97316] bg-[#F97316] text-zinc-950"
+            : "border-zinc-600 bg-zinc-800 text-zinc-200 group-hover:border-[#F97316] group-hover:bg-[#F97316] group-hover:text-zinc-950"
         }`}
         aria-hidden
       >
@@ -81,15 +81,15 @@ export default function StudioEmptyDropzone({ onBrowse, onFileSelected }) {
       </span>
 
       <div className="space-y-1">
-        <p className="text-[17px] font-semibold tracking-tight text-neutral-900">
+        <p className="text-[17px] font-semibold tracking-tight text-zinc-50">
           {isDragActive ? "Upuść, aby wgrać model" : "Upuść model tutaj"}
         </p>
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-zinc-400">
           albo wybierz plik z dysku — .stl, .step, .obj, .3mf, PCB, 2D
         </p>
       </div>
 
-      <span className="rounded-full bg-[#111111] px-4 py-2 text-sm font-semibold text-white shadow-sm transition group-hover:bg-black">
+      <span className="rounded-full bg-[#F97316] px-4 py-2 text-sm font-semibold text-zinc-950 shadow-sm transition group-hover:bg-[#EA580C]">
         Wybierz plik
       </span>
     </div>
