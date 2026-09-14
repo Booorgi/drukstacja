@@ -1,4 +1,5 @@
 import catalog from "../config/filamentCatalog.json";
+import { commercialUnitPrice, parsePrintTimeHours } from "./commercialPricing";
 
 export const STUDIO_FAMILIES = catalog.families;
 export const STL_MATERIALS = catalog.materials;
@@ -83,6 +84,8 @@ export function quoteUnitPriceFromWeight({
   ratePerG = 0.045,
   layerMultiplier = 1,
   nozzleMultiplier = 1,
+  printTimeHours = 0,
+  printTimeFormatted,
 }) {
   let grams = Number(weightG);
   if (!Number.isFinite(grams) || grams <= 0.05) {
@@ -92,8 +95,13 @@ export function quoteUnitPriceFromWeight({
     const effectiveVolCm3 = volume * (perimeterRatio + infillRatio);
     grams = effectiveVolCm3 * density * 1.42;
   }
-  const matCost = grams * ratePerG * layerMultiplier * nozzleMultiplier;
-  return Math.max(0.80, matCost);
+  return commercialUnitPrice({
+    weightG: grams,
+    printTimeHours: parsePrintTimeHours(printTimeFormatted, printTimeHours),
+    ratePerG,
+    layerMultiplier,
+    nozzleMultiplier,
+  });
 }
 
 export function plaKeychainFilaments() {
