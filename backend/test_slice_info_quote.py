@@ -192,6 +192,82 @@ def test_status_copy_appends_slice_info_note():
     assert "ze slicera 3MF" not in skipped_preview_status_message(False, True, from_slice_info=True)
 
 
+def test_heavy_sliced_3mf_quotes_without_parsing_mesh():
+    """Lampara-class: wielu-MB XML + slice_info → wycena Bambu, mesh=None, bez RFQ."""
+    from analysis import HEAVY_3MF_MESH_PARSE_BYTES, should_skip_heavy_3mf_mesh_parse
+
+    padding = "x" * (HEAVY_3MF_MESH_PARSE_BYTES + 50_000)
+    model_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
+        f"<!--{padding}-->"
+        '<resources><object id="1" type="model"><mesh>'
+        '<vertices><vertex x="0" y="0" z="0"/><vertex x="40" y="0" z="0"/><vertex x="0" y="40" z="0"/></vertices>'
+        '<triangles><triangle v1="0" v2="1" v3="2"/></triangles>'
+        "</mesh></object></resources>"
+        '<build><item objectid="1"/></build></model>'
+    )
+    path = os.path.join(tempfile.mkdtemp(), "lampara-like.3mf")
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("3D/3dmodel.model", model_xml)
+        zf.writestr(
+            "Metadata/project_settings.config",
+            json.dumps({
+                "filament_colour": ["#E05028"],
+                "filament_settings_id": ["SUNLU PLA+ @BBL A1"],
+                "layer_height": 0.16,
+                "nozzle_diameter": ["0.4"],
+                "sparse_infill_density": "5%",
+            }),
+        )
+        zf.writestr("Metadata/slice_info.config", PHOTOSET_SLICE_INFO)
+
+    with zipfile.ZipFile(path) as zf:
+        model_size = zf.getinfo("3D/3dmodel.model").file_size
+    assert model_size >= HEAVY_3MF_MESH_PARSE_BYTES
+    bundle = load_3mf_bundle(path)
+    stats = (bundle.get("file_profile") or {}).get("slice_stats") or {}
+    assert should_skip_heavy_3mf_mesh_parse(os.path.getsize(path), model_size, stats) is True
+    assert bundle["mesh"] is None
+    assert bundle["skipped_geometry"] is False
+    assert bundle["skipped_heavy_mesh"] is True
+    assert bundle["quote_ready"] is True
+    assert abs(stats["filament_weight_g"] - 146.74) < 0.02
+
+    processed = process_uploaded_file(path, "Lampara_Vintage(3).3mf", tempfile.mkdtemp())
+    assert processed["instant_pricing"] is True
+    assert processed["skipped_geometry"] is False
+    assert processed["quote_ready"] is True
+    assert processed.get("mesh_object") is None
+
+    from fastapi.testclient import TestClient
+    import main
+
+    client = TestClient(main.app)
+    with open(path, "rb") as f:
+        response = client.post(
+            "/api/analyze-model",
+            files={"file": ("Lampara_Vintage(3).3mf", f, "model/3mf")},
+            data={
+                "layer_height": "0.16",
+                "nozzle_size": "0.4",
+                "infill": "5",
+                "filament_type": "PLA",
+            },
+        )
+    assert response.status_code == 200, response.text[:800]
+    data = response.json()
+    assert data.get("instant_pricing") is True
+    assert data.get("quote_ready") is True
+    assert data.get("slicer_engine") == "bambu-slice-info"
+    assert abs(float(data["filament_weight_g"]) - 146.74) < 0.05
+    assert data.get("print_time_formatted") == "5h 6m"
+    assert data.get("type") != "rfq_document"
+    assert "ze slicera 3MF" in (data.get("message") or "")
+    assert data.get("preview_glb_url") in (None, "")
+    assert data.get("preview_stl_url") in (None, "")
+
+
 def test_geometry_estimator_on_photoset_volume_would_overshoot():
     est = estimate_filament_from_geometry(
         volume_cm3=800.0,

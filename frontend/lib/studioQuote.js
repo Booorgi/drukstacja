@@ -54,3 +54,64 @@ export function studioPreviewImageUrl(analysisData, localImageUrl) {
   const url = analysisData?.preview_image_url;
   return typeof url === "string" && url.trim() ? url : null;
 }
+
+export function formatPrintTimeFromSeconds(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  if (total >= 86400) {
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    return `${d}d ${h}h ${m}m`;
+  }
+  if (total >= 3600) {
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    return `${h}h ${m}m`;
+  }
+  if (total >= 60) {
+    return `${Math.floor(total / 60)}m`;
+  }
+  return total > 0 ? `${total}s` : "0m";
+}
+
+/** Wycena z Metadata/slice_info.config odczytanego w przeglądarce (zanim wróci API). */
+export function quoteAnalysisFromPeekedSliceInfo({
+  profile,
+  sliceStats,
+  fileName,
+  ratePerG = 0.27,
+  previewImageUrl = null,
+} = {}) {
+  const grams = Number(sliceStats && sliceStats.filament_weight_g);
+  if (!Number.isFinite(grams) || grams <= MIN_RELIABLE_VOLUME_CM3) return null;
+  const seconds = Number(sliceStats.print_time_seconds) || 0;
+  const hours = seconds > 0 ? Math.round((seconds / 3600) * 100) / 100 : 0;
+  const unit = Math.max(0.8, Math.round(grams * Number(ratePerG || 0.27) * 100) / 100);
+  const hasThumb = Boolean(previewImageUrl);
+  return {
+    instant_pricing: true,
+    skipped_geometry: false,
+    skipped_heavy_mesh: true,
+    skipped_colored_preview: true,
+    preview_skipped: true,
+    quote_ready: true,
+    type: "3d_model",
+    original_filename: fileName,
+    file_profile: profile || {},
+    slicer_engine: BAMBU_SLICE_ENGINE,
+    quote_source: BAMBU_SLICE_ENGINE,
+    filament_weight_g: grams,
+    filament_length_m: Number(sliceStats.filament_length_m) || 0,
+    print_time_hours: hours,
+    print_time_formatted: formatPrintTimeFromSeconds(seconds),
+    price_breakdown: { unit_price_pln: unit },
+    unit_price: unit,
+    preview_image_url: previewImageUrl || undefined,
+    message: hasThumb
+      ? `${LARGE_3MF_QUOTE_THUMBNAIL_MSG} ${SLICE_INFO_QUOTE_NOTE}`
+      : `${LARGE_3MF_QUOTE_NO_PREVIEW_MSG} ${SLICE_INFO_QUOTE_NOTE}`,
+  };
+}
+
+export const ANALYZE_TIMEOUT_RFQ_MSG =
+  "Nie udało się doliczyć automatycznej wyceny tego 3MF (limit czasu serwera). Możesz spróbować ponownie albo wysłać plik do wyceny inżynierskiej.";

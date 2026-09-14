@@ -22,13 +22,18 @@ import StudioMaterialPicker from "../components/StudioMaterialPicker";
 import StudioMobileSheet from "../components/StudioMobileSheet";
 import PrinterLayersBand from "../components/PrinterLayersBand";
 import { STL_MATERIALS } from "../lib/filament";
-import { peek3mfSidecar } from "../lib/peek3mfProfile";
+import {
+  peek3mfSidecar,
+  canQuoteFromPeekedSliceInfo,
+} from "../lib/peek3mfProfile";
 import {
   isQuotedModel,
   isPreviewSkipped,
   isBambuSliceQuote,
   studioVolumeCm3,
   studioPreviewImageUrl,
+  quoteAnalysisFromPeekedSliceInfo,
+  ANALYZE_TIMEOUT_RFQ_MSG,
   LARGE_3MF_QUOTE_NO_PREVIEW_MSG,
   LARGE_3MF_QUOTE_THUMBNAIL_MSG,
   SLICE_INFO_QUOTE_NOTE,
@@ -591,6 +596,7 @@ endsolid fixture
 
     const is3mf = file.name.toLowerCase().endsWith(".3mf");
     let peekedProfile = null;
+    let peekedSliceQuote = null;
     if (is3mf) {
       try {
         const peeked = await peek3mfSidecar(file);
@@ -603,9 +609,20 @@ endsolid fixture
         if (peekedProfile?.infill != null) setInfill(peekedProfile.infill);
         if (peekedProfile?.filament_colours?.length) {
           setSelectedColor(peekedProfile.filament_colours[0]);
-          setAnalysisData({ file_profile: peekedProfile });
         }
         if (peeked.preview?.url) setPreviewImageUrl(peeked.preview.url);
+        if (canQuoteFromPeekedSliceInfo(peeked.sliceStats, peeked.maxModelUncompressed)) {
+          peekedSliceQuote = quoteAnalysisFromPeekedSliceInfo({
+            profile: peekedProfile,
+            sliceStats: peeked.sliceStats,
+            fileName: file.name,
+            ratePerG: matConfig?.ratePerG || 0.27,
+            previewImageUrl: peeked.preview?.url || null,
+          });
+          if (peekedSliceQuote) setAnalysisData(peekedSliceQuote);
+        } else if (peekedProfile?.filament_colours?.length) {
+          setAnalysisData({ file_profile: peekedProfile });
+        }
       } catch (peekErr) {
         console.warn("Nie udało się odczytać profilu 3MF z pliku:", peekErr);
       }
@@ -677,14 +694,17 @@ endsolid fixture
         ? "Nie udało się połączyć z serwerem analizy (przekroczony limit czasu lub zbyt duży plik). Możesz ponowić próbę lub przesłać plik do bezpłatnej wyceny manualnej (RFQ)."
         : `Błąd analizy pliku: ${err.message}`;
       if ((isAbort || isNetworkErr) && is3mf) {
+        if (peekedSliceQuote) {
+          setAnalysisData(peekedSliceQuote);
+          return;
+        }
         setAnalysisData({
           instant_pricing: false,
           type: "rfq_document",
           category: "Model 3D (analiza przekroczona)",
           preview_skipped: true,
           quote_ready: false,
-          message:
-            "Plik wczytany. Ustawienia z projektu zapisane. Serwer nie zdążył policzyć geometrii — bez niej nie podajemy wagi ani ceny. Podgląd niemożliwy ze względu na dużą objętość siatki.",
+          message: ANALYZE_TIMEOUT_RFQ_MSG,
           file_profile: peekedProfile || {},
           original_filename: file.name,
         });

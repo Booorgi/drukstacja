@@ -4,6 +4,20 @@
  * pojawiają się od razu, nawet gdy geometria Jaguara jeszcze się liczy.
  */
 
+import {
+  parse3mfSliceInfoXml,
+  canQuoteFromPeekedSliceInfo,
+  MIN_BAMBU_SLICE_WEIGHT_G,
+  MIN_3MF_MESH_PAYLOAD_BYTES,
+} from "./peek3mfSliceInfo.cjs";
+
+export {
+  parse3mfSliceInfoXml,
+  canQuoteFromPeekedSliceInfo,
+  MIN_BAMBU_SLICE_WEIGHT_G,
+  MIN_3MF_MESH_PAYLOAD_BYTES,
+};
+
 function readU16(view, offset) {
   return view.getUint16(offset, true);
 }
@@ -39,6 +53,15 @@ async function inflateRaw(payload) {
 function isProjectSettingsName(name) {
   const lower = String(name || "").toLowerCase();
   return lower.endsWith("metadata/project_settings.config") || lower === "project_settings.config";
+}
+
+function isSliceInfoName(name) {
+  const lower = String(name || "").replace(/\\/g, "/").toLowerCase();
+  return lower.endsWith("metadata/slice_info.config") || lower.endsWith("/slice_info.config");
+}
+
+function isModelEntryName(name) {
+  return String(name || "").toLowerCase().endsWith(".model");
 }
 
 export function parse3mfProjectSettingsJson(text) {
@@ -238,12 +261,53 @@ export async function peek3mfPreviewImage(file) {
   return peek3mfPreviewImageFromBytes(bytes);
 }
 
+export async function peek3mfSlicePayloadFromBytes(bytes) {
+  if (!bytes || !bytes.length) {
+    return { sliceStats: null, maxModelUncompressed: 0 };
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const eocd = findEocdOffset(bytes);
+  if (eocd < 0) return { sliceStats: null, maxModelUncompressed: 0 };
+
+  const entryCount = readU16(view, eocd + 10);
+  let cdOffset = readU32(view, eocd + 16);
+  let maxModelUncompressed = 0;
+  let sliceCd = -1;
+  for (let i = 0; i < entryCount; i += 1) {
+    if (readU32(view, cdOffset) !== 0x02014b50) break;
+    const uncompSize = readU32(view, cdOffset + 24);
+    const nameLen = readU16(view, cdOffset + 28);
+    const extraLen = readU16(view, cdOffset + 30);
+    const commentLen = readU16(view, cdOffset + 32);
+    const name = decodeName(bytes.subarray(cdOffset + 46, cdOffset + 46 + nameLen));
+    if (isModelEntryName(name) && uncompSize > maxModelUncompressed) {
+      maxModelUncompressed = uncompSize;
+    }
+    if (isSliceInfoName(name)) sliceCd = cdOffset;
+    cdOffset += 46 + nameLen + extraLen + commentLen;
+  }
+
+  let sliceStats = null;
+  if (sliceCd >= 0) {
+    try {
+      const entry = await readZipEntryBytes(bytes, view, sliceCd);
+      if (entry.data && entry.data.length) {
+        sliceStats = parse3mfSliceInfoXml(new TextDecoder("utf-8").decode(entry.data));
+      }
+    } catch (err) {
+      console.warn("Nie udało się odczytać slice_info z 3MF:", err);
+    }
+  }
+  return { sliceStats, maxModelUncompressed };
+}
+
 export async function peek3mfSidecar(file) {
   if (!file || !String(file.name || "").toLowerCase().endsWith(".3mf")) {
-    return { profile: null, preview: null };
+    return { profile: null, preview: null, sliceStats: null, maxModelUncompressed: 0 };
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
   const profile = await peek3mfPrintProfileFromBytes(bytes);
   const preview = await peek3mfPreviewImageFromBytes(bytes);
-  return { profile, preview };
+  const payload = await peek3mfSlicePayloadFromBytes(bytes);
+  return { profile, preview, ...payload };
 }

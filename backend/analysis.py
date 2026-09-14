@@ -265,10 +265,43 @@ def should_decode_3mf_paint(zip_bytes: int, max_model_uncompressed: int) -> bool
     )
 
 
-def should_parse_3mf_mesh(zip_bytes: int, max_model_uncompressed: int) -> bool:
-    """Wycena Jaguara wymaga XML siatki. Duży plik pomija tylko pędzel i podgląd, nie geometrię."""
-    _ = (zip_bytes, max_model_uncompressed)
-    return True
+# Poniżej tego progu XML siatki zjada limit proxy Railway (~60 s): lxml + trimesh + STL/GLB.
+HEAVY_3MF_MESH_PARSE_BYTES = 2_000_000
+HEAVY_3MF_ZIP_PARSE_BYTES = 4_000_000
+# Pusta płyta Bambu ma .model rzędu setek bajtów. 8 KB+ to realna siatka, nie leftover slice_info.
+MIN_3MF_MESH_PAYLOAD_BYTES = 8_192
+
+
+def _validated_slice_stats(stats) -> Optional[dict]:
+    """Leniwy import — slicer ładuje analysis tylko w run_slicer."""
+    from slicer import validated_bambu_slice_stats
+
+    return validated_bambu_slice_stats(stats)
+
+
+def should_skip_heavy_3mf_mesh_parse(
+    zip_bytes: int,
+    max_model_uncompressed: int,
+    slice_stats=None,
+) -> bool:
+    """Pocięty 3MF z dużym XML: wycena ze slice_info, bez drzewa XML / trimesh / GLB."""
+    if _validated_slice_stats(slice_stats) is None:
+        return False
+    return (
+        int(max_model_uncompressed or 0) >= HEAVY_3MF_MESH_PARSE_BYTES
+        or int(zip_bytes or 0) >= HEAVY_3MF_ZIP_PARSE_BYTES
+    )
+
+
+def should_parse_3mf_mesh(
+    zip_bytes: int,
+    max_model_uncompressed: int,
+    slice_stats=None,
+) -> bool:
+    """Siatkę pomijamy tylko gdy slice_info wystarcza i XML byłby zbyt ciężki na request HTTP."""
+    return not should_skip_heavy_3mf_mesh_parse(
+        zip_bytes, max_model_uncompressed, slice_stats
+    )
 
 
 def should_build_colored_preview(
@@ -590,6 +623,30 @@ def _mesh_from_mesh_elem(mesh_elem, read_paint: bool = True) -> Optional[Tuple[t
     return mesh, np.array(slots, dtype=int)
 
 
+_CORE_3MF_NS = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
+
+
+def _iter_object_meshes(root):
+    """Tylko <object> z <mesh> — bez chodzenia po każdym <vertex> w Pythonie."""
+    namespaced = list(root.iter(f"{_CORE_3MF_NS}object"))
+    if namespaced:
+        for elem in namespaced:
+            mesh_elem = elem.find(f"{_CORE_3MF_NS}mesh")
+            if mesh_elem is not None:
+                yield elem, mesh_elem
+        return
+    for elem in root.iter():
+        if _local_tag(elem.tag) != "object":
+            continue
+        mesh_elem = None
+        for child in elem:
+            if _local_tag(child.tag) == "mesh":
+                mesh_elem = child
+                break
+        if mesh_elem is not None:
+            yield elem, mesh_elem
+
+
 def parse_model_xml_objects(xml_bytes: bytes, read_paint: bool = True) -> List[dict]:
     """Zwraca listę {'id', 'mesh', 'face_slots'} dla każdego <object> z siatką."""
     try:
@@ -598,17 +655,8 @@ def parse_model_xml_objects(xml_bytes: bytes, read_paint: bool = True) -> List[d
         return []
 
     objects = []
-    for elem in root.iter():
-        if _local_tag(elem.tag) != "object":
-            continue
+    for elem, mesh_elem in _iter_object_meshes(root):
         obj_id = elem.attrib.get("id")
-        mesh_elem = None
-        for child in list(elem):
-            if _local_tag(child.tag) == "mesh":
-                mesh_elem = child
-                break
-        if mesh_elem is None:
-            continue
         parsed = _mesh_from_mesh_elem(mesh_elem, read_paint=read_paint)
         if parsed is None:
             continue
@@ -878,6 +926,7 @@ def _empty_3mf_bundle(
         "skipped_paint": skipped_paint,
         "skipped_colored_preview": True,
         "skipped_geometry": True,
+        "skipped_heavy_mesh": False,
         "preview_skipped": True,
         "quote_ready": False,
         "preview_image": preview_image,
@@ -885,12 +934,48 @@ def _empty_3mf_bundle(
     }
 
 
+def _slice_info_quote_bundle(
+    file_profile: dict,
+    slice_stats: dict,
+    skipped_paint: bool,
+    preview_image: Optional[dict] = None,
+) -> dict:
+    """Pocięty duży 3MF: profil AMS + miniatura + wycena ze slice_info, bez trimesh."""
+    profile_colours = list((file_profile or {}).get("filament_colours") or [])
+    color_count = max(
+        len(profile_colours),
+        int((slice_stats or {}).get("color_count") or 0),
+        1,
+    )
+    painted_ratio = 0.66 if (skipped_paint and len(profile_colours) >= 2) else 0.0
+    has_thumb = bool(preview_image and preview_image.get("bytes"))
+    return {
+        "mesh": None,
+        "colored_mesh": None,
+        "filament_colours": profile_colours if len(profile_colours) >= 2 else [],
+        "part_count": 0,
+        "has_file_colors": False,
+        "color_count": int(color_count),
+        "painted_ratio": painted_ratio,
+        "file_profile": file_profile,
+        "skipped_paint": skipped_paint,
+        "skipped_colored_preview": True,
+        "skipped_geometry": False,
+        "skipped_heavy_mesh": True,
+        "preview_skipped": True,
+        "quote_ready": True,
+        "preview_image": preview_image,
+        "message": skipped_preview_status_message(True, has_thumb, from_slice_info=True),
+    }
+
+
 def load_3mf_bundle(file_input) -> dict:
     """
     Wczytuje .3MF: geometrię do wyceny oraz opcjonalną siatkę z kolorami AMS (podgląd GLB).
-    Na plikach klasy Jaguar pomija pędzel i GLB/STL, ale zawsze parsuje siatkę.
-    Dodatnia slice_info (waga/czas Bambu) wygrywa z estymatorem objętości w /api/analyze-model;
-    bez siatki nie ma wyceny (RFQ — nie 0 cm³ → 16 g).
+
+    Pocięte projekty Bambu (dodatnia slice_info) z ciężkim XML omijają trimesh —
+    waga/czas są już w Metadata/slice_info.config. Pełna siatka zostaje dla STL/gołego
+    3MF i małych plików (Keychain GLB). Pusta płyta + leftover 16 g → RFQ.
     """
     file_bytes = _read_file_bytes(file_input)
     objects: List[dict] = []
@@ -901,6 +986,7 @@ def load_3mf_bundle(file_input) -> dict:
     slice_stats: dict = {}
     max_model_uncompressed = 0
     preview_image: Optional[dict] = None
+    skipped_heavy_mesh = False
 
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as z:
@@ -918,23 +1004,38 @@ def load_3mf_bundle(file_input) -> dict:
 
             read_paint = should_decode_3mf_paint(len(file_bytes), max_model_uncompressed)
             skipped_paint = not read_paint
-            if skipped_paint:
+            skip_heavy = should_skip_heavy_3mf_mesh_parse(
+                len(file_bytes), max_model_uncompressed, slice_stats
+            )
+            if skip_heavy:
+                skipped_heavy_mesh = True
                 print(
-                    f"[INFO] Duży .3MF (zip={len(file_bytes)} B, model={max_model_uncompressed} B) "
-                    "— pomijam dekodowanie pędzla AMS, siatkę wczytuję do wyceny."
+                    f"[INFO] Pocięty .3MF (zip={len(file_bytes)} B, model={max_model_uncompressed} B) "
+                    "— pomijam XML siatki, wycena ze slice_info."
                 )
-
-            for mf in target_models:
-                try:
-                    objects.extend(parse_model_xml_objects(z.read(mf), read_paint=read_paint))
-                except Exception as parse_err:
-                    print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
+            else:
+                if skipped_paint:
+                    print(
+                        f"[INFO] Duży .3MF (zip={len(file_bytes)} B, model={max_model_uncompressed} B) "
+                        "— pomijam dekodowanie pędzla AMS, siatkę wczytuję do wyceny."
+                    )
+                for mf in target_models:
+                    try:
+                        objects.extend(parse_model_xml_objects(z.read(mf), read_paint=read_paint))
+                    except Exception as parse_err:
+                        print(f"[WARN] Błąd parsowania XML {mf}: {parse_err}")
     except Exception as zip_err:
         print(f"[WARN] Błąd inspekcji kontenera ZIP .3MF: {zip_err}")
 
     file_profile = dict(print_profile or {})
     if slice_stats:
         file_profile["slice_stats"] = slice_stats
+
+    if skipped_heavy_mesh and _validated_slice_stats(slice_stats):
+        if max_model_uncompressed < MIN_3MF_MESH_PAYLOAD_BYTES:
+            print("[WARN] slice_info bez ładunku siatki — RFQ, nie leftover waga.")
+            return _empty_3mf_bundle(file_profile, slice_stats, skipped_paint, preview_image)
+        return _slice_info_quote_bundle(file_profile, slice_stats, skipped_paint, preview_image)
 
     if not objects:
         if file_profile.get("filament_colours") or slice_stats or preview_image:
@@ -1036,6 +1137,7 @@ def load_3mf_bundle(file_input) -> dict:
         "skipped_paint": skipped_paint,
         "skipped_colored_preview": bool(size_skip_preview or colored_mesh is None),
         "skipped_geometry": False,
+        "skipped_heavy_mesh": False,
         "preview_skipped": bool(size_skip_preview),
         "quote_ready": True,
         "preview_image": preview_image,
@@ -1246,8 +1348,13 @@ def analyze_mesh_file(path: str, ext: str) -> dict:
         geom["file_profile"] = bundle.get("file_profile") or {}
         geom["skipped_colored_preview"] = bool(bundle.get("skipped_colored_preview"))
         geom["skipped_geometry"] = bool(bundle.get("skipped_geometry"))
+        geom["skipped_heavy_mesh"] = bool(bundle.get("skipped_heavy_mesh"))
         geom["preview_skipped"] = bool(bundle.get("preview_skipped") or geom["skipped_geometry"])
-        geom["quote_ready"] = bool(reliable_volume_cm3(geom.get("volume_cm3")) and not geom["skipped_geometry"])
+        slice_ok = _validated_slice_stats((geom.get("file_profile") or {}).get("slice_stats"))
+        geom["quote_ready"] = bool(
+            not geom["skipped_geometry"]
+            and (reliable_volume_cm3(geom.get("volume_cm3")) or slice_ok)
+        )
         geom["preview_image"] = bundle.get("preview_image")
         return geom
 
@@ -1372,12 +1479,22 @@ def process_uploaded_file(path: str, filename: str, temp_dir: str) -> dict:
                 else:
                     geom = analyze_cad_file(extracted_path, inner_ext)
 
+                inner_slice_ok = _validated_slice_stats(
+                    ((geom.get("file_profile") or {}).get("slice_stats"))
+                )
                 skipped_geometry = bool(
                     geom.get("skipped_geometry")
-                    or (inner_ext == ".3mf" and geom.get("mesh_object") is None)
+                    or (
+                        inner_ext == ".3mf"
+                        and geom.get("mesh_object") is None
+                        and not inner_slice_ok
+                    )
                 )
                 preview_skipped = bool(geom.get("preview_skipped") or skipped_geometry)
-                quote_ready = bool(reliable_volume_cm3(geom.get("volume_cm3")) and not skipped_geometry)
+                quote_ready = bool(
+                    not skipped_geometry
+                    and (reliable_volume_cm3(geom.get("volume_cm3")) or inner_slice_ok)
+                )
                 has_thumb = bool((geom.get("preview_image") or {}).get("bytes"))
                 if skipped_geometry:
                     geom["volume_cm3"] = None
@@ -1391,7 +1508,9 @@ def process_uploaded_file(path: str, filename: str, temp_dir: str) -> dict:
                     geom["quote_ready"] = quote_ready
                     geom["preview_skipped"] = preview_skipped
                     geom["message"] = (
-                        skipped_preview_status_message(True, has_thumb)
+                        skipped_preview_status_message(
+                            True, has_thumb, from_slice_info=bool(inner_slice_ok)
+                        )
                         if preview_skipped
                         else f"Wypakowano i przeanalizowano model 3D: '{archive_meta['extracted_3d_file']}' z archiwum."
                     )
@@ -1457,9 +1576,16 @@ def process_uploaded_file(path: str, filename: str, temp_dir: str) -> dict:
     if ext in INSTANT_MESH_EXTENSIONS:
         try:
             geom = analyze_mesh_file(path, ext)
-            skipped_geometry = bool(geom.get("skipped_geometry") or (ext == ".3mf" and geom.get("mesh_object") is None))
+            slice_ok = _validated_slice_stats(((geom.get("file_profile") or {}).get("slice_stats")))
+            skipped_geometry = bool(
+                geom.get("skipped_geometry")
+                or (ext == ".3mf" and geom.get("mesh_object") is None and not slice_ok)
+            )
             preview_skipped = bool(geom.get("preview_skipped") or skipped_geometry)
-            quote_ready = bool(reliable_volume_cm3(geom.get("volume_cm3")) and not skipped_geometry)
+            quote_ready = bool(
+                not skipped_geometry
+                and (reliable_volume_cm3(geom.get("volume_cm3")) or slice_ok)
+            )
             has_thumb = bool((geom.get("preview_image") or {}).get("bytes"))
             if skipped_geometry:
                 geom["volume_cm3"] = None
@@ -1483,9 +1609,15 @@ def process_uploaded_file(path: str, filename: str, temp_dir: str) -> dict:
                 "preview_skipped": preview_skipped,
                 "category": f"Siatka 3D ({ext.upper().lstrip('.')})",
                 "message": (
-                    skipped_preview_status_message(True, has_thumb)
+                    skipped_preview_status_message(
+                        True, has_thumb, from_slice_info=bool(slice_ok)
+                    )
                     if preview_skipped
-                    else "Geometria 3D poprawnie przeanalizowana."
+                    else (
+                        "Geometria 3D poprawnie przeanalizowana. Waga i czas ze slicera 3MF."
+                        if slice_ok
+                        else "Geometria 3D poprawnie przeanalizowana."
+                    )
                 ),
                 "mesh_source_path": path,
                 "original_filename": filename,
