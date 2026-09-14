@@ -221,8 +221,18 @@ def test_photoset_slice_info_matches_bambu_not_geometry():
         layer_height=0.20,
         nozzle_size=0.4,
     )
-    # PLN śledzi wagę filamentu (146.74 × 0.045 z 45 zł/kg), nie objętość bryły (~800 cm³).
-    assert abs(price["unit_price_pln"] - round(146.74 * 0.045, 2)) < 0.02
+    # Cena śledzi wagę+czas ze slice_info, nie objętość bryły (~800 cm³).
+    from pricing import commercial_unit_price, DEFAULT_MATERIAL_MARKUP, DEFAULT_MACHINE_HOURLY_PLN, DEFAULT_SETUP_FEE_PLN
+    expected = commercial_unit_price(
+        quote["filament_weight_g"],
+        quote["print_time_hours"],
+        0.045,
+        markup=DEFAULT_MATERIAL_MARKUP,
+        machine_hourly=DEFAULT_MACHINE_HOURLY_PLN,
+        setup_fee=DEFAULT_SETUP_FEE_PLN,
+    )["unit_price_pln"]
+    assert abs(price["unit_price_pln"] - expected) < 0.02
+    assert price["unit_price_pln"] > round(146.74 * 0.045, 2)
     assert price["unit_price_pln"] < 80
     geom = estimate_filament_from_geometry(
         volume_cm3=800.0,

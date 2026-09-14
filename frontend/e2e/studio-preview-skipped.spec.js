@@ -25,13 +25,13 @@ test.describe("large 3MF skipped preview", () => {
     await expect(page.getByText("Zapisany profil druku")).toBeVisible();
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
     await expect(page.getByText("518 g")).toBeVisible();
-    await expect(page.getByText("23.31")).toBeVisible();
+    await expect(page.getByText("76.29")).toBeVisible();
+    await expect(page.getByText("23.31")).toHaveCount(0);
     await expect(page.getByText("180.00")).toHaveCount(0);
     await expect(page.getByText("11.62")).toHaveCount(0);
     await expect(page.getByText("16 g")).toHaveCount(0);
-    await expect(page.locator("[data-studio-quote-bar]")).toHaveAttribute("data-below-moq", "true");
-    await expect(page.locator("[data-moq-shortfall]")).toContainText("Brakuje 6,69 zł do minimalnego zamówienia");
-    await expect(page.getByRole("button", { name: "Do koszyka" })).toBeDisabled();
+    await expect(page.locator("[data-studio-quote-bar]")).toHaveAttribute("data-below-moq", "false");
+    await expect(page.getByRole("button", { name: "Do koszyka" })).toBeEnabled();
   });
 
   test("preview-skipped-quoted alias matches the same Jaguar quote path", async ({ page }) => {
@@ -42,7 +42,7 @@ test.describe("large 3MF skipped preview", () => {
     await expect(page.getByText("Wycena gotowa — bez podglądu 3D")).toBeVisible();
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
     await expect(page.getByText("518 g")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Do koszyka" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Do koszyka" })).toBeEnabled();
   });
 
   test("embedded 3MF plate photo fills the stage when 3D is skipped", async ({ page }) => {
@@ -60,10 +60,11 @@ test.describe("large 3MF skipped preview", () => {
     await expect(page.getByText("Upuść model tutaj")).toHaveCount(0);
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
     await expect(page.getByText("518 g")).toBeVisible();
-    await expect(page.getByText("23.31")).toBeVisible();
+    await expect(page.getByText("76.29")).toBeVisible();
+    await expect(page.getByText("23.31")).toHaveCount(0);
     await expect(page.getByText("180.00")).toHaveCount(0);
     await expect(page.getByText("16 g")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Do koszyka" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Do koszyka" })).toBeEnabled();
   });
 
   test("sliced 3MF: Bambu slice_info weight/time, not CAD-volume 600 g", async ({ page }) => {
@@ -77,10 +78,13 @@ test.describe("large 3MF skipped preview", () => {
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
     await expect(page.getByText("146.74 g")).toBeVisible();
     await expect(page.getByText("5h 6m")).toBeVisible();
-    await expect(page.getByText("6.60")).toBeVisible();
+    await expect(page.getByText("20.31")).toBeVisible();
+    await expect(page.getByText("6.60")).toHaveCount(0);
     await expect(page.getByText("39.62")).toHaveCount(0);
     await expect(page.getByText("647.8 g")).toHaveCount(0);
     await expect(page.getByText("16 g")).toHaveCount(0);
+    await expect(page.locator("[data-studio-quote-bar]")).toHaveAttribute("data-below-moq", "true");
+    await expect(page.locator("[data-moq-shortfall]")).toContainText("Brakuje 9,69 zł do minimalnego zamówienia");
     await expect(page.getByRole("button", { name: "Do koszyka" })).toBeDisabled();
   });
 });

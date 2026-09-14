@@ -112,7 +112,11 @@ def test_analyze_photoset_like_3mf_quotes_bambu_not_cad_volume():
     assert float(data["filament_weight_g"]) < 200
     assert float(data["filament_weight_g"]) != 16
     price = float((data.get("price_breakdown") or {}).get("unit_price_pln") or 0)
-    assert abs(price - round(146.74 * 0.045, 2)) < 0.05
+    from pricing import commercial_unit_price
+    hours = float(data["print_time_hours"])
+    expected = commercial_unit_price(146.74, hours, 0.045)["unit_price_pln"]
+    assert abs(price - expected) < 0.05
+    assert price > round(146.74 * 0.045, 2)
     assert price < 80
     assert "ze slicera 3MF" in (data.get("message") or "")
     processed = process_uploaded_file(path, "Photoset_Iphone_support.3mf", tempfile.mkdtemp())

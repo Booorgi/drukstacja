@@ -30,6 +30,7 @@ import {
   quoteUnitPriceFromWeight,
   studioFamiliesForWheel,
 } from "../lib/filamentCatalog";
+import { MINIMUM_ORDER_VALUE_PLN } from "../lib/commercialPricing";
 import {
   peek3mfSidecar,
   canQuoteFromPeekedSliceInfo,
@@ -365,8 +366,9 @@ endsolid fixture
         dimensions_mm: [40, 40, 10],
         file_key: "layout-fixture",
         print_time_formatted: "54m",
-        // PLA 0.045 PLN/g → 38.00 PLN (above 30 PLN MOQ)
-        filament_weight_g: 844.444444,
+        print_time_hours: 0.9,
+        // Commercial: 390 g × 0.045 × 2 + 0.9 h + 2 setup = 38.00 PLN (>= MOQ)
+        filament_weight_g: 390,
         filament_length_m: 2.94,
         price_breakdown: { unit_price_pln: 38 },
       });
@@ -393,10 +395,35 @@ endsolid fixture
         dimensions_mm: [40, 40, 10],
         file_key: "layout-below-moq-fixture",
         print_time_formatted: "54m",
-        // PLA 0.045 PLN/g → 18.40 PLN (below 30 PLN MOQ, shortfall 11.60)
-        filament_weight_g: 408.888889,
+        print_time_hours: 0.9,
+        // Commercial: 172.222222 g × 0.045 × 2 + 0.9 h + 2 setup = 18.40 PLN (shortfall 11.60)
+        filament_weight_g: 172.222222,
         filament_length_m: 2.94,
         price_breakdown: { unit_price_pln: 18.4 },
+      });
+      return;
+    }
+
+    if (layout === "whale") {
+      const file = new File(["x"], "whale_stl.stl", { type: "model/stl" });
+      setSelectedFile(file);
+      setModelPreviewUrl(URL.createObjectURL(file));
+      setInfill(20);
+      setLayerHeight(0.2);
+      setNozzleSize(0.4);
+      setSelectedMaterial("PLA_STANDARD");
+      setAnalysisData({
+        instant_pricing: true,
+        volume_cm3: 98.1,
+        source_volume_cm3: 98.1,
+        dimensions_mm: [81.53, 160.23, 96.27],
+        file_key: "layout-whale-fixture",
+        original_filename: "whale_stl.stl",
+        print_time_formatted: "5h 27m",
+        print_time_hours: 5.45,
+        filament_weight_g: 57.2,
+        filament_length_m: 19.18,
+        price_breakdown: { unit_price_pln: 12.6 },
       });
       return;
     }
@@ -449,8 +476,9 @@ endsolid fixture
         file_key: "layout-jaguar-fixture",
         original_filename: "Jaguar v2 Bambu.3mf",
         filament_weight_g: 518,
-        print_time_formatted: "1d 4h",
-        price_breakdown: { unit_price_pln: 180 },
+        print_time_formatted: "1d 3h 40m",
+        print_time_hours: 27.67,
+        price_breakdown: { unit_price_pln: 76.29 },
         file_profile: {
           filament_colours: ["#080504", "#854A22", "#C4864F", "#DFDFDE"],
           filament_types: ["PLA Matte", "PLA Basic"],
@@ -483,8 +511,9 @@ endsolid fixture
         file_key: "layout-jaguar-photo-fixture",
         original_filename: "Jaguar v2 Bambu.3mf",
         filament_weight_g: 518,
-        print_time_formatted: "1d 4h",
-        price_breakdown: { unit_price_pln: 180 },
+        print_time_formatted: "1d 3h 40m",
+        print_time_hours: 27.67,
+        price_breakdown: { unit_price_pln: 76.29 },
         preview_image_url: platePhoto,
         preview_image_source: "Metadata/plate_1.png",
         file_profile: {
@@ -524,7 +553,7 @@ endsolid fixture
         print_time_hours: 5.1,
         slicer_engine: "bambu-slice-info",
         quote_source: "bambu-slice-info",
-        price_breakdown: { unit_price_pln: 39.62 },
+        price_breakdown: { unit_price_pln: 20.31 },
         preview_image_url: platePhoto,
         preview_image_source: "Metadata/plate_1.png",
         file_profile: {
@@ -921,8 +950,19 @@ endsolid fixture
       ratePerG,
       layerMultiplier,
       nozzleMultiplier,
+      printTimeHours: analysisData?.print_time_hours,
+      printTimeFormatted: analysisData?.print_time_formatted,
     });
-  }, [analysisData?.filament_weight_g, volume, matConfig, infill, layerMultiplier, nozzleMultiplier]);
+  }, [
+    analysisData?.filament_weight_g,
+    analysisData?.print_time_hours,
+    analysisData?.print_time_formatted,
+    volume,
+    matConfig,
+    infill,
+    layerMultiplier,
+    nozzleMultiplier,
+  ]);
 
   // Czysta liniowa cena bez rabatów ilościowych
   const unitPrice = (Math.round(baseUnitPrice * 100) / 100).toFixed(2);
@@ -934,7 +974,7 @@ endsolid fixture
   const previewUnavailable = isPreviewSkipped(analysisData, modelPreviewUrl);
   const embeddedPreviewUrl = studioPreviewImageUrl(analysisData, previewImageUrl);
   const isEmptyStage = !selectedFile && !analysisData && !isAnalyzing;
-  const MIN_ORDER_VALUE = 30.00;
+  const MIN_ORDER_VALUE = MINIMUM_ORDER_VALUE_PLN;
   const isBelowMoq = hasModel && parseFloat(totalPrice) < MIN_ORDER_VALUE;
   const diffToMoq = (MIN_ORDER_VALUE - parseFloat(totalPrice)).toFixed(2);
   const suggestedQtyForMoq = Math.max(1, Math.ceil(MIN_ORDER_VALUE / Math.max(0.1, parseFloat(unitPrice))));
