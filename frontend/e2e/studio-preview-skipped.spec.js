@@ -32,8 +32,9 @@ test.describe("large 3MF skipped preview", () => {
     await revealStudio(page);
 
     await expect(page.locator("[data-studio-preview-status='skipped']")).toBeVisible();
-    await expect(page.getByText(/Wycena gotowa/)).toBeVisible();
-    await expect(page.getByText(/Podgląd niemożliwy/)).toBeVisible();
+    await expect(page.locator("[data-quote-ready='true']")).toBeVisible();
+    await expect(page.getByText("Wycena gotowa — bez podglądu 3D")).toBeVisible();
+    await expect(page.getByText(/Podgląd niemożliwy ze względu na dużą objętość siatki/)).toBeVisible();
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
     await expect(page.getByText("518 g")).toBeVisible();
     await expect(page.getByText("16 g")).toHaveCount(0);

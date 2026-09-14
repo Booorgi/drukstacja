@@ -371,6 +371,7 @@ endsolid fixture
       setInfill(6);
       setLayerHeight(0.2);
       setNozzleSize(0.4);
+      setSelectedMaterial("PLA_MATTE");
       setAnalysisData({
         instant_pricing: quoted,
         skipped_geometry: !quoted,
