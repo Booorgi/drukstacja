@@ -29,8 +29,7 @@ from analysis import (
     analyze_file,
     export_colored_preview_glb,
     COLORED_PREVIEW_FACE_LIMIT,
-    LARGE_3MF_QUOTE_NO_PREVIEW_MSG,
-    LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG,
+    skipped_preview_status_message,
     reliable_volume_cm3,
     ALL_SUPPORTED_EXTENSIONS,
     INSTANT_3D_EXTENSIONS,
@@ -86,7 +85,9 @@ app.include_router(admin_router)
 
 MAX_FILE_SIZE_MB = 100
 ALLOWED_EXTENSIONS = ALL_SUPPORTED_EXTENSIONS
-CACHED_MODEL_NAME = re.compile(r"^[a-fA-F0-9]+_(oriented\.stl|preview\.glb)$")
+CACHED_MODEL_NAME = re.compile(
+    r"^[a-fA-F0-9]+_(oriented\.stl|preview\.glb|preview\.(png|jpe?g|webp))$"
+)
 
 
 def _bg_upload_cached(path_to_upload, key, ctype):
@@ -99,15 +100,60 @@ def _bg_upload_cached(path_to_upload, key, ctype):
         print(f"[WARN] Błąd zapisu w R2 w tle: {up_err}")
 
 
+def _cached_preview_media_type(name: str) -> str:
+    lower = (name or "").lower()
+    if lower.endswith(".glb"):
+        return "model/gltf-binary"
+    if lower.endswith(".stl"):
+        return "model/stl"
+    if lower.endswith(".png"):
+        return "image/png"
+    if lower.endswith(".webp"):
+        return "image/webp"
+    if lower.endswith(".jpg") or lower.endswith(".jpeg"):
+        return "image/jpeg"
+    return "application/octet-stream"
+
+
+def _attach_embedded_preview_image(result: dict, unique_id: str, background_tasks: BackgroundTasks) -> None:
+    """Zapisuje miniaturę 3MF na dysk i wstawia preview_image_url. Bajty nie idą w JSON."""
+    img = result.pop("preview_image", None) if isinstance(result, dict) else None
+    if not isinstance(img, dict) or not img.get("bytes"):
+        result.setdefault("preview_image_url", None)
+        result.setdefault("preview_image_key", None)
+        result.setdefault("preview_image_source", None)
+        return
+    ext = img.get("ext") or ".png"
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        ext = ".png"
+    mime = img.get("mime") or _cached_preview_media_type(f"preview{ext}")
+    cached_name = f"{unique_id}_preview{ext}"
+    cached_path = os.path.join(MODELS_CACHE_DIR, cached_name)
+    try:
+        with open(cached_path, "wb") as f_img:
+            f_img.write(img["bytes"])
+    except Exception as err:
+        print(f"[WARN] Nie udało się zapisać miniatury 3MF: {err}")
+        result["preview_image_url"] = None
+        result["preview_image_key"] = None
+        result["preview_image_source"] = None
+        return
+    preview_key = f"models/{cached_name}"
+    background_tasks.add_task(_bg_upload_cached, cached_path, preview_key, mime)
+    result["preview_image_url"] = f"/api/cached-model/{cached_name}"
+    result["preview_image_key"] = preview_key
+    result["preview_image_source"] = img.get("source")
+
+
 @app.get("/api/cached-model/{name}")
 def serve_cached_model(name: str):
-    """Podgląd STL/GLB od razu z dysku, bez czekania na upload do R2."""
+    """Podgląd STL/GLB/miniatury 3MF od razu z dysku, bez czekania na upload do R2."""
     if not CACHED_MODEL_NAME.match(name or ""):
         raise HTTPException(status_code=400, detail="Nieprawidłowa nazwa pliku podglądu.")
     path = os.path.join(MODELS_CACHE_DIR, name)
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="Podgląd modelu nie jest jeszcze dostępny.")
-    media = "model/gltf-binary" if name.endswith(".glb") else "model/stl"
+    media = _cached_preview_media_type(name)
     return FileResponse(path, media_type=media, filename=name)
 
 
@@ -996,6 +1042,7 @@ async def analyze_model_endpoint(
 
         # 2. Hybrydowa analiza pliku
         result = process_uploaded_file(tmp_path, file.filename, tmp_dir)
+        _attach_embedded_preview_image(result, unique_id, background_tasks)
 
         # 3. Przypadek A: Model 3D z natychmiastową wyceną (instant_pricing == True)
         if result.get("instant_pricing") is True:
@@ -1028,8 +1075,9 @@ async def analyze_model_endpoint(
                 result["preview_skipped"] = True
                 result["preview_glb_url"] = None
                 result["preview_stl_url"] = None
-                if not result.get("message"):
-                    result["message"] = LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
+                result["message"] = skipped_preview_status_message(
+                    False, bool(result.get("preview_image_url"))
+                )
 
             if raw_mesh is not None and reliable_volume_cm3(result.get("volume_cm3")) is None:
                 result["instant_pricing"] = False
@@ -1039,7 +1087,9 @@ async def analyze_model_endpoint(
                     result.get("preview_skipped") or skip_colored_preview or preview_skipped
                 )
                 if result.get("preview_skipped"):
-                    result["message"] = LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
+                    result["message"] = skipped_preview_status_message(
+                        False, bool(result.get("preview_image_url"))
+                    )
 
             if raw_mesh is not None and result.get("instant_pricing") is True:
                 try:
@@ -1211,7 +1261,9 @@ async def analyze_model_endpoint(
                             and not result.get("preview_glb_url")
                         ):
                             result["preview_skipped"] = True
-                            result["message"] = LARGE_3MF_QUOTE_NO_PREVIEW_MSG
+                            result["message"] = skipped_preview_status_message(
+                                True, bool(result.get("preview_image_url"))
+                            )
                     except Exception as slice_err:
                         print(f"[WARN] Slicer error: {slice_err}")
                         result["print_time_hours"] = None
@@ -1250,12 +1302,14 @@ async def analyze_model_endpoint(
             if result.get("preview_skipped") or result.get("skipped_geometry"):
                 result["preview_skipped"] = True
                 result["volume_cm3"] = None
-                if not result.get("message"):
-                    result["message"] = LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
+                result["message"] = skipped_preview_status_message(
+                    False, bool(result.get("preview_image_url"))
+                )
 
         result.pop("mesh_object", None)
         result.pop("colored_mesh", None)
         result.pop("mesh_source_path", None)
+        result.pop("preview_image", None)
         result["file_key"] = r2_key
         result["original_filename"] = file.filename
 

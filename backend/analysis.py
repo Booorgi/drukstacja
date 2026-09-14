@@ -214,6 +214,26 @@ LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG = (
     "Automatyczna wycena wymaga geometrii siatki — bez niej nie podajemy wagi ani ceny. "
     "Podgląd niemożliwy ze względu na dużą objętość siatki / CPS."
 )
+LARGE_3MF_QUOTE_THUMBNAIL_MSG = (
+    "Plik wczytany. Ustawienia zapisane. Wycena gotowa. "
+    "Podgląd 3D pominięty ze względu na dużą objętość siatki / CPS. "
+    "Pokazujemy miniaturę zapisaną w pliku 3MF."
+)
+LARGE_3MF_NO_QUOTE_THUMBNAIL_MSG = (
+    "Plik wczytany. Ustawienia zapisane. "
+    "Automatyczna wycena wymaga geometrii siatki — bez niej nie podajemy wagi ani ceny. "
+    "Podgląd 3D pominięty ze względu na dużą objętość siatki / CPS. "
+    "Pokazujemy miniaturę zapisaną w pliku 3MF."
+)
+
+# Miniatury Bambu/MakerWorld są zwykle 20–200 KB. Dummy plate_1.png z packagera (~0.6 KB)
+# to jednolity kwadrat — nie pokazujemy go jako zdjęcia modelu.
+MIN_3MF_PREVIEW_IMAGE_BYTES = 2048
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+_JPEG_MAGIC = b"\xff\xd8\xff"
+_OPC_THUMBNAIL_REL_TYPE = (
+    "http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail"
+)
 
 
 def reliable_volume_cm3(value) -> Optional[float]:
@@ -261,6 +281,194 @@ def should_build_colored_preview(
         and int(zip_bytes or 0) < COLORED_PREVIEW_ZIP_BYTES
         and int(max_model_uncompressed or 0) < COLORED_PREVIEW_MODEL_UNCOMPRESSED_BYTES
     )
+
+
+def _normalize_zip_name(name: str) -> str:
+    return (name or "").replace("\\", "/").lstrip("/")
+
+
+def _preview_image_mime(name: str, header: bytes) -> Optional[str]:
+    lower = _normalize_zip_name(name).lower()
+    if header.startswith(_PNG_MAGIC) or lower.endswith(".png"):
+        if header.startswith(_PNG_MAGIC):
+            return "image/png"
+        return None
+    if header.startswith(_JPEG_MAGIC) or lower.endswith((".jpg", ".jpeg")):
+        if header.startswith(_JPEG_MAGIC):
+            return "image/jpeg"
+        return None
+    if lower.endswith(".webp") and header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _preview_image_ext(mime: str) -> str:
+    if mime == "image/jpeg":
+        return ".jpg"
+    if mime == "image/webp":
+        return ".webp"
+    return ".png"
+
+
+def _score_3mf_preview_candidate(name: str) -> int:
+    """
+    Bambu/MakerWorld: Metadata/plate_1.png (zdjęcie stołu) i OPC thumbnail.
+    Szablony Auxiliaries/Templates (SVG wektoryzacji) nie są podglądem modelu.
+    """
+    n = _normalize_zip_name(name).lower()
+    if not n or n.endswith("/"):
+        return -1
+    if n.startswith("auxiliaries/templates/"):
+        return -1
+    if n.endswith(".svg"):
+        return -1
+    if n.startswith("metadata/plate_") and n.endswith(".png"):
+        return 80 if "_small" in n else 100
+    if "thumbnail_3mf" in n and n.endswith((".png", ".jpg", ".jpeg", ".webp")):
+        return 70
+    if n.startswith("metadata/") and n.endswith((".png", ".jpg", ".jpeg", ".webp")):
+        return 60
+    if ("thumbnail" in n or n.startswith("thumbnails/")) and n.endswith(
+        (".png", ".jpg", ".jpeg", ".webp")
+    ):
+        return 50
+    if n.endswith((".png", ".jpg", ".jpeg", ".webp")):
+        return 10
+    return -1
+
+
+def _opc_thumbnail_targets(zf: zipfile.ZipFile) -> List[str]:
+    targets: List[str] = []
+    for name in zf.namelist():
+        norm = _normalize_zip_name(name)
+        if not norm.endswith("_rels/.rels") and norm != "_rels/.rels":
+            continue
+        try:
+            root = _parse_xml(zf.read(name))
+        except Exception:
+            continue
+        for el in root.iter():
+            if _local_tag(el.tag) != "Relationship":
+                continue
+            rel_type = (el.attrib.get("Type") or "").strip()
+            if rel_type != _OPC_THUMBNAIL_REL_TYPE:
+                continue
+            target = _normalize_zip_name(el.attrib.get("Target") or "")
+            if target:
+                targets.append(target)
+    return targets
+
+
+def _model_settings_thumbnail_paths(zf: zipfile.ZipFile) -> List[str]:
+    names = zf.namelist()
+    ms_name = next(
+        (n for n in names if _normalize_zip_name(n).endswith("Metadata/model_settings.config")),
+        None,
+    )
+    if not ms_name:
+        return []
+    try:
+        root = _parse_xml(zf.read(ms_name))
+    except Exception:
+        return []
+    paths: List[str] = []
+    for el in root.iter():
+        if _local_tag(el.tag) != "metadata":
+            continue
+        key = (el.attrib.get("key") or "").strip().lower()
+        if key not in ("thumbnail_file", "thumbnail"):
+            continue
+        value = _normalize_zip_name(el.attrib.get("value") or (el.text or ""))
+        if value:
+            paths.append(value)
+    return paths
+
+
+def _extract_3mf_preview_from_zip(zf: zipfile.ZipFile) -> Optional[dict]:
+    names = zf.namelist()
+    by_norm = {_normalize_zip_name(n): n for n in names}
+    hinted = set(_opc_thumbnail_targets(zf) + _model_settings_thumbnail_paths(zf))
+
+    ranked: List[Tuple[int, int, str]] = []
+    for raw in names:
+        info = zf.getinfo(raw)
+        if info.is_dir():
+            continue
+        score = _score_3mf_preview_candidate(raw)
+        if score < 0:
+            continue
+        size = int(info.file_size or 0)
+        if size < MIN_3MF_PREVIEW_IMAGE_BYTES:
+            continue
+        if _normalize_zip_name(raw) in hinted:
+            score += 15
+        ranked.append((score, size, raw))
+
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    for _score, _size, raw in ranked:
+        try:
+            payload = zf.read(raw)
+        except Exception:
+            continue
+        if len(payload) < MIN_3MF_PREVIEW_IMAGE_BYTES:
+            continue
+        mime = _preview_image_mime(raw, payload[:16])
+        if not mime:
+            continue
+        source = _normalize_zip_name(raw)
+        return {
+            "bytes": payload,
+            "mime": mime,
+            "ext": _preview_image_ext(mime),
+            "source": source,
+        }
+
+    # Hinted paths (OPC / thumbnail_file) even if scoring missed them.
+    for hint in hinted:
+        raw = by_norm.get(hint) or by_norm.get(hint.lstrip("/"))
+        if not raw:
+            continue
+        try:
+            payload = zf.read(raw)
+        except Exception:
+            continue
+        if len(payload) < MIN_3MF_PREVIEW_IMAGE_BYTES:
+            continue
+        mime = _preview_image_mime(raw, payload[:16])
+        if not mime:
+            continue
+        return {
+            "bytes": payload,
+            "mime": mime,
+            "ext": _preview_image_ext(mime),
+            "source": _normalize_zip_name(raw),
+        }
+    return None
+
+
+def extract_3mf_preview_image(file_input) -> Optional[dict]:
+    """
+    Miniatura z pakietu 3MF, jeśli jest: Bambu Metadata/plate_1.png, OPC thumbnail,
+    Auxiliaries/.thumbnails/, Thumbnails/. Brak obrazu → None (nie wymyślamy zdjęcia).
+    Jaguar+v2+Bambu.3mf nie leży w repo; Keychain Draft.3mf ma tę samą ścieżkę Bambu.
+    """
+    if isinstance(file_input, zipfile.ZipFile):
+        return _extract_3mf_preview_from_zip(file_input)
+    try:
+        file_bytes = _read_file_bytes(file_input)
+    except Exception:
+        return None
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as zf:
+            return _extract_3mf_preview_from_zip(zf)
+    except zipfile.BadZipFile:
+        return None
+
+
+def skipped_preview_status_message(quote_ready: bool, has_thumbnail: bool) -> str:
+    if has_thumbnail:
+        return LARGE_3MF_QUOTE_THUMBNAIL_MSG if quote_ready else LARGE_3MF_NO_QUOTE_THUMBNAIL_MSG
+    return LARGE_3MF_QUOTE_NO_PREVIEW_MSG if quote_ready else LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
 
 
 def decode_paint_slot(code: str) -> int:
@@ -639,10 +847,16 @@ def _extract_3mf_color_metadata(zf: zipfile.ZipFile) -> Tuple[List[str], Dict[st
     return colours, extruders, print_profile
 
 
-def _empty_3mf_bundle(file_profile: dict, slice_stats: dict, skipped_paint: bool) -> dict:
+def _empty_3mf_bundle(
+    file_profile: dict,
+    slice_stats: dict,
+    skipped_paint: bool,
+    preview_image: Optional[dict] = None,
+) -> dict:
     profile_colours = list((file_profile or {}).get("filament_colours") or [])
     color_count = max(len(profile_colours), int((slice_stats or {}).get("color_count") or 0), 1)
     painted_ratio = 0.66 if (skipped_paint and len(profile_colours) >= 2) else 0.0
+    has_thumb = bool(preview_image and preview_image.get("bytes"))
     return {
         "mesh": None,
         "colored_mesh": None,
@@ -657,6 +871,8 @@ def _empty_3mf_bundle(file_profile: dict, slice_stats: dict, skipped_paint: bool
         "skipped_geometry": True,
         "preview_skipped": True,
         "quote_ready": False,
+        "preview_image": preview_image,
+        "message": skipped_preview_status_message(False, has_thumb),
     }
 
 
@@ -674,12 +890,14 @@ def load_3mf_bundle(file_input) -> dict:
     skipped_paint = False
     slice_stats: dict = {}
     max_model_uncompressed = 0
+    preview_image: Optional[dict] = None
 
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as z:
             max_model_uncompressed = _max_model_uncompressed_bytes(z)
             filament_colours, part_extruder, print_profile = _extract_3mf_color_metadata(z)
             slice_stats = _extract_3mf_slice_info(z)
+            preview_image = _extract_3mf_preview_from_zip(z)
 
             names = z.namelist()
             object_models = [
@@ -709,9 +927,9 @@ def load_3mf_bundle(file_input) -> dict:
         file_profile["slice_stats"] = slice_stats
 
     if not objects:
-        if file_profile.get("filament_colours") or slice_stats:
+        if file_profile.get("filament_colours") or slice_stats or preview_image:
             print("[WARN] Brak siatki 3MF — zwracam profil AMS bez geometrii i bez wyceny.")
-            return _empty_3mf_bundle(file_profile, slice_stats, skipped_paint)
+            return _empty_3mf_bundle(file_profile, slice_stats, skipped_paint, preview_image)
         raise ValueError("Nie udało się odczytać geometrii 3D z pliku .3MF.")
 
     meshes = [o["mesh"] for o in objects]
@@ -810,6 +1028,7 @@ def load_3mf_bundle(file_input) -> dict:
         "skipped_geometry": False,
         "preview_skipped": bool(size_skip_preview),
         "quote_ready": True,
+        "preview_image": preview_image,
     }
 
 
@@ -1019,6 +1238,7 @@ def analyze_mesh_file(path: str, ext: str) -> dict:
         geom["skipped_geometry"] = bool(bundle.get("skipped_geometry"))
         geom["preview_skipped"] = bool(bundle.get("preview_skipped") or geom["skipped_geometry"])
         geom["quote_ready"] = bool(reliable_volume_cm3(geom.get("volume_cm3")) and not geom["skipped_geometry"])
+        geom["preview_image"] = bundle.get("preview_image")
         return geom
 
     loaded = trimesh.load(path)
@@ -1148,19 +1368,20 @@ def process_uploaded_file(path: str, filename: str, temp_dir: str) -> dict:
                 )
                 preview_skipped = bool(geom.get("preview_skipped") or skipped_geometry)
                 quote_ready = bool(reliable_volume_cm3(geom.get("volume_cm3")) and not skipped_geometry)
+                has_thumb = bool((geom.get("preview_image") or {}).get("bytes"))
                 if skipped_geometry:
                     geom["volume_cm3"] = None
                     geom["skipped_geometry"] = True
                     geom["preview_skipped"] = True
                     geom["quote_ready"] = False
                     geom["instant_pricing"] = False
-                    geom["message"] = LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG
+                    geom["message"] = skipped_preview_status_message(False, has_thumb)
                 else:
                     geom["instant_pricing"] = True
                     geom["quote_ready"] = quote_ready
                     geom["preview_skipped"] = preview_skipped
                     geom["message"] = (
-                        LARGE_3MF_QUOTE_NO_PREVIEW_MSG
+                        skipped_preview_status_message(True, has_thumb)
                         if preview_skipped
                         else f"Wypakowano i przeanalizowano model 3D: '{archive_meta['extracted_3d_file']}' z archiwum."
                     )
@@ -1229,6 +1450,7 @@ def process_uploaded_file(path: str, filename: str, temp_dir: str) -> dict:
             skipped_geometry = bool(geom.get("skipped_geometry") or (ext == ".3mf" and geom.get("mesh_object") is None))
             preview_skipped = bool(geom.get("preview_skipped") or skipped_geometry)
             quote_ready = bool(reliable_volume_cm3(geom.get("volume_cm3")) and not skipped_geometry)
+            has_thumb = bool((geom.get("preview_image") or {}).get("bytes"))
             if skipped_geometry:
                 geom["volume_cm3"] = None
                 geom["skipped_geometry"] = True
@@ -1238,7 +1460,7 @@ def process_uploaded_file(path: str, filename: str, temp_dir: str) -> dict:
                     "type": "3d_model",
                     "instant_pricing": False,
                     "category": f"Siatka 3D ({ext.upper().lstrip('.')})",
-                    "message": LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG,
+                    "message": skipped_preview_status_message(False, has_thumb),
                     "mesh_source_path": path,
                     "original_filename": filename,
                     "file_size_mb": size_mb,
@@ -1251,7 +1473,7 @@ def process_uploaded_file(path: str, filename: str, temp_dir: str) -> dict:
                 "preview_skipped": preview_skipped,
                 "category": f"Siatka 3D ({ext.upper().lstrip('.')})",
                 "message": (
-                    LARGE_3MF_QUOTE_NO_PREVIEW_MSG
+                    skipped_preview_status_message(True, has_thumb)
                     if preview_skipped
                     else "Geometria 3D poprawnie przeanalizowana."
                 ),

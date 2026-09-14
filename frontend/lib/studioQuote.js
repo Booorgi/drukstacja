@@ -7,6 +7,12 @@ export const LARGE_3MF_QUOTE_NO_PREVIEW_MSG =
 export const LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG =
   "Plik wczytany. Ustawienia zapisane. Automatyczna wycena wymaga geometrii siatki — bez niej nie podajemy wagi ani ceny. Podgląd niemożliwy ze względu na dużą objętość siatki / CPS.";
 
+export const LARGE_3MF_QUOTE_THUMBNAIL_MSG =
+  "Plik wczytany. Ustawienia zapisane. Wycena gotowa. Podgląd 3D pominięty ze względu na dużą objętość siatki / CPS. Pokazujemy miniaturę zapisaną w pliku 3MF.";
+
+export const LARGE_3MF_NO_QUOTE_THUMBNAIL_MSG =
+  "Plik wczytany. Ustawienia zapisane. Automatyczna wycena wymaga geometrii siatki — bez niej nie podajemy wagi ani ceny. Podgląd 3D pominięty ze względu na dużą objętość siatki / CPS. Pokazujemy miniaturę zapisaną w pliku 3MF.";
+
 export function isReliableVolumeCm3(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > MIN_RELIABLE_VOLUME_CM3;
@@ -30,4 +36,10 @@ export function isPreviewSkipped(analysisData, previewUrl) {
   if (previewUrl) return false;
   if (!analysisData) return false;
   return Boolean(analysisData.preview_skipped || analysisData.skipped_geometry);
+}
+
+export function studioPreviewImageUrl(analysisData, localImageUrl) {
+  if (localImageUrl) return localImageUrl;
+  const url = analysisData?.preview_image_url;
+  return typeof url === "string" && url.trim() ? url : null;
 }
