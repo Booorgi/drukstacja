@@ -648,10 +648,11 @@ export default function CadViewer3D({
         <color attach="background" args={[studio ? "#18181b" : "#F8FAFC"]} />
 
         {/* Zrównoważone oświetlenie studyjne */}
-        <ambientLight intensity={studio ? 0.72 : 0.9} />
-        <directionalLight position={[70, 110, 80]} intensity={studio ? 1.15 : 1.35} castShadow />
-        <directionalLight position={[-70, 60, -60]} intensity={studio ? 0.42 : 0.55} />
-        <directionalLight position={[0, -40, 0]} intensity={studio ? 0.18 : 0.25} />
+        <ambientLight intensity={studio ? 0.95 : 0.9} />
+        <directionalLight position={[70, 110, 80]} intensity={studio ? 1.45 : 1.35} castShadow />
+        <directionalLight position={[-70, 60, -60]} intensity={studio ? 0.7 : 0.55} />
+        <directionalLight position={[0, -40, 0]} intensity={studio ? 0.35 : 0.25} />
+        {studio ? <hemisphereLight args={["#3f3f46", "#18181b", 0.55]} /> : null}
 
         {/* Model 3D */}
         <Bounds fit observe margin={1.85}>
