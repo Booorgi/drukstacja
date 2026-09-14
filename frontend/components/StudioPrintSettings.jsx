@@ -181,11 +181,11 @@ export default function StudioPrintSettings({
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <SpecTile label="Cena" value={`${(matConfig?.pricePerCm3 || 0).toFixed(2)} zł/cm³`} />
-        <SpecTile label="Gęstość" value={`${matConfig?.density || 1.24} g/cm³`} />
+        <SpecTile label="Rodzaj" value={matConfig?.subtypeLabel || matConfig?.familyName || "—"} />
+        <SpecTile label="HDT" value={matConfig?.hdt || "55°C"} />
         {showDetails ? (
           <>
-            <SpecTile label="HDT" value={matConfig?.hdt || "55°C"} />
+            <SpecTile label="Sztywność" value={matConfig?.tensileStrength || "Wysoka"} />
             <SpecTile label="UV" value={matConfig?.uvResistance || "Średnia"} />
           </>
         ) : null}

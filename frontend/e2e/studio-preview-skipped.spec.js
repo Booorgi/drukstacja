@@ -25,7 +25,8 @@ test.describe("large 3MF skipped preview", () => {
     await expect(page.getByText("Zapisany profil druku")).toBeVisible();
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
     await expect(page.getByText("518 g")).toBeVisible();
-    await expect(page.getByText("180.00")).toBeVisible();
+    await expect(page.getByText("23.31")).toBeVisible();
+    await expect(page.getByText("180.00")).toHaveCount(0);
     await expect(page.getByText("11.62")).toHaveCount(0);
     await expect(page.getByText("16 g")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Do koszyka" })).toBeEnabled();
@@ -57,7 +58,8 @@ test.describe("large 3MF skipped preview", () => {
     await expect(page.getByText("Upuść model tutaj")).toHaveCount(0);
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
     await expect(page.getByText("518 g")).toBeVisible();
-    await expect(page.getByText("180.00")).toBeVisible();
+    await expect(page.getByText("23.31")).toBeVisible();
+    await expect(page.getByText("180.00")).toHaveCount(0);
     await expect(page.getByText("16 g")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Do koszyka" })).toBeEnabled();
   });
@@ -73,7 +75,8 @@ test.describe("large 3MF skipped preview", () => {
     await expect(page.locator("[data-quote-state='quoted']")).toBeVisible();
     await expect(page.getByText("146.74 g")).toBeVisible();
     await expect(page.getByText("5h 6m")).toBeVisible();
-    await expect(page.getByText("39.62")).toBeVisible();
+    await expect(page.getByText("6.60")).toBeVisible();
+    await expect(page.getByText("39.62")).toHaveCount(0);
     await expect(page.getByText("647.8 g")).toHaveCount(0);
     await expect(page.getByText("16 g")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Do koszyka" })).toBeEnabled();

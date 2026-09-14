@@ -1,0 +1,2722 @@
+{
+  "families": [
+    {
+      "id": "PLA",
+      "name": "PLA",
+      "group": "standard",
+      "pickerTitle": "Wybierz rodzaj PLA",
+      "desc": "Najwyższa precyzja wymiarowa i gładkość detali. Idealny do prototypów, obudów i figurek.",
+      "hdt": "55°C",
+      "tensileStrength": "Wysoka",
+      "uvResistance": "Średnia",
+      "subtypes": [
+        {
+          "id": "PLA_STANDARD",
+          "name": "PLA",
+          "label": "Standard",
+          "slicerType": "PLA",
+          "pricePerKg": 45,
+          "ratePerG": 0.045,
+          "density": 1.24,
+          "pricePerCm3": 0.0558,
+          "category": "PLA",
+          "group": "standard",
+          "desc": "Sunlu PLA — standardowy filament do prototypów i detali.",
+          "hdt": "55°C",
+          "tensileStrength": "Wysoka",
+          "uvResistance": "Średnia",
+          "roughness": 0.4,
+          "metalness": 0.05,
+          "tier": "standard",
+          "aliases": [
+            "pla",
+            "PLA",
+            "PLA_STANDARD",
+            "PLA Tough",
+            "PLA Matte",
+            "PLA Basic"
+          ],
+          "badge": "Najpopularniejszy",
+          "nozzleTemp": 215,
+          "bedTemp": 55,
+          "colors": [
+            {
+              "id": "pla_beige",
+              "name": "Beige",
+              "hex": "#E8D8C8"
+            },
+            {
+              "id": "pla_bone_white",
+              "name": "Bone White",
+              "hex": "#F3EFE6"
+            },
+            {
+              "id": "pla_ceramic",
+              "name": "Ceramic",
+              "hex": "#FFFFFF"
+            },
+            {
+              "id": "pla_coffee_brown",
+              "name": "Coffee Brown",
+              "hex": "#5C3A21"
+            },
+            {
+              "id": "pla_chocolate",
+              "name": "Chocolate",
+              "hex": "#381E11"
+            },
+            {
+              "id": "pla_cyan",
+              "name": "Cyan",
+              "hex": "#00BCDB"
+            },
+            {
+              "id": "pla_grey",
+              "name": "Grey",
+              "hex": "#8E9297"
+            },
+            {
+              "id": "pla_green",
+              "name": "Green",
+              "hex": "#0E8A37"
+            },
+            {
+              "id": "pla_light_green",
+              "name": "Light Green",
+              "hex": "#78C850"
+            },
+            {
+              "id": "pla_midnight",
+              "name": "Midnight",
+              "hex": "#111215"
+            },
+            {
+              "id": "pla_roasted_chestnut",
+              "name": "Roasted Chestnut",
+              "hex": "#6E3725"
+            },
+            {
+              "id": "pla_klein_blue",
+              "name": "Klein Blue",
+              "hex": "#002FA7"
+            },
+            {
+              "id": "pla_lemon_yellow",
+              "name": "Lemon Yellow",
+              "hex": "#FFF033"
+            },
+            {
+              "id": "pla_yellow",
+              "name": "Yellow",
+              "hex": "#FFCD00"
+            },
+            {
+              "id": "pla_light_gold",
+              "name": "Light Gold",
+              "hex": "#D4AF37"
+            },
+            {
+              "id": "pla_silver",
+              "name": "Silver",
+              "hex": "#C5C6C7"
+            },
+            {
+              "id": "pla_sakura_pink",
+              "name": "Sakura Pink",
+              "hex": "#FFB3C6"
+            },
+            {
+              "id": "pla_sunny_orange",
+              "name": "Sunny Orange",
+              "hex": "#FF6B00"
+            },
+            {
+              "id": "pla_sky_blue",
+              "name": "Sky Blue",
+              "hex": "#56CCF2"
+            },
+            {
+              "id": "pla_red",
+              "name": "Red",
+              "hex": "#D81E06"
+            },
+            {
+              "id": "pla_lavender_purple",
+              "name": "Lavender Purple",
+              "hex": "#9B72CF"
+            },
+            {
+              "id": "pla_mint_green",
+              "name": "Mint Green",
+              "hex": "#88D49E"
+            },
+            {
+              "id": "pla_transparent",
+              "name": "Transparent",
+              "hex": "#ECEFF1",
+              "transparent": true
+            },
+            {
+              "id": "pla_olive_green",
+              "name": "Olive Green",
+              "hex": "#556B2F"
+            },
+            {
+              "id": "pla_magenta",
+              "name": "Magenta",
+              "hex": "#C2185B"
+            },
+            {
+              "id": "pla_vivid_yellow",
+              "name": "Vivid Yellow",
+              "hex": "#FFD000"
+            },
+            {
+              "id": "pla_oak",
+              "name": "Oak",
+              "hex": "#8F6843"
+            },
+            {
+              "id": "pla_transparent_red",
+              "name": "Transparent Red",
+              "hex": "#E53935",
+              "transparent": true
+            },
+            {
+              "id": "pla_transparent_orange",
+              "name": "Transparent Orange",
+              "hex": "#FB8C00",
+              "transparent": true
+            },
+            {
+              "id": "pla_transparent_green",
+              "name": "Transparent Green",
+              "hex": "#43A047",
+              "transparent": true
+            },
+            {
+              "id": "pla_transparent_yellow",
+              "name": "Transparent Yellow",
+              "hex": "#FDD835",
+              "transparent": true
+            },
+            {
+              "id": "pla_transparent_purple",
+              "name": "Transparent Purple",
+              "hex": "#8E24AA",
+              "transparent": true
+            }
+          ]
+        },
+        {
+          "id": "PLA_WOOD",
+          "name": "PLA",
+          "label": "Wood",
+          "slicerType": "PLA Wood",
+          "pricePerKg": 65,
+          "ratePerG": 0.065,
+          "density": 1.25,
+          "pricePerCm3": 0.0813,
+          "category": "PLA Wood",
+          "group": "standard",
+          "desc": "PLA z domieszką pyłu drzewnego.",
+          "hdt": "55°C",
+          "tensileStrength": "Średnia",
+          "uvResistance": "Średnia",
+          "roughness": 0.94,
+          "metalness": 0.0,
+          "tier": "premium",
+          "aliases": [
+            "pla wood",
+            "WOOD",
+            "PLA_WOOD"
+          ],
+          "badge": null,
+          "nozzleTemp": 205,
+          "bedTemp": 45,
+          "colors": [
+            {
+              "id": "wood_maple_wood",
+              "name": "Maple Wood",
+              "hex": "#C49A6C"
+            },
+            {
+              "id": "wood_wood",
+              "name": "Wood",
+              "hex": "#A87C4F"
+            },
+            {
+              "id": "wood_walnut_wood",
+              "name": "Walnut Wood",
+              "hex": "#533826"
+            },
+            {
+              "id": "wood_cherry_wood",
+              "name": "Cherry Wood",
+              "hex": "#7A2F21"
+            }
+          ]
+        },
+        {
+          "id": "PLA_SILK_DUAL",
+          "name": "PLA",
+          "label": "Silk dual color",
+          "slicerType": "PLA Silk Dual",
+          "pricePerKg": 65,
+          "ratePerG": 0.065,
+          "density": 1.23,
+          "pricePerCm3": 0.08,
+          "category": "Silk Dual-Color",
+          "group": "standard",
+          "desc": "Jedwabiste PLA dwukolorowe.",
+          "hdt": "55°C",
+          "tensileStrength": "Wysoka",
+          "uvResistance": "Średnia",
+          "roughness": 0.28,
+          "metalness": 0.15,
+          "tier": "premium",
+          "aliases": [
+            "pla silk dual",
+            "dual",
+            "PLA_SILK_DUAL",
+            "PLA Silk"
+          ],
+          "badge": null,
+          "nozzleTemp": 220,
+          "bedTemp": 55,
+          "colors": [
+            {
+              "id": "silk_dual_black_blue",
+              "name": "Black Blue",
+              "hex": "#1A237E",
+              "colors": [
+                "#111111",
+                "#1565C0"
+              ],
+              "gradient": "linear-gradient(135deg, #111 50%, #1565C0 50%)"
+            },
+            {
+              "id": "silk_dual_black_purple",
+              "name": "Black Purple",
+              "hex": "#4A148C",
+              "colors": [
+                "#111111",
+                "#7B1FA2"
+              ],
+              "gradient": "linear-gradient(135deg, #111 50%, #7B1FA2 50%)"
+            },
+            {
+              "id": "silk_dual_black_green",
+              "name": "Black Green",
+              "hex": "#1B5E20",
+              "colors": [
+                "#111111",
+                "#2E7D32"
+              ],
+              "gradient": "linear-gradient(135deg, #111 50%, #2E7D32 50%)"
+            },
+            {
+              "id": "silk_dual_black_white",
+              "name": "Black White",
+              "hex": "#757575",
+              "colors": [
+                "#111111",
+                "#FFFFFF"
+              ],
+              "gradient": "linear-gradient(135deg, #111 50%, #FFF 50%)"
+            },
+            {
+              "id": "silk_dual_blue_green",
+              "name": "Blue Green",
+              "hex": "#00897B",
+              "colors": [
+                "#0288D1",
+                "#43A047"
+              ],
+              "gradient": "linear-gradient(135deg, #0288D1 50%, #43A047 50%)"
+            },
+            {
+              "id": "silk_dual_green_purple",
+              "name": "Green Purple",
+              "hex": "#6A1B9A",
+              "colors": [
+                "#2E7D32",
+                "#8E24AA"
+              ],
+              "gradient": "linear-gradient(135deg, #2E7D32 50%, #8E24AA 50%)"
+            },
+            {
+              "id": "silk_dual_red_blue",
+              "name": "Red Blue",
+              "hex": "#880E4F",
+              "colors": [
+                "#D32F2F",
+                "#1976D2"
+              ],
+              "gradient": "linear-gradient(135deg, #D32F2F 50%, #1976D2 50%)"
+            },
+            {
+              "id": "silk_dual_red_gold",
+              "name": "Red Gold",
+              "hex": "#B71C1C",
+              "colors": [
+                "#D32F2F",
+                "#FFB300"
+              ],
+              "gradient": "linear-gradient(135deg, #D32F2F 50%, #FFB300 50%)"
+            },
+            {
+              "id": "silk_dual_pink_gold",
+              "name": "Pink Gold",
+              "hex": "#F48FB1",
+              "colors": [
+                "#EC407A",
+                "#FFD54F"
+              ],
+              "gradient": "linear-gradient(135deg, #EC407A 50%, #FFD54F 50%)"
+            }
+          ]
+        },
+        {
+          "id": "PLA_TRI",
+          "name": "PLA",
+          "label": "Tri color",
+          "slicerType": "PLA Silk Tri",
+          "pricePerKg": 65,
+          "ratePerG": 0.065,
+          "density": 1.23,
+          "pricePerCm3": 0.08,
+          "category": "Silk Tri-Color",
+          "group": "standard",
+          "desc": "Jedwabiste PLA trójkolorowe.",
+          "hdt": "55°C",
+          "tensileStrength": "Wysoka",
+          "uvResistance": "Średnia",
+          "roughness": 0.28,
+          "metalness": 0.15,
+          "tier": "premium",
+          "aliases": [
+            "pla tri",
+            "tri",
+            "PLA_TRI",
+            "PLA_SILK_TRI"
+          ],
+          "badge": null,
+          "nozzleTemp": 220,
+          "bedTemp": 55,
+          "colors": [
+            {
+              "id": "silk_tri_black_gold_purple",
+              "name": "Black Gold Purple",
+              "hex": "#6A1B9A",
+              "colors": [
+                "#111111",
+                "#FFB300",
+                "#8E24AA"
+              ],
+              "gradient": "linear-gradient(135deg, #111 33%, #FFB300 33% 66%, #8E24AA 66%)"
+            },
+            {
+              "id": "silk_tri_orange_blue_green",
+              "name": "Orange Blue Green",
+              "hex": "#00897B",
+              "colors": [
+                "#FF6D00",
+                "#0288D1",
+                "#2E7D32"
+              ],
+              "gradient": "linear-gradient(135deg, #FF6D00 33%, #0288D1 33% 66%, #2E7D32 66%)"
+            },
+            {
+              "id": "silk_tri_red_yellow_green",
+              "name": "Red Yellow Green",
+              "hex": "#FBC02D",
+              "colors": [
+                "#D32F2F",
+                "#FDD835",
+                "#388E3C"
+              ],
+              "gradient": "linear-gradient(135deg, #D32F2F 33%, #FDD835 33% 66%, #388E3C 66%)"
+            },
+            {
+              "id": "silk_tri_red_yellow_blue",
+              "name": "Red Yellow Blue",
+              "hex": "#D32F2F",
+              "colors": [
+                "#D32F2F",
+                "#FDD835",
+                "#1976D2"
+              ],
+              "gradient": "linear-gradient(135deg, #D32F2F 33%, #FDD835 33% 66%, #1976D2 66%)"
+            },
+            {
+              "id": "silk_tri_blue_green_purple",
+              "name": "Blue Green Purple",
+              "hex": "#512DA8",
+              "colors": [
+                "#1976D2",
+                "#388E3C",
+                "#7B1FA2"
+              ],
+              "gradient": "linear-gradient(135deg, #1976D2 33%, #388E3C 33% 66%, #7B1FA2 66%)"
+            }
+          ]
+        },
+        {
+          "id": "PLA_GALAXY",
+          "name": "PLA",
+          "label": "Galaxy",
+          "slicerType": "PLA Galaxy",
+          "pricePerKg": 75,
+          "ratePerG": 0.075,
+          "density": 1.22,
+          "pricePerCm3": 0.0915,
+          "category": "PLA Galaxy",
+          "group": "standard",
+          "desc": "PLA z efektem galaktyki / brokatu.",
+          "hdt": "55°C",
+          "tensileStrength": "Wysoka",
+          "uvResistance": "Średnia",
+          "roughness": 0.35,
+          "metalness": 0.12,
+          "tier": "premium",
+          "aliases": [
+            "pla galaxy",
+            "galaxy",
+            "PLA_GALAXY"
+          ],
+          "badge": null,
+          "nozzleTemp": 215,
+          "bedTemp": 55,
+          "colors": [
+            {
+              "id": "galaxy_starlit_flow",
+              "name": "Starlit Flow",
+              "hex": "#1A2A44",
+              "gradient": "radial-gradient(circle, #2A4365, #0F172A)"
+            },
+            {
+              "id": "galaxy_green",
+              "name": "Galaxy Green",
+              "hex": "#143D28",
+              "gradient": "radial-gradient(circle, #1F5F3E, #092013)"
+            },
+            {
+              "id": "galaxy_stardust_purple",
+              "name": "Stardust Purple",
+              "hex": "#381E47",
+              "gradient": "radial-gradient(circle, #552B6F, #220F2E)"
+            },
+            {
+              "id": "galaxy_star_brown",
+              "name": "Star Brown",
+              "hex": "#42281D",
+              "gradient": "radial-gradient(circle, #5F3826, #2B1810)"
+            }
+          ]
+        },
+        {
+          "id": "PLA_RAINBOW",
+          "name": "PLA",
+          "label": "Rainbow",
+          "slicerType": "PLA Rainbow",
+          "pricePerKg": 75,
+          "ratePerG": 0.075,
+          "density": 1.21,
+          "pricePerCm3": 0.0907,
+          "category": "PLA Rainbow",
+          "group": "standard",
+          "desc": "PLA z gradientem tęczowym.",
+          "hdt": "55°C",
+          "tensileStrength": "Wysoka",
+          "uvResistance": "Średnia",
+          "roughness": 0.28,
+          "metalness": 0.1,
+          "tier": "premium",
+          "aliases": [
+            "pla rainbow",
+            "rainbow",
+            "PLA_RAINBOW"
+          ],
+          "badge": null,
+          "nozzleTemp": 210,
+          "bedTemp": 55,
+          "colors": [
+            {
+              "id": "rainbow_01",
+              "name": "Rainbow 01",
+              "hex": "#E91E63",
+              "colors": [
+                "#E91E63",
+                "#9C27B0",
+                "#2196F3",
+                "#4CAF50",
+                "#FFEB3B",
+                "#FF9800"
+              ],
+              "gradient": "linear-gradient(90deg, #E91E63, #9C27B0, #2196F3, #4CAF50, #FFEB3B, #FF9800)"
+            },
+            {
+              "id": "rainbow_02",
+              "name": "Rainbow 02",
+              "hex": "#00BCD4",
+              "colors": [
+                "#00BCD4",
+                "#8BC34A",
+                "#CDDC39",
+                "#FFC107",
+                "#FF5722"
+              ],
+              "gradient": "linear-gradient(90deg, #00BCD4, #8BC34A, #CDDC39, #FFC107, #FF5722)"
+            },
+            {
+              "id": "rainbow_03",
+              "name": "Rainbow 03",
+              "hex": "#AB47BC",
+              "colors": [
+                "#7E57C2",
+                "#42A5F5",
+                "#26A69A",
+                "#D4E157",
+                "#FFA726"
+              ],
+              "gradient": "linear-gradient(90deg, #7E57C2, #42A5F5, #26A69A, #D4E157, #FFA726)"
+            },
+            {
+              "id": "rainbow_04",
+              "name": "Rainbow 04",
+              "hex": "#26C6DA",
+              "colors": [
+                "#26C6DA",
+                "#80CBC4",
+                "#B2DFDB",
+                "#FFE082",
+                "#FFAB91"
+              ],
+              "gradient": "linear-gradient(90deg, #26C6DA, #80CBC4, #B2DFDB, #FFE082, #FFAB91)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PETG",
+      "name": "PETG",
+      "group": "standard",
+      "pickerTitle": "Wybierz rodzaj PETG",
+      "desc": "Trwały, wodoodporny materiał o podwyższonej odporności termicznej i chemicznej.",
+      "hdt": "75°C",
+      "tensileStrength": "Bardzo wysoka",
+      "uvResistance": "Dobra",
+      "subtypes": [
+        {
+          "id": "PETG",
+          "name": "PETG",
+          "label": "Standard",
+          "slicerType": "PETG",
+          "pricePerKg": 60,
+          "ratePerG": 0.06,
+          "density": 1.27,
+          "pricePerCm3": 0.0762,
+          "category": "single",
+          "group": "standard",
+          "desc": "PETG standardowy do części użytkowych.",
+          "hdt": "75°C",
+          "tensileStrength": "Bardzo wysoka",
+          "uvResistance": "Dobra",
+          "roughness": 0.3,
+          "metalness": 0.1,
+          "tier": "standard",
+          "aliases": [
+            "petg",
+            "PETG",
+            "PETG_TOUGH"
+          ],
+          "badge": "Użytkowy",
+          "nozzleTemp": 235,
+          "bedTemp": 75,
+          "colors": [
+            {
+              "id": "petg_black",
+              "name": "Black",
+              "hex": "#111215"
+            },
+            {
+              "id": "petg_white",
+              "name": "White",
+              "hex": "#F8F9FA"
+            },
+            {
+              "id": "petg_sakura_pink",
+              "name": "Sakura Pink",
+              "hex": "#FFB3C6"
+            },
+            {
+              "id": "petg_green",
+              "name": "Green",
+              "hex": "#0E8A37"
+            },
+            {
+              "id": "petg_cyan",
+              "name": "Cyan",
+              "hex": "#00BCDB"
+            },
+            {
+              "id": "petg_sunny_orange",
+              "name": "Sunny Orange",
+              "hex": "#FF6B00"
+            },
+            {
+              "id": "petg_beige",
+              "name": "Beige",
+              "hex": "#E8D8C8"
+            },
+            {
+              "id": "petg_chocolate",
+              "name": "Chocolate",
+              "hex": "#381E11"
+            },
+            {
+              "id": "petg_mint_green",
+              "name": "Mint Green",
+              "hex": "#88D49E"
+            },
+            {
+              "id": "petg_cherry_red",
+              "name": "Cherry Red",
+              "hex": "#C62828"
+            },
+            {
+              "id": "petg_sky_blue",
+              "name": "Sky Blue",
+              "hex": "#56CCF2"
+            },
+            {
+              "id": "petg_lemon_yellow",
+              "name": "Lemon Yellow",
+              "hex": "#FFF033"
+            },
+            {
+              "id": "petg_lavender",
+              "name": "Lavender",
+              "hex": "#9B72CF"
+            },
+            {
+              "id": "petg_grey",
+              "name": "Grey",
+              "hex": "#8E9297"
+            },
+            {
+              "id": "petg_ceramic",
+              "name": "Ceramic",
+              "hex": "#FFFFFF"
+            },
+            {
+              "id": "petg_midnight",
+              "name": "Midnight",
+              "hex": "#111215"
+            },
+            {
+              "id": "petg_olive_green",
+              "name": "Olive Green",
+              "hex": "#556B2F"
+            },
+            {
+              "id": "petg_oak",
+              "name": "Oak",
+              "hex": "#8F6843"
+            },
+            {
+              "id": "petg_vivid_yellow",
+              "name": "Vivid Yellow",
+              "hex": "#FFD000"
+            },
+            {
+              "id": "petg_red",
+              "name": "Red",
+              "hex": "#D81E06"
+            },
+            {
+              "id": "petg_silver",
+              "name": "Silver",
+              "hex": "#C5C6C7"
+            },
+            {
+              "id": "petg_magenta",
+              "name": "Magenta",
+              "hex": "#C2185B"
+            }
+          ]
+        },
+        {
+          "id": "PETG_CF",
+          "name": "PETG",
+          "label": "Carbon fiber",
+          "slicerType": "PETG-CF",
+          "pricePerKg": 110,
+          "ratePerG": 0.11,
+          "density": 1.3,
+          "pricePerCm3": 0.143,
+          "category": "single",
+          "group": "composite",
+          "desc": "PETG wzmocniony włóknem węglowym.",
+          "hdt": "78°C",
+          "tensileStrength": "Ekstremalna sztywność",
+          "uvResistance": "Dobra",
+          "roughness": 0.85,
+          "metalness": 0.12,
+          "tier": "premium",
+          "aliases": [
+            "petg cf",
+            "PETG-CF",
+            "PETG carbon"
+          ],
+          "badge": "Kompozyt Carbon",
+          "nozzleTemp": 250,
+          "bedTemp": 80,
+          "colors": [
+            {
+              "id": "petg_cf_black",
+              "name": "Black",
+              "hex": "#111215"
+            }
+          ]
+        },
+        {
+          "id": "PETG_FR",
+          "name": "PETG",
+          "label": "FR V0",
+          "slicerType": "PETG FR",
+          "pricePerKg": 234,
+          "ratePerG": 0.234,
+          "density": 1.29,
+          "pricePerCm3": 0.3019,
+          "category": "single",
+          "group": "tech",
+          "desc": "PETG trudnopalny UL94 V-0.",
+          "hdt": "78°C",
+          "tensileStrength": "Bardzo wysoka",
+          "uvResistance": "Dobra",
+          "roughness": 0.4,
+          "metalness": 0.08,
+          "tier": "premium",
+          "aliases": [
+            "petg_fr",
+            "PETG FR",
+            "PETG FR V0"
+          ],
+          "badge": "UL94 V-0",
+          "nozzleTemp": 245,
+          "bedTemp": 80,
+          "colors": [
+            {
+              "id": "petg_fr_natural",
+              "name": "Natural",
+              "hex": "#EDEDE8"
+            },
+            {
+              "id": "petg_fr_black",
+              "name": "Black",
+              "hex": "#111215"
+            },
+            {
+              "id": "petg_fr_gray",
+              "name": "Gray",
+              "hex": "#8E9297"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ABS",
+      "name": "ABS",
+      "group": "tech",
+      "pickerTitle": "Wybierz rodzaj ABS",
+      "desc": "Przemysłowy standard o wysokiej sztywności, twardości i odporności na uderzenia.",
+      "hdt": "90°C",
+      "tensileStrength": "Wysoka udarność",
+      "uvResistance": "Średnia",
+      "subtypes": [
+        {
+          "id": "ABS",
+          "name": "ABS",
+          "label": "Standard",
+          "slicerType": "ABS",
+          "pricePerKg": 68,
+          "ratePerG": 0.068,
+          "density": 1.05,
+          "pricePerCm3": 0.0714,
+          "category": "single",
+          "group": "tech",
+          "desc": "ABS przemysłowy.",
+          "hdt": "90°C",
+          "tensileStrength": "Wysoka udarność",
+          "uvResistance": "Średnia",
+          "roughness": 0.5,
+          "metalness": 0.05,
+          "tier": "standard",
+          "aliases": [
+            "abs",
+            "ABS",
+            "ABS_INDUSTRY"
+          ],
+          "badge": "Odporny termicznie",
+          "nozzleTemp": 245,
+          "bedTemp": 100,
+          "colors": [
+            {
+              "id": "abs_white",
+              "name": "White",
+              "hex": "#F8F9FA"
+            },
+            {
+              "id": "abs_silver",
+              "name": "Silver",
+              "hex": "#C5C6C7"
+            },
+            {
+              "id": "abs_green",
+              "name": "Green",
+              "hex": "#0E8A37"
+            },
+            {
+              "id": "abs_beige",
+              "name": "Beige",
+              "hex": "#E8D8C8"
+            },
+            {
+              "id": "abs_olive_green",
+              "name": "Olive Green",
+              "hex": "#556B2F"
+            },
+            {
+              "id": "abs_cyan",
+              "name": "Cyan",
+              "hex": "#00BCDB"
+            },
+            {
+              "id": "abs_magenta",
+              "name": "Magenta",
+              "hex": "#C2185B"
+            },
+            {
+              "id": "abs_grey",
+              "name": "Grey",
+              "hex": "#8E9297"
+            },
+            {
+              "id": "abs_gold",
+              "name": "Gold",
+              "hex": "#D4AF37"
+            },
+            {
+              "id": "abs_yellow",
+              "name": "Yellow",
+              "hex": "#FFCD00"
+            },
+            {
+              "id": "abs_sunny_orange",
+              "name": "Sunny Orange",
+              "hex": "#FF6B00"
+            },
+            {
+              "id": "abs_black",
+              "name": "Black",
+              "hex": "#111215"
+            },
+            {
+              "id": "abs_coffee_brown",
+              "name": "Coffee Brown",
+              "hex": "#5C3A21"
+            },
+            {
+              "id": "abs_blue",
+              "name": "Blue",
+              "hex": "#1976D2"
+            }
+          ]
+        },
+        {
+          "id": "ABS_GF",
+          "name": "ABS",
+          "label": "GF",
+          "slicerType": "ABS GF",
+          "pricePerKg": 90,
+          "ratePerG": 0.09,
+          "density": 1.15,
+          "pricePerCm3": 0.1035,
+          "category": "single",
+          "group": "tech",
+          "desc": "ABS wzmocniony włóknem szklanym.",
+          "hdt": "95°C",
+          "tensileStrength": "Wysoka sztywność",
+          "uvResistance": "Średnia",
+          "roughness": 0.7,
+          "metalness": 0.05,
+          "tier": "premium",
+          "aliases": [
+            "abs gf",
+            "ABS-GF",
+            "ABS_GF"
+          ],
+          "badge": null,
+          "nozzleTemp": 250,
+          "bedTemp": 100,
+          "colors": [
+            {
+              "id": "abs_gf_natural",
+              "name": "Natural",
+              "hex": "#EDEDE8"
+            }
+          ]
+        },
+        {
+          "id": "ABS_FR",
+          "name": "ABS",
+          "label": "FR",
+          "slicerType": "ABS FR",
+          "pricePerKg": 158,
+          "ratePerG": 0.158,
+          "density": 1.16,
+          "pricePerCm3": 0.1833,
+          "category": "single",
+          "group": "tech",
+          "desc": "ABS trudnopalny.",
+          "hdt": "95°C",
+          "tensileStrength": "Wysoka",
+          "uvResistance": "Średnia",
+          "roughness": 0.55,
+          "metalness": 0.05,
+          "tier": "premium",
+          "aliases": [
+            "abs fr",
+            "ABS-FR",
+            "ABS_FR"
+          ],
+          "badge": null,
+          "nozzleTemp": 250,
+          "bedTemp": 100,
+          "colors": [
+            {
+              "id": "abs_fr_black",
+              "name": "Black",
+              "hex": "#111215"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ASA",
+      "name": "ASA",
+      "group": "tech",
+      "pickerTitle": "Wybierz rodzaj ASA",
+      "desc": "Polimer do ekspozycji na zewnątrz — odporny na UV, deszcz i mróz.",
+      "hdt": "95°C",
+      "tensileStrength": "Bardzo wysoka",
+      "uvResistance": "Maksymalna (Outdoor)",
+      "subtypes": [
+        {
+          "id": "ASA",
+          "name": "ASA",
+          "label": "Standard",
+          "slicerType": "ASA",
+          "pricePerKg": 101,
+          "ratePerG": 0.101,
+          "density": 1.07,
+          "pricePerCm3": 0.1081,
+          "category": "single",
+          "group": "tech",
+          "desc": "ASA outdoor / UV.",
+          "hdt": "95°C",
+          "tensileStrength": "Bardzo wysoka",
+          "uvResistance": "Maksymalna (Outdoor)",
+          "roughness": 0.7,
+          "metalness": 0.05,
+          "tier": "premium",
+          "aliases": [
+            "asa",
+            "ASA",
+            "ASA_UV"
+          ],
+          "badge": "Odporny UV",
+          "nozzleTemp": 250,
+          "bedTemp": 100,
+          "colors": [
+            {
+              "id": "asa_grey",
+              "name": "Grey",
+              "hex": "#8E9297"
+            },
+            {
+              "id": "asa_klein_blue",
+              "name": "Klein Blue",
+              "hex": "#002FA7"
+            },
+            {
+              "id": "asa_green",
+              "name": "Green",
+              "hex": "#0E8A37"
+            },
+            {
+              "id": "asa_white",
+              "name": "White",
+              "hex": "#F8F9FA"
+            },
+            {
+              "id": "asa_black",
+              "name": "Black",
+              "hex": "#111215"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TPU",
+      "name": "TPU 95A",
+      "group": "flex",
+      "pickerTitle": "Wybierz rodzaj TPU",
+      "desc": "Elastomer 95A Shore — tłumi drgania i wraca do kształtu.",
+      "hdt": "60°C",
+      "tensileStrength": "Sprężysta guma",
+      "uvResistance": "Bardzo dobra",
+      "subtypes": [
+        {
+          "id": "TPU_95A",
+          "name": "TPU 95A",
+          "label": "95A",
+          "slicerType": "TPU 95A",
+          "pricePerKg": 105,
+          "ratePerG": 0.105,
+          "density": 1.21,
+          "pricePerCm3": 0.127,
+          "category": "single",
+          "group": "flex",
+          "desc": "TPU 95A / guma.",
+          "hdt": "60°C",
+          "tensileStrength": "Sprężysta guma",
+          "uvResistance": "Bardzo dobra",
+          "roughness": 0.6,
+          "metalness": 0.0,
+          "tier": "premium",
+          "aliases": [
+            "tpu",
+            "tpu_95a",
+            "TPU 95A",
+            "TPU_FLEX",
+            "FLEX"
+          ],
+          "badge": "Elastyczna guma",
+          "nozzleTemp": 220,
+          "bedTemp": 50,
+          "colors": [
+            {
+              "id": "tpu_sunny_orange",
+              "name": "Sunny Orange",
+              "hex": "#FF6B00"
+            },
+            {
+              "id": "tpu_azure",
+              "name": "Azure",
+              "hex": "#00A3E0"
+            },
+            {
+              "id": "tpu_black",
+              "name": "Black",
+              "hex": "#111215"
+            },
+            {
+              "id": "tpu_white",
+              "name": "White",
+              "hex": "#F8F9FA"
+            },
+            {
+              "id": "tpu_grey",
+              "name": "Grey",
+              "hex": "#8E9297"
+            },
+            {
+              "id": "tpu_green",
+              "name": "Green",
+              "hex": "#0E8A37"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PA",
+      "name": "PA",
+      "group": "tech",
+      "pickerTitle": "Wybierz rodzaj PA",
+      "desc": "Poliamidy konstrukcyjne — od łatwego Easy PA po kompozyty CF.",
+      "hdt": "120°C",
+      "tensileStrength": "Bardzo wysoka",
+      "uvResistance": "Bardzo dobra",
+      "subtypes": [
+        {
+          "id": "PA12_CF",
+          "name": "PA",
+          "label": "PA 12-CF",
+          "slicerType": "PA12 CF",
+          "pricePerKg": 359,
+          "ratePerG": 0.359,
+          "density": 1.15,
+          "pricePerCm3": 0.4128,
+          "category": "single",
+          "group": "composite",
+          "desc": "Nylon PA12 z włóknem węglowym.",
+          "hdt": "155°C",
+          "tensileStrength": "Ekstremalna sztywność",
+          "uvResistance": "Bardzo dobra",
+          "roughness": 0.85,
+          "metalness": 0.15,
+          "tier": "premium",
+          "aliases": [
+            "pa12_cf",
+            "PA12 CF",
+            "PA12_CF15",
+            "PA-CF",
+            "PA 12-CF"
+          ],
+          "badge": "Kompozyt Carbon",
+          "nozzleTemp": 280,
+          "bedTemp": 100,
+          "colors": [
+            {
+              "id": "pa12_cf_black",
+              "name": "Black",
+              "hex": "#111215"
+            }
+          ]
+        },
+        {
+          "id": "PA6_CF",
+          "name": "PA",
+          "label": "PA 6 CF",
+          "slicerType": "PA6 CF",
+          "pricePerKg": 225,
+          "ratePerG": 0.225,
+          "density": 1.2,
+          "pricePerCm3": 0.27,
+          "category": "single",
+          "group": "composite",
+          "desc": "Nylon PA6 z włóknem węglowym.",
+          "hdt": "150°C",
+          "tensileStrength": "Ekstremalna sztywność",
+          "uvResistance": "Bardzo dobra",
+          "roughness": 0.85,
+          "metalness": 0.12,
+          "tier": "premium",
+          "aliases": [
+            "pa6 cf",
+            "PA6-CF",
+            "PA 6 CF",
+            "PA6_CF"
+          ],
+          "badge": null,
+          "nozzleTemp": 280,
+          "bedTemp": 100,
+          "colors": [
+            {
+              "id": "pa6_cf_black",
+              "name": "Black",
+              "hex": "#111215"
+            }
+          ]
+        },
+        {
+          "id": "EASY_PA",
+          "name": "PA",
+          "label": "Easy PA",
+          "slicerType": "Easy PA",
+          "pricePerKg": 110,
+          "ratePerG": 0.11,
+          "density": 1.14,
+          "pricePerCm3": 0.1254,
+          "category": "single",
+          "group": "tech",
+          "desc": "Łatwiejszy w druku nylon (Easy PA).",
+          "hdt": "120°C",
+          "tensileStrength": "Wysoka",
+          "uvResistance": "Dobra",
+          "roughness": 0.55,
+          "metalness": 0.05,
+          "tier": "premium",
+          "aliases": [
+            "easy pa",
+            "EASY_PA",
+            "EasyPA"
+          ],
+          "badge": null,
+          "nozzleTemp": 260,
+          "bedTemp": 80,
+          "colors": [
+            {
+              "id": "easy_pa_natural",
+              "name": "Natural",
+              "hex": "#EDEDE8"
+            },
+            {
+              "id": "easy_pa_black",
+              "name": "Black",
+              "hex": "#111215"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PP",
+      "name": "PP",
+      "group": "tech",
+      "pickerTitle": "Wybierz rodzaj PP",
+      "desc": "Polipropylen — niska higroskopijność i odporność chemiczna.",
+      "hdt": "85°C",
+      "tensileStrength": "Wysoka sprężystość",
+      "uvResistance": "Dobra",
+      "subtypes": [
+        {
+          "id": "PP",
+          "name": "PP",
+          "label": "Standard",
+          "slicerType": "PP",
+          "pricePerKg": 170,
+          "ratePerG": 0.17,
+          "density": 0.9,
+          "pricePerCm3": 0.153,
+          "category": "single",
+          "group": "tech",
+          "desc": "PP naturalny.",
+          "hdt": "85°C",
+          "tensileStrength": "Wysoka sprężystość",
+          "uvResistance": "Dobra",
+          "roughness": 0.6,
+          "metalness": 0.0,
+          "tier": "premium",
+          "aliases": [
+            "pp",
+            "PP",
+            "PP_TECH"
+          ],
+          "badge": null,
+          "nozzleTemp": 225,
+          "bedTemp": 85,
+          "colors": [
+            {
+              "id": "pp_natural",
+              "name": "Natural",
+              "hex": "#EDEDE8"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PC",
+      "name": "PC",
+      "group": "tech",
+      "pickerTitle": "Wybierz rodzaj PC",
+      "desc": "Poliwęglan — udarność i praca w podwyższonej temperaturze.",
+      "hdt": "115°C",
+      "tensileStrength": "Ekstremalna",
+      "uvResistance": "Bardzo dobra",
+      "subtypes": [
+        {
+          "id": "PC",
+          "name": "PC",
+          "label": "Standard",
+          "slicerType": "PC",
+          "pricePerKg": 158,
+          "ratePerG": 0.158,
+          "density": 1.2,
+          "pricePerCm3": 0.1896,
+          "category": "single",
+          "group": "tech",
+          "desc": "PC naturalny.",
+          "hdt": "115°C",
+          "tensileStrength": "Ekstremalna",
+          "uvResistance": "Bardzo dobra",
+          "roughness": 0.35,
+          "metalness": 0.08,
+          "tier": "premium",
+          "aliases": [
+            "pc",
+            "PC",
+            "polycarbonate"
+          ],
+          "badge": null,
+          "nozzleTemp": 270,
+          "bedTemp": 110,
+          "colors": [
+            {
+              "id": "pc_natural",
+              "name": "Natural",
+              "hex": "#EDEDE8"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PCTG",
+      "name": "PCTG",
+      "group": "tech",
+      "pickerTitle": "Wybierz rodzaj PCTG",
+      "desc": "Kopoliester o wysokiej udarności — odporny na pękanie dynamiczne.",
+      "hdt": "76°C",
+      "tensileStrength": "Ekstremalna",
+      "uvResistance": "Dobra",
+      "subtypes": [
+        {
+          "id": "PCTG",
+          "name": "PCTG",
+          "label": "Standard",
+          "slicerType": "PCTG",
+          "pricePerKg": 150,
+          "ratePerG": 0.15,
+          "density": 1.23,
+          "pricePerCm3": 0.1845,
+          "category": "single",
+          "group": "tech",
+          "desc": "PCTG — transparent, czarny, orange, blue, grafit, white.",
+          "hdt": "76°C",
+          "tensileStrength": "Ekstremalna",
+          "uvResistance": "Dobra",
+          "roughness": 0.35,
+          "metalness": 0.08,
+          "tier": "premium",
+          "aliases": [
+            "pctg",
+            "PCTG",
+            "PCTG_PRO"
+          ],
+          "badge": "Wysoka udarność",
+          "nozzleTemp": 240,
+          "bedTemp": 75,
+          "colors": [
+            {
+              "id": "pctg_transparent",
+              "name": "Transparent",
+              "hex": "#ECEFF1",
+              "transparent": true
+            },
+            {
+              "id": "pctg_black",
+              "name": "Black",
+              "hex": "#111215"
+            },
+            {
+              "id": "pctg_orange",
+              "name": "Orange",
+              "hex": "#FF6D00"
+            },
+            {
+              "id": "pctg_blue",
+              "name": "Blue",
+              "hex": "#1976D2"
+            },
+            {
+              "id": "pctg_graphite",
+              "name": "Graphite",
+              "hex": "#4A4E54"
+            },
+            {
+              "id": "pctg_white",
+              "name": "White",
+              "hex": "#F8F9FA"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "id": "PLA_STANDARD",
+      "familyId": "PLA",
+      "familyName": "PLA",
+      "subtypeLabel": "Standard",
+      "name": "PLA",
+      "aliases": [
+        "pla",
+        "PLA",
+        "PLA_STANDARD",
+        "PLA Tough",
+        "PLA Matte",
+        "PLA Basic",
+        "PLA_STANDARD",
+        "PLA"
+      ],
+      "group": "standard",
+      "badge": "Najpopularniejszy",
+      "slicerType": "PLA",
+      "desc": "Sunlu PLA — standardowy filament do prototypów i detali.",
+      "pricePerKg": 45,
+      "ratePerG": 0.045,
+      "density": 1.24,
+      "hdt": "55°C",
+      "tensileStrength": "Wysoka",
+      "uvResistance": "Średnia",
+      "colors": [
+        {
+          "id": "pla_beige",
+          "name": "Beige",
+          "hex": "#E8D8C8"
+        },
+        {
+          "id": "pla_bone_white",
+          "name": "Bone White",
+          "hex": "#F3EFE6"
+        },
+        {
+          "id": "pla_ceramic",
+          "name": "Ceramic",
+          "hex": "#FFFFFF"
+        },
+        {
+          "id": "pla_coffee_brown",
+          "name": "Coffee Brown",
+          "hex": "#5C3A21"
+        },
+        {
+          "id": "pla_chocolate",
+          "name": "Chocolate",
+          "hex": "#381E11"
+        },
+        {
+          "id": "pla_cyan",
+          "name": "Cyan",
+          "hex": "#00BCDB"
+        },
+        {
+          "id": "pla_grey",
+          "name": "Grey",
+          "hex": "#8E9297"
+        },
+        {
+          "id": "pla_green",
+          "name": "Green",
+          "hex": "#0E8A37"
+        },
+        {
+          "id": "pla_light_green",
+          "name": "Light Green",
+          "hex": "#78C850"
+        },
+        {
+          "id": "pla_midnight",
+          "name": "Midnight",
+          "hex": "#111215"
+        },
+        {
+          "id": "pla_roasted_chestnut",
+          "name": "Roasted Chestnut",
+          "hex": "#6E3725"
+        },
+        {
+          "id": "pla_klein_blue",
+          "name": "Klein Blue",
+          "hex": "#002FA7"
+        },
+        {
+          "id": "pla_lemon_yellow",
+          "name": "Lemon Yellow",
+          "hex": "#FFF033"
+        },
+        {
+          "id": "pla_yellow",
+          "name": "Yellow",
+          "hex": "#FFCD00"
+        },
+        {
+          "id": "pla_light_gold",
+          "name": "Light Gold",
+          "hex": "#D4AF37"
+        },
+        {
+          "id": "pla_silver",
+          "name": "Silver",
+          "hex": "#C5C6C7"
+        },
+        {
+          "id": "pla_sakura_pink",
+          "name": "Sakura Pink",
+          "hex": "#FFB3C6"
+        },
+        {
+          "id": "pla_sunny_orange",
+          "name": "Sunny Orange",
+          "hex": "#FF6B00"
+        },
+        {
+          "id": "pla_sky_blue",
+          "name": "Sky Blue",
+          "hex": "#56CCF2"
+        },
+        {
+          "id": "pla_red",
+          "name": "Red",
+          "hex": "#D81E06"
+        },
+        {
+          "id": "pla_lavender_purple",
+          "name": "Lavender Purple",
+          "hex": "#9B72CF"
+        },
+        {
+          "id": "pla_mint_green",
+          "name": "Mint Green",
+          "hex": "#88D49E"
+        },
+        {
+          "id": "pla_transparent",
+          "name": "Transparent",
+          "hex": "#ECEFF1",
+          "transparent": true
+        },
+        {
+          "id": "pla_olive_green",
+          "name": "Olive Green",
+          "hex": "#556B2F"
+        },
+        {
+          "id": "pla_magenta",
+          "name": "Magenta",
+          "hex": "#C2185B"
+        },
+        {
+          "id": "pla_vivid_yellow",
+          "name": "Vivid Yellow",
+          "hex": "#FFD000"
+        },
+        {
+          "id": "pla_oak",
+          "name": "Oak",
+          "hex": "#8F6843"
+        },
+        {
+          "id": "pla_transparent_red",
+          "name": "Transparent Red",
+          "hex": "#E53935",
+          "transparent": true
+        },
+        {
+          "id": "pla_transparent_orange",
+          "name": "Transparent Orange",
+          "hex": "#FB8C00",
+          "transparent": true
+        },
+        {
+          "id": "pla_transparent_green",
+          "name": "Transparent Green",
+          "hex": "#43A047",
+          "transparent": true
+        },
+        {
+          "id": "pla_transparent_yellow",
+          "name": "Transparent Yellow",
+          "hex": "#FDD835",
+          "transparent": true
+        },
+        {
+          "id": "pla_transparent_purple",
+          "name": "Transparent Purple",
+          "hex": "#8E24AA",
+          "transparent": true
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "PLA_WOOD",
+      "familyId": "PLA",
+      "familyName": "PLA",
+      "subtypeLabel": "Wood",
+      "name": "PLA · Wood",
+      "aliases": [
+        "pla wood",
+        "WOOD",
+        "PLA_WOOD",
+        "PLA_WOOD",
+        "PLA"
+      ],
+      "group": "standard",
+      "badge": null,
+      "slicerType": "PLA Wood",
+      "desc": "PLA z domieszką pyłu drzewnego.",
+      "pricePerKg": 65,
+      "ratePerG": 0.065,
+      "density": 1.25,
+      "hdt": "55°C",
+      "tensileStrength": "Średnia",
+      "uvResistance": "Średnia",
+      "colors": [
+        {
+          "id": "wood_maple_wood",
+          "name": "Maple Wood",
+          "hex": "#C49A6C"
+        },
+        {
+          "id": "wood_wood",
+          "name": "Wood",
+          "hex": "#A87C4F"
+        },
+        {
+          "id": "wood_walnut_wood",
+          "name": "Walnut Wood",
+          "hex": "#533826"
+        },
+        {
+          "id": "wood_cherry_wood",
+          "name": "Cherry Wood",
+          "hex": "#7A2F21"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "PLA_SILK_DUAL",
+      "familyId": "PLA",
+      "familyName": "PLA",
+      "subtypeLabel": "Silk dual color",
+      "name": "PLA · Silk dual color",
+      "aliases": [
+        "pla silk dual",
+        "dual",
+        "PLA_SILK_DUAL",
+        "PLA Silk",
+        "PLA_SILK_DUAL",
+        "PLA"
+      ],
+      "group": "standard",
+      "badge": null,
+      "slicerType": "PLA Silk Dual",
+      "desc": "Jedwabiste PLA dwukolorowe.",
+      "pricePerKg": 65,
+      "ratePerG": 0.065,
+      "density": 1.23,
+      "hdt": "55°C",
+      "tensileStrength": "Wysoka",
+      "uvResistance": "Średnia",
+      "colors": [
+        {
+          "id": "silk_dual_black_blue",
+          "name": "Black Blue",
+          "hex": "#1A237E",
+          "colors": [
+            "#111111",
+            "#1565C0"
+          ],
+          "gradient": "linear-gradient(135deg, #111 50%, #1565C0 50%)"
+        },
+        {
+          "id": "silk_dual_black_purple",
+          "name": "Black Purple",
+          "hex": "#4A148C",
+          "colors": [
+            "#111111",
+            "#7B1FA2"
+          ],
+          "gradient": "linear-gradient(135deg, #111 50%, #7B1FA2 50%)"
+        },
+        {
+          "id": "silk_dual_black_green",
+          "name": "Black Green",
+          "hex": "#1B5E20",
+          "colors": [
+            "#111111",
+            "#2E7D32"
+          ],
+          "gradient": "linear-gradient(135deg, #111 50%, #2E7D32 50%)"
+        },
+        {
+          "id": "silk_dual_black_white",
+          "name": "Black White",
+          "hex": "#757575",
+          "colors": [
+            "#111111",
+            "#FFFFFF"
+          ],
+          "gradient": "linear-gradient(135deg, #111 50%, #FFF 50%)"
+        },
+        {
+          "id": "silk_dual_blue_green",
+          "name": "Blue Green",
+          "hex": "#00897B",
+          "colors": [
+            "#0288D1",
+            "#43A047"
+          ],
+          "gradient": "linear-gradient(135deg, #0288D1 50%, #43A047 50%)"
+        },
+        {
+          "id": "silk_dual_green_purple",
+          "name": "Green Purple",
+          "hex": "#6A1B9A",
+          "colors": [
+            "#2E7D32",
+            "#8E24AA"
+          ],
+          "gradient": "linear-gradient(135deg, #2E7D32 50%, #8E24AA 50%)"
+        },
+        {
+          "id": "silk_dual_red_blue",
+          "name": "Red Blue",
+          "hex": "#880E4F",
+          "colors": [
+            "#D32F2F",
+            "#1976D2"
+          ],
+          "gradient": "linear-gradient(135deg, #D32F2F 50%, #1976D2 50%)"
+        },
+        {
+          "id": "silk_dual_red_gold",
+          "name": "Red Gold",
+          "hex": "#B71C1C",
+          "colors": [
+            "#D32F2F",
+            "#FFB300"
+          ],
+          "gradient": "linear-gradient(135deg, #D32F2F 50%, #FFB300 50%)"
+        },
+        {
+          "id": "silk_dual_pink_gold",
+          "name": "Pink Gold",
+          "hex": "#F48FB1",
+          "colors": [
+            "#EC407A",
+            "#FFD54F"
+          ],
+          "gradient": "linear-gradient(135deg, #EC407A 50%, #FFD54F 50%)"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "PLA_TRI",
+      "familyId": "PLA",
+      "familyName": "PLA",
+      "subtypeLabel": "Tri color",
+      "name": "PLA · Tri color",
+      "aliases": [
+        "pla tri",
+        "tri",
+        "PLA_TRI",
+        "PLA_SILK_TRI",
+        "PLA_TRI",
+        "PLA"
+      ],
+      "group": "standard",
+      "badge": null,
+      "slicerType": "PLA Silk Tri",
+      "desc": "Jedwabiste PLA trójkolorowe.",
+      "pricePerKg": 65,
+      "ratePerG": 0.065,
+      "density": 1.23,
+      "hdt": "55°C",
+      "tensileStrength": "Wysoka",
+      "uvResistance": "Średnia",
+      "colors": [
+        {
+          "id": "silk_tri_black_gold_purple",
+          "name": "Black Gold Purple",
+          "hex": "#6A1B9A",
+          "colors": [
+            "#111111",
+            "#FFB300",
+            "#8E24AA"
+          ],
+          "gradient": "linear-gradient(135deg, #111 33%, #FFB300 33% 66%, #8E24AA 66%)"
+        },
+        {
+          "id": "silk_tri_orange_blue_green",
+          "name": "Orange Blue Green",
+          "hex": "#00897B",
+          "colors": [
+            "#FF6D00",
+            "#0288D1",
+            "#2E7D32"
+          ],
+          "gradient": "linear-gradient(135deg, #FF6D00 33%, #0288D1 33% 66%, #2E7D32 66%)"
+        },
+        {
+          "id": "silk_tri_red_yellow_green",
+          "name": "Red Yellow Green",
+          "hex": "#FBC02D",
+          "colors": [
+            "#D32F2F",
+            "#FDD835",
+            "#388E3C"
+          ],
+          "gradient": "linear-gradient(135deg, #D32F2F 33%, #FDD835 33% 66%, #388E3C 66%)"
+        },
+        {
+          "id": "silk_tri_red_yellow_blue",
+          "name": "Red Yellow Blue",
+          "hex": "#D32F2F",
+          "colors": [
+            "#D32F2F",
+            "#FDD835",
+            "#1976D2"
+          ],
+          "gradient": "linear-gradient(135deg, #D32F2F 33%, #FDD835 33% 66%, #1976D2 66%)"
+        },
+        {
+          "id": "silk_tri_blue_green_purple",
+          "name": "Blue Green Purple",
+          "hex": "#512DA8",
+          "colors": [
+            "#1976D2",
+            "#388E3C",
+            "#7B1FA2"
+          ],
+          "gradient": "linear-gradient(135deg, #1976D2 33%, #388E3C 33% 66%, #7B1FA2 66%)"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "PLA_GALAXY",
+      "familyId": "PLA",
+      "familyName": "PLA",
+      "subtypeLabel": "Galaxy",
+      "name": "PLA · Galaxy",
+      "aliases": [
+        "pla galaxy",
+        "galaxy",
+        "PLA_GALAXY",
+        "PLA_GALAXY",
+        "PLA"
+      ],
+      "group": "standard",
+      "badge": null,
+      "slicerType": "PLA Galaxy",
+      "desc": "PLA z efektem galaktyki / brokatu.",
+      "pricePerKg": 75,
+      "ratePerG": 0.075,
+      "density": 1.22,
+      "hdt": "55°C",
+      "tensileStrength": "Wysoka",
+      "uvResistance": "Średnia",
+      "colors": [
+        {
+          "id": "galaxy_starlit_flow",
+          "name": "Starlit Flow",
+          "hex": "#1A2A44",
+          "gradient": "radial-gradient(circle, #2A4365, #0F172A)"
+        },
+        {
+          "id": "galaxy_green",
+          "name": "Galaxy Green",
+          "hex": "#143D28",
+          "gradient": "radial-gradient(circle, #1F5F3E, #092013)"
+        },
+        {
+          "id": "galaxy_stardust_purple",
+          "name": "Stardust Purple",
+          "hex": "#381E47",
+          "gradient": "radial-gradient(circle, #552B6F, #220F2E)"
+        },
+        {
+          "id": "galaxy_star_brown",
+          "name": "Star Brown",
+          "hex": "#42281D",
+          "gradient": "radial-gradient(circle, #5F3826, #2B1810)"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "PLA_RAINBOW",
+      "familyId": "PLA",
+      "familyName": "PLA",
+      "subtypeLabel": "Rainbow",
+      "name": "PLA · Rainbow",
+      "aliases": [
+        "pla rainbow",
+        "rainbow",
+        "PLA_RAINBOW",
+        "PLA_RAINBOW",
+        "PLA"
+      ],
+      "group": "standard",
+      "badge": null,
+      "slicerType": "PLA Rainbow",
+      "desc": "PLA z gradientem tęczowym.",
+      "pricePerKg": 75,
+      "ratePerG": 0.075,
+      "density": 1.21,
+      "hdt": "55°C",
+      "tensileStrength": "Wysoka",
+      "uvResistance": "Średnia",
+      "colors": [
+        {
+          "id": "rainbow_01",
+          "name": "Rainbow 01",
+          "hex": "#E91E63",
+          "colors": [
+            "#E91E63",
+            "#9C27B0",
+            "#2196F3",
+            "#4CAF50",
+            "#FFEB3B",
+            "#FF9800"
+          ],
+          "gradient": "linear-gradient(90deg, #E91E63, #9C27B0, #2196F3, #4CAF50, #FFEB3B, #FF9800)"
+        },
+        {
+          "id": "rainbow_02",
+          "name": "Rainbow 02",
+          "hex": "#00BCD4",
+          "colors": [
+            "#00BCD4",
+            "#8BC34A",
+            "#CDDC39",
+            "#FFC107",
+            "#FF5722"
+          ],
+          "gradient": "linear-gradient(90deg, #00BCD4, #8BC34A, #CDDC39, #FFC107, #FF5722)"
+        },
+        {
+          "id": "rainbow_03",
+          "name": "Rainbow 03",
+          "hex": "#AB47BC",
+          "colors": [
+            "#7E57C2",
+            "#42A5F5",
+            "#26A69A",
+            "#D4E157",
+            "#FFA726"
+          ],
+          "gradient": "linear-gradient(90deg, #7E57C2, #42A5F5, #26A69A, #D4E157, #FFA726)"
+        },
+        {
+          "id": "rainbow_04",
+          "name": "Rainbow 04",
+          "hex": "#26C6DA",
+          "colors": [
+            "#26C6DA",
+            "#80CBC4",
+            "#B2DFDB",
+            "#FFE082",
+            "#FFAB91"
+          ],
+          "gradient": "linear-gradient(90deg, #26C6DA, #80CBC4, #B2DFDB, #FFE082, #FFAB91)"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "PETG",
+      "familyId": "PETG",
+      "familyName": "PETG",
+      "subtypeLabel": "Standard",
+      "name": "PETG",
+      "aliases": [
+        "petg",
+        "PETG",
+        "PETG_TOUGH",
+        "PETG",
+        "PETG"
+      ],
+      "group": "standard",
+      "badge": "Użytkowy",
+      "slicerType": "PETG",
+      "desc": "PETG standardowy do części użytkowych.",
+      "pricePerKg": 60,
+      "ratePerG": 0.06,
+      "density": 1.27,
+      "hdt": "75°C",
+      "tensileStrength": "Bardzo wysoka",
+      "uvResistance": "Dobra",
+      "colors": [
+        {
+          "id": "petg_black",
+          "name": "Black",
+          "hex": "#111215"
+        },
+        {
+          "id": "petg_white",
+          "name": "White",
+          "hex": "#F8F9FA"
+        },
+        {
+          "id": "petg_sakura_pink",
+          "name": "Sakura Pink",
+          "hex": "#FFB3C6"
+        },
+        {
+          "id": "petg_green",
+          "name": "Green",
+          "hex": "#0E8A37"
+        },
+        {
+          "id": "petg_cyan",
+          "name": "Cyan",
+          "hex": "#00BCDB"
+        },
+        {
+          "id": "petg_sunny_orange",
+          "name": "Sunny Orange",
+          "hex": "#FF6B00"
+        },
+        {
+          "id": "petg_beige",
+          "name": "Beige",
+          "hex": "#E8D8C8"
+        },
+        {
+          "id": "petg_chocolate",
+          "name": "Chocolate",
+          "hex": "#381E11"
+        },
+        {
+          "id": "petg_mint_green",
+          "name": "Mint Green",
+          "hex": "#88D49E"
+        },
+        {
+          "id": "petg_cherry_red",
+          "name": "Cherry Red",
+          "hex": "#C62828"
+        },
+        {
+          "id": "petg_sky_blue",
+          "name": "Sky Blue",
+          "hex": "#56CCF2"
+        },
+        {
+          "id": "petg_lemon_yellow",
+          "name": "Lemon Yellow",
+          "hex": "#FFF033"
+        },
+        {
+          "id": "petg_lavender",
+          "name": "Lavender",
+          "hex": "#9B72CF"
+        },
+        {
+          "id": "petg_grey",
+          "name": "Grey",
+          "hex": "#8E9297"
+        },
+        {
+          "id": "petg_ceramic",
+          "name": "Ceramic",
+          "hex": "#FFFFFF"
+        },
+        {
+          "id": "petg_midnight",
+          "name": "Midnight",
+          "hex": "#111215"
+        },
+        {
+          "id": "petg_olive_green",
+          "name": "Olive Green",
+          "hex": "#556B2F"
+        },
+        {
+          "id": "petg_oak",
+          "name": "Oak",
+          "hex": "#8F6843"
+        },
+        {
+          "id": "petg_vivid_yellow",
+          "name": "Vivid Yellow",
+          "hex": "#FFD000"
+        },
+        {
+          "id": "petg_red",
+          "name": "Red",
+          "hex": "#D81E06"
+        },
+        {
+          "id": "petg_silver",
+          "name": "Silver",
+          "hex": "#C5C6C7"
+        },
+        {
+          "id": "petg_magenta",
+          "name": "Magenta",
+          "hex": "#C2185B"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "PETG_CF",
+      "familyId": "PETG",
+      "familyName": "PETG",
+      "subtypeLabel": "Carbon fiber",
+      "name": "PETG · Carbon fiber",
+      "aliases": [
+        "petg cf",
+        "PETG-CF",
+        "PETG carbon",
+        "PETG_CF",
+        "PETG"
+      ],
+      "group": "composite",
+      "badge": "Kompozyt Carbon",
+      "slicerType": "PETG-CF",
+      "desc": "PETG wzmocniony włóknem węglowym.",
+      "pricePerKg": 110,
+      "ratePerG": 0.11,
+      "density": 1.3,
+      "hdt": "78°C",
+      "tensileStrength": "Ekstremalna sztywność",
+      "uvResistance": "Dobra",
+      "colors": [
+        {
+          "id": "petg_cf_black",
+          "name": "Black",
+          "hex": "#111215"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "PETG_FR",
+      "familyId": "PETG",
+      "familyName": "PETG",
+      "subtypeLabel": "FR V0",
+      "name": "PETG · FR V0",
+      "aliases": [
+        "petg_fr",
+        "PETG FR",
+        "PETG FR V0",
+        "PETG_FR",
+        "PETG"
+      ],
+      "group": "tech",
+      "badge": "UL94 V-0",
+      "slicerType": "PETG FR",
+      "desc": "PETG trudnopalny UL94 V-0.",
+      "pricePerKg": 234,
+      "ratePerG": 0.234,
+      "density": 1.29,
+      "hdt": "78°C",
+      "tensileStrength": "Bardzo wysoka",
+      "uvResistance": "Dobra",
+      "colors": [
+        {
+          "id": "petg_fr_natural",
+          "name": "Natural",
+          "hex": "#EDEDE8"
+        },
+        {
+          "id": "petg_fr_black",
+          "name": "Black",
+          "hex": "#111215"
+        },
+        {
+          "id": "petg_fr_gray",
+          "name": "Gray",
+          "hex": "#8E9297"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "ABS",
+      "familyId": "ABS",
+      "familyName": "ABS",
+      "subtypeLabel": "Standard",
+      "name": "ABS",
+      "aliases": [
+        "abs",
+        "ABS",
+        "ABS_INDUSTRY",
+        "ABS",
+        "ABS"
+      ],
+      "group": "tech",
+      "badge": "Odporny termicznie",
+      "slicerType": "ABS",
+      "desc": "ABS przemysłowy.",
+      "pricePerKg": 68,
+      "ratePerG": 0.068,
+      "density": 1.05,
+      "hdt": "90°C",
+      "tensileStrength": "Wysoka udarność",
+      "uvResistance": "Średnia",
+      "colors": [
+        {
+          "id": "abs_white",
+          "name": "White",
+          "hex": "#F8F9FA"
+        },
+        {
+          "id": "abs_silver",
+          "name": "Silver",
+          "hex": "#C5C6C7"
+        },
+        {
+          "id": "abs_green",
+          "name": "Green",
+          "hex": "#0E8A37"
+        },
+        {
+          "id": "abs_beige",
+          "name": "Beige",
+          "hex": "#E8D8C8"
+        },
+        {
+          "id": "abs_olive_green",
+          "name": "Olive Green",
+          "hex": "#556B2F"
+        },
+        {
+          "id": "abs_cyan",
+          "name": "Cyan",
+          "hex": "#00BCDB"
+        },
+        {
+          "id": "abs_magenta",
+          "name": "Magenta",
+          "hex": "#C2185B"
+        },
+        {
+          "id": "abs_grey",
+          "name": "Grey",
+          "hex": "#8E9297"
+        },
+        {
+          "id": "abs_gold",
+          "name": "Gold",
+          "hex": "#D4AF37"
+        },
+        {
+          "id": "abs_yellow",
+          "name": "Yellow",
+          "hex": "#FFCD00"
+        },
+        {
+          "id": "abs_sunny_orange",
+          "name": "Sunny Orange",
+          "hex": "#FF6B00"
+        },
+        {
+          "id": "abs_black",
+          "name": "Black",
+          "hex": "#111215"
+        },
+        {
+          "id": "abs_coffee_brown",
+          "name": "Coffee Brown",
+          "hex": "#5C3A21"
+        },
+        {
+          "id": "abs_blue",
+          "name": "Blue",
+          "hex": "#1976D2"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "ABS_GF",
+      "familyId": "ABS",
+      "familyName": "ABS",
+      "subtypeLabel": "GF",
+      "name": "ABS · GF",
+      "aliases": [
+        "abs gf",
+        "ABS-GF",
+        "ABS_GF",
+        "ABS_GF",
+        "ABS"
+      ],
+      "group": "tech",
+      "badge": null,
+      "slicerType": "ABS GF",
+      "desc": "ABS wzmocniony włóknem szklanym.",
+      "pricePerKg": 90,
+      "ratePerG": 0.09,
+      "density": 1.15,
+      "hdt": "95°C",
+      "tensileStrength": "Wysoka sztywność",
+      "uvResistance": "Średnia",
+      "colors": [
+        {
+          "id": "abs_gf_natural",
+          "name": "Natural",
+          "hex": "#EDEDE8"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "ABS_FR",
+      "familyId": "ABS",
+      "familyName": "ABS",
+      "subtypeLabel": "FR",
+      "name": "ABS · FR",
+      "aliases": [
+        "abs fr",
+        "ABS-FR",
+        "ABS_FR",
+        "ABS_FR",
+        "ABS"
+      ],
+      "group": "tech",
+      "badge": null,
+      "slicerType": "ABS FR",
+      "desc": "ABS trudnopalny.",
+      "pricePerKg": 158,
+      "ratePerG": 0.158,
+      "density": 1.16,
+      "hdt": "95°C",
+      "tensileStrength": "Wysoka",
+      "uvResistance": "Średnia",
+      "colors": [
+        {
+          "id": "abs_fr_black",
+          "name": "Black",
+          "hex": "#111215"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "ASA",
+      "familyId": "ASA",
+      "familyName": "ASA",
+      "subtypeLabel": "Standard",
+      "name": "ASA",
+      "aliases": [
+        "asa",
+        "ASA",
+        "ASA_UV",
+        "ASA",
+        "ASA"
+      ],
+      "group": "tech",
+      "badge": "Odporny UV",
+      "slicerType": "ASA",
+      "desc": "ASA outdoor / UV.",
+      "pricePerKg": 101,
+      "ratePerG": 0.101,
+      "density": 1.07,
+      "hdt": "95°C",
+      "tensileStrength": "Bardzo wysoka",
+      "uvResistance": "Maksymalna (Outdoor)",
+      "colors": [
+        {
+          "id": "asa_grey",
+          "name": "Grey",
+          "hex": "#8E9297"
+        },
+        {
+          "id": "asa_klein_blue",
+          "name": "Klein Blue",
+          "hex": "#002FA7"
+        },
+        {
+          "id": "asa_green",
+          "name": "Green",
+          "hex": "#0E8A37"
+        },
+        {
+          "id": "asa_white",
+          "name": "White",
+          "hex": "#F8F9FA"
+        },
+        {
+          "id": "asa_black",
+          "name": "Black",
+          "hex": "#111215"
+        }
+      ],
+      "hasSubtypes": false
+    },
+    {
+      "id": "TPU_95A",
+      "familyId": "TPU",
+      "familyName": "TPU 95A",
+      "subtypeLabel": "95A",
+      "name": "TPU 95A",
+      "aliases": [
+        "tpu",
+        "tpu_95a",
+        "TPU 95A",
+        "TPU_FLEX",
+        "FLEX",
+        "TPU_95A",
+        "TPU"
+      ],
+      "group": "flex",
+      "badge": "Elastyczna guma",
+      "slicerType": "TPU 95A",
+      "desc": "TPU 95A / guma.",
+      "pricePerKg": 105,
+      "ratePerG": 0.105,
+      "density": 1.21,
+      "hdt": "60°C",
+      "tensileStrength": "Sprężysta guma",
+      "uvResistance": "Bardzo dobra",
+      "colors": [
+        {
+          "id": "tpu_sunny_orange",
+          "name": "Sunny Orange",
+          "hex": "#FF6B00"
+        },
+        {
+          "id": "tpu_azure",
+          "name": "Azure",
+          "hex": "#00A3E0"
+        },
+        {
+          "id": "tpu_black",
+          "name": "Black",
+          "hex": "#111215"
+        },
+        {
+          "id": "tpu_white",
+          "name": "White",
+          "hex": "#F8F9FA"
+        },
+        {
+          "id": "tpu_grey",
+          "name": "Grey",
+          "hex": "#8E9297"
+        },
+        {
+          "id": "tpu_green",
+          "name": "Green",
+          "hex": "#0E8A37"
+        }
+      ],
+      "hasSubtypes": false
+    },
+    {
+      "id": "PA12_CF",
+      "familyId": "PA",
+      "familyName": "PA",
+      "subtypeLabel": "PA 12-CF",
+      "name": "PA · PA 12-CF",
+      "aliases": [
+        "pa12_cf",
+        "PA12 CF",
+        "PA12_CF15",
+        "PA-CF",
+        "PA 12-CF",
+        "PA12_CF",
+        "PA"
+      ],
+      "group": "composite",
+      "badge": "Kompozyt Carbon",
+      "slicerType": "PA12 CF",
+      "desc": "Nylon PA12 z włóknem węglowym.",
+      "pricePerKg": 359,
+      "ratePerG": 0.359,
+      "density": 1.15,
+      "hdt": "155°C",
+      "tensileStrength": "Ekstremalna sztywność",
+      "uvResistance": "Bardzo dobra",
+      "colors": [
+        {
+          "id": "pa12_cf_black",
+          "name": "Black",
+          "hex": "#111215"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "PA6_CF",
+      "familyId": "PA",
+      "familyName": "PA",
+      "subtypeLabel": "PA 6 CF",
+      "name": "PA · PA 6 CF",
+      "aliases": [
+        "pa6 cf",
+        "PA6-CF",
+        "PA 6 CF",
+        "PA6_CF",
+        "PA6_CF",
+        "PA"
+      ],
+      "group": "composite",
+      "badge": null,
+      "slicerType": "PA6 CF",
+      "desc": "Nylon PA6 z włóknem węglowym.",
+      "pricePerKg": 225,
+      "ratePerG": 0.225,
+      "density": 1.2,
+      "hdt": "150°C",
+      "tensileStrength": "Ekstremalna sztywność",
+      "uvResistance": "Bardzo dobra",
+      "colors": [
+        {
+          "id": "pa6_cf_black",
+          "name": "Black",
+          "hex": "#111215"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "EASY_PA",
+      "familyId": "PA",
+      "familyName": "PA",
+      "subtypeLabel": "Easy PA",
+      "name": "PA · Easy PA",
+      "aliases": [
+        "easy pa",
+        "EASY_PA",
+        "EasyPA",
+        "EASY_PA",
+        "PA"
+      ],
+      "group": "tech",
+      "badge": null,
+      "slicerType": "Easy PA",
+      "desc": "Łatwiejszy w druku nylon (Easy PA).",
+      "pricePerKg": 110,
+      "ratePerG": 0.11,
+      "density": 1.14,
+      "hdt": "120°C",
+      "tensileStrength": "Wysoka",
+      "uvResistance": "Dobra",
+      "colors": [
+        {
+          "id": "easy_pa_natural",
+          "name": "Natural",
+          "hex": "#EDEDE8"
+        },
+        {
+          "id": "easy_pa_black",
+          "name": "Black",
+          "hex": "#111215"
+        }
+      ],
+      "hasSubtypes": true
+    },
+    {
+      "id": "PP",
+      "familyId": "PP",
+      "familyName": "PP",
+      "subtypeLabel": "Standard",
+      "name": "PP",
+      "aliases": [
+        "pp",
+        "PP",
+        "PP_TECH",
+        "PP",
+        "PP"
+      ],
+      "group": "tech",
+      "badge": null,
+      "slicerType": "PP",
+      "desc": "PP naturalny.",
+      "pricePerKg": 170,
+      "ratePerG": 0.17,
+      "density": 0.9,
+      "hdt": "85°C",
+      "tensileStrength": "Wysoka sprężystość",
+      "uvResistance": "Dobra",
+      "colors": [
+        {
+          "id": "pp_natural",
+          "name": "Natural",
+          "hex": "#EDEDE8"
+        }
+      ],
+      "hasSubtypes": false
+    },
+    {
+      "id": "PC",
+      "familyId": "PC",
+      "familyName": "PC",
+      "subtypeLabel": "Standard",
+      "name": "PC",
+      "aliases": [
+        "pc",
+        "PC",
+        "polycarbonate",
+        "PC",
+        "PC"
+      ],
+      "group": "tech",
+      "badge": null,
+      "slicerType": "PC",
+      "desc": "PC naturalny.",
+      "pricePerKg": 158,
+      "ratePerG": 0.158,
+      "density": 1.2,
+      "hdt": "115°C",
+      "tensileStrength": "Ekstremalna",
+      "uvResistance": "Bardzo dobra",
+      "colors": [
+        {
+          "id": "pc_natural",
+          "name": "Natural",
+          "hex": "#EDEDE8"
+        }
+      ],
+      "hasSubtypes": false
+    },
+    {
+      "id": "PCTG",
+      "familyId": "PCTG",
+      "familyName": "PCTG",
+      "subtypeLabel": "Standard",
+      "name": "PCTG",
+      "aliases": [
+        "pctg",
+        "PCTG",
+        "PCTG_PRO",
+        "PCTG",
+        "PCTG"
+      ],
+      "group": "tech",
+      "badge": "Wysoka udarność",
+      "slicerType": "PCTG",
+      "desc": "PCTG — transparent, czarny, orange, blue, grafit, white.",
+      "pricePerKg": 150,
+      "ratePerG": 0.15,
+      "density": 1.23,
+      "hdt": "76°C",
+      "tensileStrength": "Ekstremalna",
+      "uvResistance": "Dobra",
+      "colors": [
+        {
+          "id": "pctg_transparent",
+          "name": "Transparent",
+          "hex": "#ECEFF1",
+          "transparent": true
+        },
+        {
+          "id": "pctg_black",
+          "name": "Black",
+          "hex": "#111215"
+        },
+        {
+          "id": "pctg_orange",
+          "name": "Orange",
+          "hex": "#FF6D00"
+        },
+        {
+          "id": "pctg_blue",
+          "name": "Blue",
+          "hex": "#1976D2"
+        },
+        {
+          "id": "pctg_graphite",
+          "name": "Graphite",
+          "hex": "#4A4E54"
+        },
+        {
+          "id": "pctg_white",
+          "name": "White",
+          "hex": "#F8F9FA"
+        }
+      ],
+      "hasSubtypes": false
+    }
+  ]
+}

@@ -40,6 +40,28 @@ async function assertSheetClearsHeader(page, sheet) {
   expect(opacity, "sheet must be fully opaque").toBe(1);
 }
 
+async function assertFamilyCatalog(picker) {
+  await expect(picker.locator('[data-studio-material-option="PLA"]')).toBeVisible();
+  await expect(picker.locator('[data-studio-material-option="PETG"]')).toBeVisible();
+  await expect(picker.locator('[data-studio-material-option="ASA"]')).toBeVisible();
+  await expect(picker.locator('[data-studio-material-option="TPU"]')).toBeVisible();
+  await expect(picker.locator('[data-studio-material-option="PLA_WOOD"]')).toHaveCount(0);
+  await expect(picker.locator('[data-studio-material-option="PLA_RAINBOW"]')).toHaveCount(0);
+  await expect(picker.locator('[data-studio-material-option="PLA_GALAXY"]')).toHaveCount(0);
+  await expect(picker.locator('[data-studio-material-option="PETG_FR"]')).toHaveCount(0);
+  await expect(picker.getByText(/zł\/kg/i)).toHaveCount(0);
+  await expect(picker.getByText(/45\s*zł/i)).toHaveCount(0);
+}
+
+async function pickPlaWood(picker) {
+  await picker.locator('[data-studio-material-option="PLA"]').click();
+  await expect(picker).toHaveAttribute("data-studio-material-step", "subtype");
+  await expect(picker.getByText("Wybierz rodzaj PLA")).toBeVisible();
+  await expect(picker.locator('[data-studio-material-subtype="PLA_WOOD"]')).toBeVisible();
+  await expect(picker.locator('[data-studio-material-subtype="PLA_RAINBOW"]')).toBeVisible();
+  await picker.locator('[data-studio-material-subtype="PLA_WOOD"]').click();
+}
+
 test.describe("studio rail pickers", () => {
   test("desktop: Materiał, Parametry and Skala open popovers", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -60,10 +82,8 @@ test.describe("studio rail pickers", () => {
     await expect(materials).toBeVisible();
     await expect(materialWheel).toHaveAttribute("aria-expanded", "true");
     await expect(materials.getByText("Materiał", { exact: true })).toBeVisible();
-    await expect(materials.getByRole("button", { name: /PLA Tough/ })).toBeVisible();
-    await expect(materials.getByRole("button", { name: /PETG FR/ })).toBeVisible();
-    await expect(materials.getByRole("button", { name: /ASA/ })).toBeVisible();
-    await expect(materials.getByRole("button", { name: /TPU/ })).toBeVisible();
+    await expect(materials).toHaveAttribute("data-studio-material-step", "family");
+    await assertFamilyCatalog(materials);
     await expect(page.locator('[data-studio-material-picker-surface="sheet"]')).toHaveCount(0);
 
     const wheelBox = await materialWheel.boundingBox();
@@ -76,20 +96,20 @@ test.describe("studio rail pickers", () => {
     expect(pickerBox.y + pickerBox.height, "desktop popover stays on screen").toBeLessThanOrEqual(
       viewport.height + 1
     );
-    await expect(materials.getByRole("button", { name: /PLA Tough/ })).toBeInViewport();
+    await expect(materials.locator('[data-studio-material-option="PLA"]')).toBeInViewport();
     const opacity = await materials.evaluate((el) => Number(getComputedStyle(el).opacity));
     expect(opacity, "desktop material panel must be fully opaque").toBe(1);
 
-    const plaBox = await materials.getByRole("button", { name: /PLA Tough/ }).boundingBox();
+    const plaBox = await materials.locator('[data-studio-material-option="PLA"]').boundingBox();
     const hit = await page.evaluate(({ x, y }) => {
       const el = document.elementFromPoint(x, y);
       return el ? el.closest("[data-studio-material-option]")?.getAttribute("data-studio-material-option") : null;
     }, { x: plaBox.x + plaBox.width / 2, y: plaBox.y + plaBox.height / 2 });
-    expect(hit, "material rows must sit above the quote bar").toBe("PLA_STANDARD");
+    expect(hit, "material rows must sit above the quote bar").toBe("PLA");
 
-    await materials.getByRole("button", { name: /PLA Matte/ }).click();
+    await pickPlaWood(materials);
     await expect(materials).toHaveCount(0);
-    await expect(rail.locator("span").filter({ hasText: "PLA Matte / Satin" })).toBeVisible();
+    await expect(rail.locator("span").filter({ hasText: "PLA · Wood" })).toBeVisible();
 
     await paramsWheel.click();
     const params = page.locator('[data-studio-print-params-surface="popover"]');
@@ -116,13 +136,13 @@ test.describe("studio rail pickers", () => {
     const picker = page.locator('[data-studio-material-picker-surface="popover"]');
     await expect(picker).toBeVisible();
     await expect(materialWheel).toHaveAttribute("aria-expanded", "true");
-    await expect(picker.getByRole("button", { name: /PLA Tough/ })).toBeVisible();
+    await assertFamilyCatalog(picker);
     await expect(page.locator('[data-studio-material-picker-surface="sheet"]')).toHaveCount(0);
 
-    await picker.getByRole("button", { name: /PLA Matte/ }).click();
+    await pickPlaWood(picker);
     await expect(picker).toHaveCount(0);
     await expect(
-      page.locator("[data-studio-control-rail-frame]").locator("span").filter({ hasText: "PLA Matte / Satin" })
+      page.locator("[data-studio-control-rail-frame]").locator("span").filter({ hasText: "PLA · Wood" })
     ).toBeVisible();
   });
 
@@ -139,14 +159,13 @@ test.describe("studio rail pickers", () => {
     await expect(sheet).toBeVisible();
     await expect(materialWheel).toHaveAttribute("aria-expanded", "true");
     await expect(sheet.getByText("Materiał", { exact: true })).toBeVisible();
-    await expect(sheet.getByRole("button", { name: /PLA Tough/ })).toBeVisible();
-    await expect(sheet.getByRole("button", { name: /PETG FR/ })).toBeVisible();
+    await assertFamilyCatalog(sheet);
     await assertSheetClearsHeader(page, sheet);
 
-    await sheet.getByRole("button", { name: /PLA Matte/ }).click();
+    await pickPlaWood(sheet);
     await expect(sheet).toHaveCount(0);
     await expect(
-      page.locator("[data-studio-control-rail-frame]").locator("span").filter({ hasText: "PLA Matte / Satin" })
+      page.locator("[data-studio-control-rail-frame]").locator("span").filter({ hasText: "PLA · Wood" })
     ).toBeVisible();
   });
 

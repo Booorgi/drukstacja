@@ -52,7 +52,8 @@ from slicer import (
 from orientation import auto_orient_mesh
 from packager_3mf import generate_production_3mf, sanitize_filename
 from db import get_db_connection
-from db_setup import ensure_oms_schema, ensure_products_on_startup
+from db_setup import ensure_filaments_on_startup, ensure_oms_schema, ensure_products_on_startup
+from filament_catalog import public_filament_row
 from orders_api import router as orders_router, update_production_file_url
 from products_api import router as products_router
 from checkout_api import router as checkout_router, webhook_router
@@ -69,6 +70,7 @@ os.makedirs(PROJECTS_3MF_CACHE_DIR, exist_ok=True)
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Tworzy / seeduje products i schemat OMS. Błąd DB nie wyłącza API."""
+    ensure_filaments_on_startup()
     ensure_products_on_startup()
     ensure_oms_schema()
     yield
@@ -1609,8 +1611,8 @@ def reslice_model_endpoint(req: ResliceRequest):
 @app.get("/api/filaments")
 def get_filaments():
     """
-    Zwraca listę wszystkich filamentów dostępnych w magazynie (in_stock = true)
-    z bazy PostgreSQL na Railway, posortowanych według tier, type i name.
+    Katalog magazynowy (in_stock = true) bez cen zł/kg i zł/cm³.
+    Źródło: Railway Postgres; fallback = filament_catalog.seed_filaments().
     """
     conn = get_db_connection()
     if conn:
@@ -1618,21 +1620,12 @@ def get_filaments():
             with conn:
                 with conn.cursor() as cur:
                     cur.execute("""
-                        SELECT 
-                            id, 
-                            name, 
-                            tier, 
-                            type, 
-                            category, 
-                            hex, 
-                            colors, 
-                            price_per_cm3, 
-                            in_stock, 
-                            roughness, 
-                            metalness
-                        FROM filaments 
-                        WHERE in_stock = true 
-                        ORDER BY 
+                        SELECT
+                            id, name, tier, type, category, family, subtype,
+                            hex, colors, in_stock, roughness, metalness
+                        FROM filaments
+                        WHERE in_stock = true
+                        ORDER BY
                             CASE WHEN tier = 'standard' THEN 1 ELSE 2 END,
                             type ASC,
                             name ASC;
@@ -1641,23 +1634,21 @@ def get_filaments():
                     results = []
                     for row in rows:
                         item = dict(row)
-                        if item.get("price_per_cm3") is not None:
-                            item["price_per_cm3"] = float(item["price_per_cm3"])
                         if item.get("roughness") is not None:
                             item["roughness"] = float(item["roughness"])
                         if item.get("metalness") is not None:
                             item["metalness"] = float(item["metalness"])
-                        results.append(item)
+                        results.append(public_filament_row(item))
                     return {"success": True, "source": "database", "filaments": results}
         except Exception as e:
             print(f"[WARN] Błąd odczytu z tabeli filaments: {e}")
         finally:
             conn.close()
 
-    # Fallback w przypadku braku bazy
     try:
-        from db_setup import SEED_FILAMENTS
-        fallback = [dict(item, in_stock=True) for item in SEED_FILAMENTS]
+        from filament_catalog import seed_filaments
+
+        fallback = [public_filament_row(dict(item, in_stock=True)) for item in seed_filaments()]
         return {"success": True, "source": "fallback", "filaments": fallback}
     except Exception as err:
         return {"success": False, "error": str(err), "filaments": []}
