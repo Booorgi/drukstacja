@@ -36,6 +36,12 @@ ALLOWED_STATUSES = (
 )
 CREATE_STATUSES = ("in_cart", "rfq_pending")
 CLIENT_PATCH_STATUSES = ("cancelled",)
+PRINT_BED_MM = 256.0
+PRINT_BED_EPS = 0.05
+PRINT_BED_OVERSIZE_DETAIL = (
+    "Model przekracza stół roboczy 256 × 256 × 256 mm. "
+    "Zmniejsz skalę, aby dodać do koszyka."
+)
 
 
 class OrderCreate(BaseModel):
@@ -105,6 +111,20 @@ def _normalize_dimensions(values: list[float] | None) -> list[float] | None:
     while len(cleaned) < 3:
         cleaned.append(0.0)
     return cleaned
+
+
+def dimensions_exceed_print_bed(values: list[float] | None, bed_mm: float = PRINT_BED_MM) -> bool:
+    dims = _normalize_dimensions(values)
+    if not dims or all(value <= 0 for value in dims):
+        return False
+    return any(value > bed_mm + PRINT_BED_EPS for value in dims)
+
+
+def _ensure_printable_dimensions(payload: OrderCreate) -> None:
+    if payload.status != "in_cart":
+        return
+    if dimensions_exceed_print_bed(payload.dimensions_mm):
+        raise HTTPException(status_code=400, detail=PRINT_BED_OVERSIZE_DETAIL)
 
 
 def _validate_status(status: str | None, allowed: tuple[str, ...]) -> str:
@@ -238,6 +258,7 @@ def list_orders(
 def create_order(payload: OrderCreate, user: AuthUser = Depends(get_current_user)):
     status = _validate_status(payload.status, CREATE_STATUSES)
     payload.status = status
+    _ensure_printable_dimensions(payload)
     conn = require_db()
     try:
         with conn:

@@ -33,7 +33,15 @@ import {
   LARGE_3MF_QUOTE_THUMBNAIL_MSG,
   SLICE_INFO_QUOTE_NOTE,
 } from "../lib/studioQuote";
+import printBed from "../lib/printBed";
 import useMediaQuery from "../lib/useMediaQuery";
+
+const {
+  sourceDimensionsMm,
+  scaledDimensionsMm,
+  isOverPrintBed,
+  fitToPrintBedPercent,
+} = printBed;
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -363,6 +371,35 @@ endsolid fixture
         filament_weight_g: 8.8,
         filament_length_m: 2.94,
         price_breakdown: { unit_price_pln: 38 },
+      });
+      return;
+    }
+
+    if (layout === "oversized") {
+      const stl = `solid fixture
+facet normal 0 0 1
+  outer loop
+    vertex 0 0 0
+    vertex 10 0 0
+    vertex 0 10 0
+  endloop
+endfacet
+endsolid fixture
+`;
+      const file = new File([stl], "monstera_b02.glb", { type: "model/gltf-binary" });
+      setSelectedFile(file);
+      setModelPreviewUrl(URL.createObjectURL(file));
+      setAnalysisData({
+        instant_pricing: true,
+        volume_cm3: 48.2,
+        source_volume_cm3: 48.2,
+        dimensions_mm: [388.6, 343.1, 393.9],
+        source_dimensions_mm: [388.6, 343.1, 393.9],
+        file_key: "layout-oversized-fixture",
+        print_time_formatted: "3d 23h 9m",
+        filament_weight_g: 1841,
+        filament_length_m: 617.26,
+        price_breakdown: { unit_price_pln: 497.07 },
       });
       return;
     }
@@ -778,6 +815,10 @@ endsolid fixture
   }, [layerHeight, nozzleSize, infill, selectedMaterial, modelScale, analysisData?.preview_stl_key, analysisData?.color_count, analysisData?.painted_ratio]);
 
   const volume = studioVolumeCm3(analysisData, modelScale);
+  const sourceDimsMm = sourceDimensionsMm(analysisData);
+  const scaledDimsMm = scaledDimensionsMm(sourceDimsMm, modelScale);
+  const isOversized = isQuotedModel(analysisData) && isOverPrintBed(scaledDimsMm);
+  const fitPercent = fitToPrintBedPercent(sourceDimsMm);
   const matConfig = STL_MATERIALS.find((m) => m.id === selectedMaterial) || STL_MATERIALS[0];
   const activeColorObj = matConfig?.colors?.find((c) => c.hex === selectedColor) || matConfig?.colors?.[0];
   const isNozzle02 = Math.abs(nozzleSize - 0.2) < 0.05;
@@ -867,6 +908,10 @@ endsolid fixture
       setIsAuthOpen(true);
       return;
     }
+    if (isOversized) {
+      setScaleOpen(true);
+      return;
+    }
 
     setAddingToCart(true);
     try {
@@ -888,8 +933,8 @@ endsolid fixture
         brass_inserts: false,
         quantity: quantity,
         total_price: parseFloat(totalPrice),
-        dimensions_mm: (analysisData?.source_dimensions_mm || analysisData?.dimensions_mm || [60, 60, 40]).map(
-          (v) => Number((Number(v) * modelScale).toFixed(2))
+        dimensions_mm: (sourceDimsMm.some((v) => v > 0) ? scaledDimsMm : [60, 60, 40]).map(
+          (v) => Number(Number(v).toFixed(2))
         ),
         status: "in_cart",
         nozzle_size: String(nozzleSize || "0.4"),
@@ -1360,6 +1405,8 @@ endsolid fixture
             isAnalyzing={isAnalyzing}
             isReslicing={isReslicing}
             isBelowMoq={isBelowMoq}
+            isOversized={isOversized}
+            onFitToBed={() => setScalePercent(fitPercent)}
             totalPrice={totalPrice}
             quantity={quantity}
             onDecreaseQuantity={() => setQuantity(Math.max(1, quantity - 1))}

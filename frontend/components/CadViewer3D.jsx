@@ -3,6 +3,9 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, Bounds, GizmoHelper, GizmoViewcube, Html } from "@react-three/drei";
 import { STLLoader, GLTFLoader } from "three-stdlib";
 import * as THREE from "three";
+import printBed from "../lib/printBed";
+
+const { PRINT_BED_MM, isOverPrintBed, oversizeAxes } = printBed;
 
 // Prog podpor jak w Bambu Studio: podpory dla scianek nachylonych do stolu
 // ponizej 30 stopni (90 stopni = pionowa sciana, 0 = plaski sufit).
@@ -198,6 +201,7 @@ function CadModelGeometry({
   isWireframe,
   showSupports,
   showBBox,
+  oversize = false,
   onGeometryLoaded,
   useFileColors = false,
   displayScale = 1,
@@ -485,7 +489,7 @@ function CadModelGeometry({
                 ),
               ]}
             />
-            <lineBasicMaterial color="#2563EB" linewidth={2} />
+            <lineBasicMaterial color={oversize ? "#DC2626" : "#2563EB"} linewidth={2} />
           </lineSegments>
 
           <Html
@@ -558,6 +562,13 @@ export default function CadViewer3D({
     }
     return [0, 0, 0];
   }, [analysisData, loadedDimensions, modelScale]);
+  const oversized = isOverPrintBed(dimensions);
+  const overflowAxes = oversizeAxes(dimensions);
+  const showDimensionOverlay = showBBox || oversized;
+
+  useEffect(() => {
+    if (oversized) setShowBBox(true);
+  }, [oversized]);
 
   const hasFileColors = Boolean(
     analysisData?.has_file_colors ||
@@ -652,7 +663,8 @@ export default function CadViewer3D({
               materialConfig={materialConfig}
               isWireframe={isWireframe}
               showSupports={showSupports}
-              showBBox={showBBox}
+              showBBox={showDimensionOverlay}
+              oversize={oversized}
               onGeometryLoaded={setLoadedDimensions}
               useFileColors={useFileColors}
               displayScale={modelScale}
@@ -660,11 +672,23 @@ export default function CadViewer3D({
           </group>
         </Bounds>
 
-        {/* Siatka pomiarowa stołu roboczego (260x260 mm) */}
+        {/* Siatka pomiarowa stołu roboczego (256 × 256 mm) */}
         <gridHelper
-          args={studio ? [400, 20, "#C8C8C8", "#D6D6D6"] : [260, 26, "#94A3B8", "#E2E8F0"]}
+          args={studio ? [PRINT_BED_MM, 16, "#C8C8C8", "#D6D6D6"] : [260, 26, "#94A3B8", "#E2E8F0"]}
           position={[0, 0, 0]}
         />
+        {studio ? (
+          <group position={[0, PRINT_BED_MM / 2, 0]}>
+            <lineSegments>
+              <edgesGeometry args={[new THREE.BoxGeometry(PRINT_BED_MM, PRINT_BED_MM, PRINT_BED_MM)]} />
+              <lineBasicMaterial
+                color={oversized ? "#DC2626" : "#A3A3A3"}
+                transparent
+                opacity={oversized ? 0.85 : 0.35}
+              />
+            </lineSegments>
+          </group>
+        ) : null}
 
         {!studio && (
         <gridHelper
@@ -1005,7 +1029,11 @@ export default function CadViewer3D({
               type="button"
               onClick={() => setShowBBox(!showBBox)}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
-                showBBox ? "bg-emerald-500 text-white" : "text-white/80 hover:text-white hover:bg-white/10"
+                showDimensionOverlay
+                  ? oversized
+                    ? "bg-red-500 text-white"
+                    : "bg-emerald-500 text-white"
+                  : "text-white/80 hover:text-white hover:bg-white/10"
               }`}
               title="Pokaż wymiary XYZ modelu"
             >
@@ -1022,13 +1050,32 @@ export default function CadViewer3D({
               Podpory
             </button>
           </div>
-          {showBBox && dimensions.some((v) => v > 0) ? (
-            <div className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-neutral-800 shadow-sm border border-white/70">
-              <span className="text-blue-600">X {dimensions[0]}</span>
-              <span className="mx-1.5 text-neutral-400">·</span>
-              <span className="text-emerald-600">Y {dimensions[1]}</span>
-              <span className="mx-1.5 text-neutral-400">·</span>
-              <span className="text-amber-600">Z {dimensions[2]} mm</span>
+          {showDimensionOverlay && dimensions.some((v) => v > 0) ? (
+            <div
+              data-studio-dimensions
+              data-oversize={oversized ? "true" : "false"}
+              className={`px-3 py-1 text-[11px] font-semibold shadow-sm ${
+                oversized
+                  ? "rounded-2xl bg-red-50 text-red-900 border border-red-200"
+                  : "rounded-full bg-white/90 text-neutral-800 border border-white/70"
+              }`}
+            >
+              <div>
+                <span className={overflowAxes.x ? "text-red-600" : "text-blue-600"}>X {dimensions[0]}</span>
+                <span className="mx-1.5 text-neutral-400">·</span>
+                <span className={overflowAxes.y ? "text-red-600" : "text-emerald-600"}>Y {dimensions[1]}</span>
+                <span className="mx-1.5 text-neutral-400">·</span>
+                <span className={overflowAxes.z ? "text-red-600" : "text-amber-600"}>Z {dimensions[2]} mm</span>
+              </div>
+              {oversized ? (
+                <p data-print-bed-limit className="mt-0.5 text-center text-[10px] font-semibold text-red-700">
+                  Stół roboczy {PRINT_BED_MM} × {PRINT_BED_MM} × {PRINT_BED_MM} mm — model za duży
+                </p>
+              ) : showBBox ? (
+                <p data-print-bed-limit className="sr-only">
+                  Stół roboczy {PRINT_BED_MM} × {PRINT_BED_MM} × {PRINT_BED_MM} mm
+                </p>
+              ) : null}
             </div>
           ) : null}
         </div>
