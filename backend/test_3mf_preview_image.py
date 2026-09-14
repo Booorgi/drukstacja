@@ -199,6 +199,112 @@ def test_small_multicolor_3mf_still_prefers_live_preview_flags():
     assert not (bundle.get("preview_image") or {}).get("bytes")
 
 
+def _box_model_xml():
+    import trimesh
+    boxes = [
+        trimesh.creation.box(extents=[10, 10, 2]),
+        trimesh.creation.box(extents=[6, 6, 2]),
+    ]
+    objects_xml = []
+    for idx, box in enumerate(boxes, start=1):
+        verts = "".join(f'<vertex x="{v[0]}" y="{v[1]}" z="{v[2]}"/>' for v in box.vertices)
+        tris = "".join(f'<triangle v1="{f[0]}" v2="{f[1]}" v3="{f[2]}"/>' for f in box.faces)
+        objects_xml.append(
+            f'<object id="{idx}" type="model"><mesh>'
+            f"<vertices>{verts}</vertices><triangles>{tris}</triangles>"
+            "</mesh></object>"
+        )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
+        f"<resources>{''.join(objects_xml)}</resources>"
+        '<build><item objectid="1"/><item objectid="2"/></build></model>'
+    )
+
+
+def test_analyze_endpoint_exposes_preview_image_url_and_keeps_glb():
+    """Mały 3MF z plate PNG: URL miniatury + żywy GLB (miniatura nie zastępuje #48)."""
+    import sys
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    if backend_dir not in sys.path:
+        sys.path.insert(0, backend_dir)
+    from fastapi.testclient import TestClient
+    import main
+
+    photo = _noisy_png(64, 64)
+    path = _write_3mf({
+        "3D/3dmodel.model": _box_model_xml(),
+        "Metadata/plate_1.png": photo,
+        "Metadata/project_settings.config": json.dumps({
+            "filament_colour": ["#080504", "#DFDFDE"],
+        }),
+        "Metadata/model_settings.config": (
+            '<?xml version="1.0"?><config>'
+            '<object id="1"><metadata key="extruder" value="1"/></object>'
+            '<object id="2"><metadata key="extruder" value="2"/></object>'
+            "</config>"
+        ),
+    })
+    client = TestClient(main.app)
+    with open(path, "rb") as f:
+        response = client.post(
+            "/api/analyze-model",
+            files={"file": ("keychain-like.3mf", f, "model/3mf")},
+            data={"layer_height": "0.2", "nozzle_size": "0.4", "infill": "15", "filament_type": "PLA"},
+        )
+    assert response.status_code == 200, response.text[:500]
+    data = response.json()
+    assert "preview_image" not in data
+    assert data.get("preview_image_url")
+    assert data["preview_image_url"].endswith("_preview.png")
+    assert data.get("preview_image_source") == "Metadata/plate_1.png"
+    assert data.get("preview_glb_url"), "mały 3MF musi dostać GLB, nie samą miniaturę"
+    assert data.get("preview_skipped") is not True
+    img = client.get(data["preview_image_url"])
+    assert img.status_code == 200
+    assert img.headers["content-type"].startswith("image/png")
+    assert img.content.startswith(b"\x89PNG")
+    assert img.content == photo
+
+
+def test_analyze_empty_3mf_with_thumbnail_is_not_sixteen_grams():
+    import sys
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    if backend_dir not in sys.path:
+        sys.path.insert(0, backend_dir)
+    from fastapi.testclient import TestClient
+    import main
+
+    photo = _noisy_png(64, 64)
+    path = _write_3mf({
+        "3D/3dmodel.model": _minimal_model_xml(),
+        "Metadata/plate_1.png": photo,
+        "Metadata/project_settings.config": json.dumps({
+            "filament_colour": ["#080504", "#854A22"],
+            "sparse_infill_density": "6%",
+        }),
+        "Metadata/slice_info.config": """<?xml version="1.0"?>
+<config>
+  <plate>
+    <metadata key="weight" value="16"/>
+    <filament id="1" type="PLA" color="#080504" used_g="16"/>
+  </plate>
+</config>""",
+    })
+    client = TestClient(main.app)
+    with open(path, "rb") as f:
+        response = client.post(
+            "/api/analyze-model",
+            files={"file": ("empty-plate.3mf", f, "model/3mf")},
+        )
+    assert response.status_code == 200, response.text[:500]
+    data = response.json()
+    assert data.get("instant_pricing") is False
+    assert data.get("filament_weight_g") not in (16, 16.0)
+    assert data.get("preview_image_url", "").endswith("_preview.png")
+    assert "miniaturę" in (data.get("message") or "")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
