@@ -365,7 +365,8 @@ endsolid fixture
         dimensions_mm: [40, 40, 10],
         file_key: "layout-fixture",
         print_time_formatted: "54m",
-        filament_weight_g: 8.8,
+        // PLA 0.045 PLN/g → 38.00 PLN (above 30 PLN MOQ)
+        filament_weight_g: 844.444444,
         filament_length_m: 2.94,
         price_breakdown: { unit_price_pln: 38 },
       });
@@ -392,7 +393,8 @@ endsolid fixture
         dimensions_mm: [40, 40, 10],
         file_key: "layout-below-moq-fixture",
         print_time_formatted: "54m",
-        filament_weight_g: 8.8,
+        // PLA 0.045 PLN/g → 18.40 PLN (below 30 PLN MOQ, shortfall 11.60)
+        filament_weight_g: 408.888889,
         filament_length_m: 2.94,
         price_breakdown: { unit_price_pln: 18.4 },
       });

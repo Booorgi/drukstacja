@@ -109,7 +109,7 @@ export default function StudioQuoteBar({
                         Brakuje {formatShortfall(diffToMoq)} zł do minimalnego zamówienia
                       </span>
                     ) : null}
-                    {hasModel && !isBelowMoq ? (
+                    {hasModel ? (
                       <div className="hidden items-center gap-3 text-[11px] text-zinc-400 md:flex">
                         {printTime ? <span>{printTime}</span> : null}
                         {filamentWeight ? <span>{filamentWeight}</span> : null}
