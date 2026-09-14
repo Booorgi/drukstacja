@@ -5,6 +5,7 @@ const ACCEPTED = {
   "model/stl": [".stl"],
   "application/octet-stream": [".stl", ".step", ".stp"],
   "model/step": [".step", ".stp"],
+  "model/3mf": [".3mf"],
   "text/plain": [".obj"],
 };
 
@@ -46,7 +47,7 @@ export default function UploadBox({ onFileSelected }) {
         {isDragActive ? "Upusc plik tutaj" : "Przeciagnij i upusc plik tutaj"}
       </p>
       <p style={{ color: "#6b7280", fontSize: "0.9rem" }}>
-        Typy plikow: .stl, .step, .stp, .obj
+        Typy plikow: .stl, .step, .stp, .obj, .3mf
       </p>
       {fileName && (
         <p style={{ marginTop: "1rem", color: "#2563eb", fontWeight: 500 }}>

@@ -8,6 +8,7 @@ export default function ModelViewer({
   file = null,
   color = "#64748B",
   showOverhangs = false,
+  lightBackground = false,
 }) {
   const containerRef = useRef(null);
   const meshRef = useRef(null);
@@ -56,7 +57,7 @@ export default function ModelViewer({
     let height = container.clientHeight || 480;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf8fafc);
+    scene.background = new THREE.Color(lightBackground ? 0xf8fafc : 0x0f172a);
 
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 5000);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -72,7 +73,7 @@ export default function ModelViewer({
     controls.maxPolarAngle = Math.PI / 2 + 0.05;
 
     // Oświetlenie
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xe2e8f0, 0.9));
+    scene.add(new THREE.HemisphereLight(0xffffff, lightBackground ? 0xe2e8f0 : 0x1e293b, 0.9));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(150, 250, 150);
     scene.add(dirLight);
@@ -164,7 +165,7 @@ export default function ModelViewer({
       resizeObserver.disconnect();
       renderer.dispose();
     };
-  }, [previewUrl, file]);
+  }, [previewUrl, file, lightBackground]);
 
   return (
     <div
