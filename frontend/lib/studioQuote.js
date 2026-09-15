@@ -51,6 +51,13 @@ export function isQuotedModel(analysisData) {
   if (analysisData.instant_pricing === false) return false;
   if (analysisData.skipped_geometry || analysisData.quote_ready === false) return false;
   if (isBambuSliceQuote(analysisData)) return true;
+  const hasMeasuredQuote =
+    analysisData.quote_ready === true &&
+    Number(analysisData.filament_weight_g) > 0 &&
+    (Number(analysisData.print_time_hours) > 0 ||
+      Number(analysisData.print_time_seconds) > 0 ||
+      Boolean(analysisData.print_time_formatted));
+  if (hasMeasuredQuote) return true;
   if (hasReliableSlicerEngine(analysisData)) {
     return (
       analysisData.quote_ready !== false &&
