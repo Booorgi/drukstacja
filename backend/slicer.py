@@ -226,6 +226,12 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
                         text,
                     )
                 payload = text.encode("utf-8")
+            if any(
+                key.encode("utf-8") in payload.lower()
+                for key in incompatible_gcode_keys_normalized
+            ):
+                print(f"[INFO] Pomijam wpis 3MF z niekompatybilnym G-code: {info.filename}")
+                continue
             target.writestr(info, payload)
     return normalized
 
