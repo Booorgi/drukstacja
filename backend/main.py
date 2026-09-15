@@ -46,7 +46,6 @@ from slicer import (
     convert_step_to_stl,
     run_slicer,
     slice_result_from_bambu_stats,
-    slice_result_from_geometry,
     validated_bambu_slice_stats,
 )
 from orientation import auto_orient_mesh
@@ -1270,6 +1269,7 @@ async def analyze_model_endpoint(
                             f"[INFO] Pomijam eksport STL/GLB (faces={result.get('triangle_count')}, "
                             f"remaining_s={remaining:.1f}) — wycena zostaje."
                         )
+                        raw_mesh.export(oriented_stl_path)
                         colored_mesh = None
                         preview_skipped = True
                         result["preview_skipped"] = True
@@ -1374,20 +1374,7 @@ async def analyze_model_endpoint(
                         for attempt in range(1, ANALYZE_SLICER_ATTEMPTS + 1):
                             try:
                                 vol = reliable_volume_cm3(result.get("volume_cm3"))
-                                if skip_preview_export and vol:
-                                    slice_data = slice_result_from_geometry(
-                                        volume_cm3=float(vol),
-                                        surface_area_cm2=float(result.get("surface_area_cm2") or 0.0),
-                                        dimensions_mm=result.get("dimensions_mm"),
-                                        infill=int(infill),
-                                        layer_height=float(layer_height),
-                                        filament_type=filament_type,
-                                        nozzle_size=float(nozzle_size),
-                                        color_count=color_count,
-                                        support_needed=True,
-                                        painted_ratio=painted_ratio,
-                                    )
-                                elif vol or not skip_preview_export:
+                                if vol or not skip_preview_export:
                                     slice_data = run_slicer(
                                         oriented_stl_path,
                                         infill=int(infill),
