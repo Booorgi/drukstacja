@@ -696,7 +696,13 @@ def run_slicer(
     try:
         cmd = [slicer_bin]
         if "orca" in os.path.basename(slicer_bin).lower():
-            cmd.extend(["--slice", "0", "--outputdir", gcode_dir, stl_path])
+            cmd.extend([
+                "--slice", "0",
+                "--allow-newer-file",
+                "--debug", "3",
+                "--outputdir", gcode_dir,
+                stl_path,
+            ])
         else:
             gcode_path = os.path.join(gcode_dir, "output.gcode")
             cmd.extend([
@@ -756,14 +762,19 @@ def run_slicer(
             or not os.path.exists(gcode_path)
             or os.path.getsize(gcode_path) == 0
         ):
+            diagnostics = "\n".join(
+                part.strip()
+                for part in (process.stderr, process.stdout)
+                if part and part.strip()
+            )
             print(
                 f"[WARN] Slicer exit code {process.returncode}: "
-                f"cmd={' '.join(cmd)} stderr={process.stderr[:1000]}"
+                f"cmd={' '.join(cmd)} output={diagnostics[:2000]}"
             )
             if "orca" in executable and not allow_fallback:
                 raise RuntimeError(
                     f"OrcaSlicer nie wygenerował G-code (exit={process.returncode}): "
-                    f"{process.stderr[:1000]}"
+                    f"{diagnostics[:2000]}"
                 )
             return simulate_slicing_fallback(
                 stl_path,
