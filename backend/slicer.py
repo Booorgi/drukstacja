@@ -808,6 +808,7 @@ def run_slicer(
                 "--slice", "0",
                 "--allow-newer-file",
                 "--debug", "3",
+                "--layer-gcode=G92 E0",
                 "--outputdir", gcode_dir,
                 slicer_input_path,
             ])
