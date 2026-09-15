@@ -4,6 +4,8 @@ import os
 import math
 import shutil
 import tempfile
+import zipfile
+import json
 from pathlib import Path
 import trimesh
 import numpy as np
@@ -135,6 +137,34 @@ def get_slicer_binary() -> str | None:
         if os.path.isfile(fallback) and (os.access(fallback, os.X_OK) or fallback.endswith(".exe")):
             return fallback
     return None
+
+
+def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
+    """Usuń z kopii projektu Bambu wartości -1 odrzucane przez Orca."""
+    normalized = os.path.join(output_dir, "orca-input.3mf")
+    invalid_default_keys = {"raft_first_layer_expansion", "tree_support_wall_count"}
+    with zipfile.ZipFile(path, "r") as source, zipfile.ZipFile(
+        normalized, "w", compression=zipfile.ZIP_DEFLATED
+    ) as target:
+        for info in source.infolist():
+            payload = source.read(info.filename)
+            lower_name = info.filename.lower()
+            if lower_name.endswith(".config"):
+                try:
+                    config = json.loads(payload.decode("utf-8"))
+                    if isinstance(config, dict):
+                        changed = False
+                        for key in invalid_default_keys:
+                            value = config.get(key)
+                            if isinstance(value, (int, float)) and value < 0:
+                                del config[key]
+                                changed = True
+                        if changed:
+                            payload = json.dumps(config, ensure_ascii=False).encode("utf-8")
+                except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
+                    pass
+            target.writestr(info, payload)
+    return normalized
 
 
 def parse_time_to_hours(time_str: str) -> tuple[float, str]:
@@ -690,18 +720,22 @@ def run_slicer(
 
     gcode_dir = tempfile.mkdtemp(prefix="slicer-")
     gcode_path = None
+    slicer_input_path = stl_path
+    executable = os.path.basename(slicer_bin).lower()
 
     bed_center = (125.0, 105.0)  # Standardowy środek stołu (250x210 mm)
 
     try:
         cmd = [slicer_bin]
         if "orca" in os.path.basename(slicer_bin).lower():
+            if str(stl_path).lower().endswith(".3mf"):
+                slicer_input_path = normalize_orca_3mf_project(stl_path, gcode_dir)
             cmd.extend([
                 "--slice", "0",
                 "--allow-newer-file",
                 "--debug", "3",
                 "--outputdir", gcode_dir,
-                stl_path,
+                slicer_input_path,
             ])
         else:
             gcode_path = os.path.join(gcode_dir, "output.gcode")
@@ -735,7 +769,6 @@ def run_slicer(
         env = os.environ.copy()
         env["DISPLAY"] = ""
 
-        executable = os.path.basename(slicer_bin).lower()
         if "orca" in executable:
             cmd = ["xvfb-run", "-a"] + cmd
 
