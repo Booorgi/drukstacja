@@ -28,6 +28,17 @@ export function isReliableVolumeCm3(value) {
 
 export const isBambuSliceQuote = quoteSync.isBambuSliceQuote;
 
+const RELIABLE_3MF_QUOTE_ENGINES = new Set([
+  BAMBU_SLICE_ENGINE,
+  "orca-slicer-cli",
+]);
+
+function isThreeMfAnalysis(analysisData) {
+  return /\.3mf$/i.test(
+    String(analysisData?.original_filename || analysisData?.file_name || "")
+  );
+}
+
 export function studioVolumeCm3(analysisData, modelScale = 1) {
   if (!analysisData) return 0;
   const raw = analysisData.source_volume_cm3 ?? analysisData.volume_cm3;
@@ -40,6 +51,14 @@ export function isQuotedModel(analysisData) {
   if (analysisData.instant_pricing === false) return false;
   if (analysisData.skipped_geometry || analysisData.quote_ready === false) return false;
   if (isBambuSliceQuote(analysisData)) return true;
+  if (isThreeMfAnalysis(analysisData)) {
+    return (
+      analysisData.quote_ready === true &&
+      RELIABLE_3MF_QUOTE_ENGINES.has(
+        analysisData.slicer_engine || analysisData.quote_source
+      )
+    );
+  }
   return isReliableVolumeCm3(analysisData.source_volume_cm3 ?? analysisData.volume_cm3);
 }
 
