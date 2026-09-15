@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     prusa-slicer \
     libgl1 \
     libglu1-mesa \
+    libmspack0 \
     libglib2.0-0 \
     libgtk-3-0 \
     libdbus-1-3 \
