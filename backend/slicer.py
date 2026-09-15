@@ -709,14 +709,16 @@ def run_slicer(
             ])
 
         profile = get_material_profile(filament_type)
-        cmd.extend([
-            f"--temperature={profile['temp']}",
-            f"--first-layer-temperature={profile['temp']}",
-            f"--bed-temperature={profile['bed_temp']}",
-            f"--first-layer-bed-temperature={profile['bed_temp']}",
-        ])
+        is_orca = "orca" in os.path.basename(slicer_bin).lower()
+        if not is_orca:
+            cmd.extend([
+                f"--temperature={profile['temp']}",
+                f"--first-layer-temperature={profile['temp']}",
+                f"--bed-temperature={profile['bed_temp']}",
+                f"--first-layer-bed-temperature={profile['bed_temp']}",
+            ])
 
-        if support_material:
+        if support_material and not is_orca:
             cmd.extend([
                 "--support-material",
                 "--support-material-auto",
