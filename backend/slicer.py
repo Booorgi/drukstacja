@@ -141,6 +141,7 @@ def get_slicer_binary() -> str | None:
 
 def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
     """Usuń z kopii projektu Bambu wartości -1 odrzucane przez Orca."""
+    print("[ORCA] project-normalizer=v5")
     normalized = os.path.join(output_dir, "orca-input.3mf")
     invalid_default_keys = {"raft_first_layer_expansion", "tree_support_wall_count"}
     incompatible_gcode_keys = {
