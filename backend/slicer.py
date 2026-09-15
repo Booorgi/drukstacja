@@ -189,7 +189,11 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
         for info in source.infolist():
             payload = source.read(info.filename)
             lower_name = info.filename.lower()
-            if lower_name.endswith(".config"):
+            contains_custom_gcode = any(
+                key.encode("utf-8") in payload.lower()
+                for key in incompatible_gcode_keys_normalized
+            )
+            if lower_name.endswith(".config") or contains_custom_gcode:
                 try:
                     config = json.loads(payload.decode("utf-8"))
                     payload = json.dumps(sanitize(config), ensure_ascii=False).encode("utf-8")
@@ -214,6 +218,11 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
                     text = re.sub(
                         rf'(?ims)(["\']?{re.escape(key)}["\']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\]|[^,}}\r\n]*)\s*,?',
                         "",
+                        text,
+                    )
+                    text = re.sub(
+                        rf'(?i){re.escape(key)}',
+                        "disabled_custom_gcode",
                         text,
                     )
                 payload = text.encode("utf-8")
