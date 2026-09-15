@@ -157,7 +157,11 @@ def _run_slice_job(job_id: str, path: str, params: dict) -> None:
             fallback_path = os.path.join(MODELS_CACHE_DIR, f"{job_id}_orca_fallback.stl")
             mesh.export(fallback_path)
             print(f"[SLICE-JOB] job={job_id} retrying Orca with extracted STL")
-            slice_data = run_slicer(stl_path=fallback_path, **slicer_params)
+            slice_data = run_slicer(
+                stl_path=fallback_path,
+                force_cli=True,
+                **slicer_params,
+            )
         engine = slice_data.get("engine")
         weight = float(slice_data.get("filament_weight_g") or 0)
         hours = float(slice_data.get("print_time_hours") or 0)

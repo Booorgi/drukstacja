@@ -738,6 +738,7 @@ def run_slicer(
     dimensions_mm=None,
     timeout_seconds: int | None = None,
     allow_fallback: bool = True,
+    force_cli: bool = False,
 ) -> dict:
     """
     Uruchamia natywny proces slicera (PrusaSlicer CLI) na pliku STL,
@@ -752,7 +753,7 @@ def run_slicer(
         and str(stl_path).lower().endswith(".3mf")
     )
 
-    if is_dense_slice_job(stl_path, triangle_count) and not use_orca_project:
+    if is_dense_slice_job(stl_path, triangle_count) and not use_orca_project and not force_cli:
         if volume_cm3 is not None:
             return slice_result_from_geometry(
                 volume_cm3=float(volume_cm3),
