@@ -157,12 +157,16 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
         "change_filament_gcode",
         "toolchange_gcode",
     }
+    incompatible_gcode_keys_normalized = {
+        key.replace(" ", "_").lower() for key in incompatible_gcode_keys
+    }
 
     def sanitize(value):
         if isinstance(value, dict):
             result = {}
             for key, item in value.items():
-                if key in incompatible_gcode_keys:
+                normalized_key = str(key).strip().replace(" ", "_").lower()
+                if normalized_key in incompatible_gcode_keys_normalized:
                     continue
                 result[key] = 0 if key in invalid_default_keys and _is_negative_default(item) else sanitize(item)
             return result
@@ -191,13 +195,23 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
                     payload = json.dumps(sanitize(config), ensure_ascii=False).encode("utf-8")
                 except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
                     text = payload.decode("utf-8", "ignore")
-                    for key in invalid_default_keys:
-                        text = re.sub(
-                            rf'("{re.escape(key)}"\s*:\s*)(?:-1|"-1"|\[\s*(?:-1|"-1")\s*\])',
-                            r"\g<1>0",
-                            text,
-                        )
-                    payload = text.encode("utf-8")
+                else:
+                    text = payload.decode("utf-8", "ignore")
+                for key in invalid_default_keys:
+                    text = re.sub(
+                        rf'("{re.escape(key)}"\s*:\s*)(?:-1|"-1"|\[\s*(?:-1|"-1")\s*\])',
+                        r"\g<1>0",
+                        text,
+                        flags=re.IGNORECASE,
+                    )
+                for key in incompatible_gcode_keys_normalized:
+                    text = re.sub(
+                        rf'"{re.escape(key)}"\s*:\s*(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\])\s*,?',
+                        "",
+                        text,
+                        flags=re.IGNORECASE,
+                    )
+                payload = text.encode("utf-8")
             target.writestr(info, payload)
     return normalized
 
