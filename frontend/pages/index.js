@@ -995,7 +995,11 @@ endsolid fixture
     analysisData &&
     !isAnalyzing &&
     !hasModel &&
-    (analysisData.instant_pricing === false || analysisData.quote_ready === false)
+    (
+      analysisData.instant_pricing === false ||
+      analysisData.quote_ready === false ||
+      Boolean(analysisData.file_profile)
+    )
   );
   const fromSliceInfo = isBambuSliceQuote(analysisData);
   const previewUnavailable = isPreviewSkipped(analysisData, modelPreviewUrl);

@@ -12,7 +12,10 @@ export default function StudioPreviewUnavailable({
   imageUrl = null,
   fromSliceInfo = false,
 }) {
-  const text = String(message || LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG).trim();
+  const rawText = String(message || LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG).trim();
+  const text = quoteReady
+    ? rawText
+    : rawText.replace(/Wycena gotowa\.?\s*/gi, "").trim() || LARGE_3MF_NO_QUOTE_NO_PREVIEW_MSG;
   const hasImage = Boolean(imageUrl);
   const showSliceNote = Boolean(fromSliceInfo && quoteReady && !text.includes("ze slicera 3MF"));
 
