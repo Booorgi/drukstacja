@@ -4,6 +4,7 @@ FROM python:3.10-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     prusa-slicer \
     libgl1 \
+    libglu1-mesa \
     libglib2.0-0 \
     libgtk-3-0 \
     libdbus-1-3 \
