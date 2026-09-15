@@ -728,11 +728,11 @@ def run_slicer(
             stderr=subprocess.PIPE,
             text=True,
             env=env,
-            timeout=90,
+            timeout=35 if "orca" in executable else 90,
         )
 
         if process.returncode != 0 or not os.path.exists(gcode_path) or os.path.getsize(gcode_path) == 0:
-            print(f"[WARN] PrusaSlicer exit code {process.returncode}: {process.stderr[:300]}")
+            print(f"[WARN] Slicer exit code {process.returncode}: {process.stderr[:300]}")
             return simulate_slicing_fallback(
                 stl_path,
                 infill=infill,

@@ -983,7 +983,7 @@ async def vectorize_image_ai(
 ANALYZE_REQUEST_DEADLINE_S = 48.0
 ANALYZE_PREVIEW_MIN_REMAINING_S = 8.0
 ANALYZE_GLB_MIN_REMAINING_S = 16.0
-ANALYZE_SLICER_ATTEMPTS = 2
+ANALYZE_SLICER_ATTEMPTS = 1
 
 
 def _analyze_remaining_s(started: float, deadline_s: float = ANALYZE_REQUEST_DEADLINE_S) -> float:
