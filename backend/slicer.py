@@ -161,13 +161,6 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
     incompatible_gcode_keys_normalized = {
         key.replace(" ", "_").lower() for key in incompatible_gcode_keys
     }
-    incompatible_preset_keys = {
-        "printer_settings_id",
-        "print_settings_id",
-        "filament_settings_id",
-        "printer_model",
-        "printer_variant",
-    }
 
     def sanitize(value):
         if isinstance(value, dict):
@@ -175,8 +168,6 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
             for key, item in value.items():
                 normalized_key = str(key).strip().replace(" ", "_").lower()
                 if normalized_key in incompatible_gcode_keys_normalized:
-                    continue
-                if normalized_key in incompatible_preset_keys:
                     continue
                 result[key] = 0 if key in invalid_default_keys and _is_negative_default(item) else sanitize(item)
             return result
@@ -233,12 +224,6 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
                     text = re.sub(
                         rf'(?i){re.escape(key)}',
                         "disabled_custom_gcode",
-                        text,
-                    )
-                for key in incompatible_preset_keys:
-                    text = re.sub(
-                        rf'(?ims)["\']?{re.escape(key)}["\']?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\]|[^,}}\r\n]*)\s*,?',
-                        "",
                         text,
                     )
                 payload = text.encode("utf-8")
