@@ -143,6 +143,26 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
     """Usuń z kopii projektu Bambu wartości -1 odrzucane przez Orca."""
     normalized = os.path.join(output_dir, "orca-input.3mf")
     invalid_default_keys = {"raft_first_layer_expansion", "tree_support_wall_count"}
+
+    def sanitize(value):
+        if isinstance(value, dict):
+            return {
+                key: (0 if key in invalid_default_keys and _is_negative_default(item) else sanitize(item))
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [sanitize(item) for item in value]
+        return value
+
+    def _is_negative_default(value):
+        if isinstance(value, (int, float)):
+            return value < 0
+        if isinstance(value, str):
+            return value.strip() == "-1"
+        if isinstance(value, list) and len(value) == 1:
+            return _is_negative_default(value[0])
+        return False
+
     with zipfile.ZipFile(path, "r") as source, zipfile.ZipFile(
         normalized, "w", compression=zipfile.ZIP_DEFLATED
     ) as target:
@@ -152,17 +172,16 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
             if lower_name.endswith(".config"):
                 try:
                     config = json.loads(payload.decode("utf-8"))
-                    if isinstance(config, dict):
-                        changed = False
-                        for key in invalid_default_keys:
-                            value = config.get(key)
-                            if isinstance(value, (int, float)) and value < 0:
-                                del config[key]
-                                changed = True
-                        if changed:
-                            payload = json.dumps(config, ensure_ascii=False).encode("utf-8")
+                    payload = json.dumps(sanitize(config), ensure_ascii=False).encode("utf-8")
                 except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
-                    pass
+                    text = payload.decode("utf-8", "ignore")
+                    for key in invalid_default_keys:
+                        text = re.sub(
+                            rf'("{re.escape(key)}"\s*:\s*)(?:-1|"-1"|\[\s*(?:-1|"-1")\s*\])',
+                            r"\g<1>0",
+                            text,
+                        )
+                    payload = text.encode("utf-8")
             target.writestr(info, payload)
     return normalized
 
