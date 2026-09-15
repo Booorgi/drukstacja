@@ -813,6 +813,10 @@ def _extract_3mf_print_profile(ps: dict) -> dict:
     layer = _as_float(ps.get("layer_height"), None)
     infill = _typical_percent(ps.get("sparse_infill_density"))
     process = _first_str(ps.get("print_settings_id"))
+    support_raw = ps.get("enable_support")
+    support_enabled = None
+    if support_raw is not None:
+        support_enabled = str(support_raw).strip().lower() not in {"0", "false", "no", "off"}
 
     return {
         "filament_colours": colours,
@@ -821,6 +825,7 @@ def _extract_3mf_print_profile(ps: dict) -> dict:
         "infill": infill,
         "nozzle_size": nozzle,
         "print_settings_id": process or None,
+        "support_enabled": support_enabled,
     }
 
 

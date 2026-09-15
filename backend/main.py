@@ -1182,6 +1182,7 @@ async def analyze_model_endpoint(
                 infill = int(file_profile["infill"])
             if file_profile.get("filament_types"):
                 filament_type = str(file_profile["filament_types"][0])
+            profile_support_enabled = file_profile.get("support_enabled")
 
             quoted_from_bambu = False
             if (
@@ -1382,7 +1383,11 @@ async def analyze_model_endpoint(
                                         nozzle_size=float(nozzle_size),
                                         filament_type=filament_type,
                                         color_count=color_count,
-                                        support_needed=True,
+                                        support_needed=(
+                                            True
+                                            if profile_support_enabled is None
+                                            else bool(profile_support_enabled)
+                                        ),
                                         painted_ratio=painted_ratio,
                                         triangle_count=result.get("triangle_count"),
                                         volume_cm3=result.get("volume_cm3"),
