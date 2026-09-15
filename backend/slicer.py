@@ -867,8 +867,12 @@ def run_slicer(
         )
 
     finally:
-        if os.path.exists(gcode_path):
+        if gcode_path and os.path.exists(gcode_path):
             try:
                 os.remove(gcode_path)
             except Exception:
                 pass
+        try:
+            shutil.rmtree(gcode_dir, ignore_errors=True)
+        except Exception:
+            pass
