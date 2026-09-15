@@ -143,13 +143,24 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
     """Usuń z kopii projektu Bambu wartości -1 odrzucane przez Orca."""
     normalized = os.path.join(output_dir, "orca-input.3mf")
     invalid_default_keys = {"raft_first_layer_expansion", "tree_support_wall_count"}
+    incompatible_gcode_keys = {
+        "machine_start_gcode",
+        "machine_end_gcode",
+        "before_layer_change_gcode",
+        "layer_change_gcode",
+        "change filament gcode",
+        "change_filament_gcode",
+        "toolchange_gcode",
+    }
 
     def sanitize(value):
         if isinstance(value, dict):
-            return {
-                key: (0 if key in invalid_default_keys and _is_negative_default(item) else sanitize(item))
-                for key, item in value.items()
-            }
+            result = {}
+            for key, item in value.items():
+                if key in incompatible_gcode_keys:
+                    continue
+                result[key] = 0 if key in invalid_default_keys and _is_negative_default(item) else sanitize(item)
+            return result
         if isinstance(value, list):
             return [sanitize(item) for item in value]
         return value
