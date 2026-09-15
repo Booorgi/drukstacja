@@ -692,6 +692,67 @@ endsolid fixture
       }
     }
 
+    if (is3mf && !peekedSliceQuote) {
+      try {
+        const jobBody = new FormData();
+        jobBody.append("file", file);
+        jobBody.append("layer_height", formFields.layer_height);
+        jobBody.append("nozzle_size", formFields.nozzle_size);
+        jobBody.append("infill", formFields.infill);
+        jobBody.append(
+          "filament_type",
+          peekedProfile?.filament_types?.[0] || formFields.filament_type
+        );
+        jobBody.append("color_count", String(Math.max(peekedProfile?.filament_colours?.length || 1, 1)));
+        jobBody.append("support_needed", String(peekedProfile?.support_enabled !== false));
+        const jobResponse = await fetch(`${API_URL || ""}/api/slice-jobs`, {
+          method: "POST",
+          body: jobBody,
+        });
+        const job = await jobResponse.json();
+        if (!jobResponse.ok) throw new Error(job.detail || "Nie udało się uruchomić slicowania.");
+        setAnalysisData({
+          instant_pricing: false,
+          quote_ready: false,
+          original_filename: file.name,
+          file_profile: peekedProfile || {},
+          message: "Slicowanie modelu trwa w tle. Cena pojawi się po zakończeniu.",
+        });
+        for (let attempt = 0; attempt < 90; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          const statusResponse = await fetch(`${API_URL || ""}/api/slice-jobs/${job.job_id}`);
+          const status = await statusResponse.json();
+          if (status.status === "done") {
+            setAnalysisData({
+              ...status.result,
+              instant_pricing: true,
+              quote_ready: true,
+              original_filename: file.name,
+              file_profile: peekedProfile || {},
+              message: "Wycena gotowa. Waga i czas z OrcaSlicera.",
+            });
+            return;
+          }
+          if (status.status === "failed") {
+            throw new Error(status.error || "OrcaSlicer nie zakończył cięcia.");
+          }
+        }
+        throw new Error("Slicowanie trwa dłużej niż oczekiwano.");
+      } catch (jobError) {
+        console.warn("Błąd zadania slicowania:", jobError);
+        setAnalysisData({
+          instant_pricing: false,
+          quote_ready: false,
+          original_filename: file.name,
+          file_profile: peekedProfile || {},
+          message: `Nie udało się zakończyć automatycznego slicowania: ${jobError.message}`,
+        });
+      } finally {
+        setIsAnalyzing(false);
+      }
+      return;
+    }
+
     // Railway zrywa HTTP ~60 s. Jedna próba 50 s × 3 dla 3MF; FormData od nowa.
     // Sukces (nawet wolny JSON) nigdy nie jest traktowany jako „za duży plik”.
     try {

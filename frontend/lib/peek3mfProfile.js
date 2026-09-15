@@ -92,12 +92,17 @@ export function parse3mfProjectSettingsJson(text) {
     if (!Number.isNaN(n)) infill = n;
   }
   const layer = parseFloat(raw.layer_height);
+  const supportRaw = raw.enable_support;
   return {
     filament_colours: colours,
     filament_types: types,
     layer_height: Number.isFinite(layer) ? layer : null,
     nozzle_size: nozzle != null && Number.isFinite(parseFloat(nozzle)) ? parseFloat(nozzle) : null,
     infill,
+    support_enabled:
+      supportRaw == null
+        ? null
+        : !["0", "false", "no", "off"].includes(String(supportRaw).trim().toLowerCase()),
   };
 }
 

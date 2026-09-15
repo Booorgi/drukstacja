@@ -739,7 +739,7 @@ def run_slicer(
         )
 
         if "orca" in executable:
-            generated = sorted(Path(gcode_dir).glob("*.gcode"), key=lambda p: p.stat().st_mtime)
+            generated = sorted(Path(gcode_dir).rglob("*.gcode"), key=lambda p: p.stat().st_mtime)
             gcode_path = str(generated[-1]) if generated else None
 
         if (
@@ -775,7 +775,11 @@ def run_slicer(
             content = f.read()
 
             # 1. Czas druku
-            time_match = re.search(r"; estimated printing time.*?=\s*([^\r\n]+)", content)
+            time_match = re.search(
+                r";\s*(?:total\s+)?estimated(?:\s+printing)?\s+time\s*=\s*([^\r\n]+)",
+                content,
+                re.IGNORECASE,
+            )
             if time_match:
                 print_time_str = time_match.group(1).strip()
             else:
@@ -785,12 +789,20 @@ def run_slicer(
                     print_time_str = cura_time.group(1)
 
             # 2. Waga filamentu [g]
-            weight_match = re.search(r"; filament used \[g\]\s*=\s*([\d\.]+)", content)
+            weight_match = re.search(
+                r";\s*(?:total\s+)?filament used \[g\]\s*=\s*([\d\.]+)",
+                content,
+                re.IGNORECASE,
+            )
             if weight_match:
                 filament_g = round(float(weight_match.group(1)), 2)
 
             # 3. Długość filamentu [mm] -> zamiana na metry
-            length_match = re.search(r"; filament used \[mm\]\s*=\s*([\d\.]+)", content)
+            length_match = re.search(
+                r";\s*(?:total\s+)?filament used \[mm\]\s*=\s*([\d\.]+)",
+                content,
+                re.IGNORECASE,
+            )
             if length_match:
                 filament_m = round(float(length_match.group(1)) / 1000.0, 2)
             else:

@@ -12,6 +12,8 @@ import time
 import uuid
 import traceback
 import base64
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from typing import Any
@@ -61,6 +63,10 @@ from admin_api import router as admin_router
 # Katalog cache dla wygenerowanych i zorientowanych siatek STL do szybkiego ponownego cięcia
 MODELS_CACHE_DIR = os.path.join(tempfile.gettempdir(), "drukstacja_cache")
 os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
+
+SLICE_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="slice-job")
+SLICE_JOBS = {}
+SLICE_JOBS_LOCK = threading.Lock()
 
 # Katalog cache dla wygenerowanych pakietów produkcyjnych .3MF
 PROJECTS_3MF_CACHE_DIR = os.path.join(tempfile.gettempdir(), "drukstacja_3mf")
@@ -122,6 +128,62 @@ def _cached_preview_media_type(name: str) -> str:
     if lower.endswith(".jpg") or lower.endswith(".jpeg"):
         return "image/jpeg"
     return "application/octet-stream"
+
+
+def _run_slice_job(job_id: str, path: str, params: dict) -> None:
+    try:
+        with SLICE_JOBS_LOCK:
+            SLICE_JOBS[job_id]["status"] = "slicing"
+        slice_data = run_slicer(
+            stl_path=path,
+            infill=int(params["infill"]),
+            layer_height=float(params["layer_height"]),
+            nozzle_size=float(params["nozzle_size"]),
+            filament_type=params["filament_type"],
+            color_count=int(params.get("color_count") or 1),
+            support_needed=bool(params.get("support_needed", True)),
+            painted_ratio=float(params.get("painted_ratio") or 0),
+        )
+        engine = slice_data.get("engine")
+        weight = float(slice_data.get("filament_weight_g") or 0)
+        hours = float(slice_data.get("print_time_hours") or 0)
+        if engine not in {"orca-slicer-cli", "bambu-slice-info"} or weight <= 0 or hours <= 0:
+            raise RuntimeError("Slicer nie zwrócił wiarygodnego czasu i zużycia filamentu.")
+        price = calculate_price_from_slicer(
+            print_time_hours=hours,
+            filament_weight_g=weight,
+            material=params["filament_type"],
+            quantity=1,
+            layer_height=float(params["layer_height"]),
+            nozzle_size=float(params["nozzle_size"]),
+        )
+        with SLICE_JOBS_LOCK:
+            SLICE_JOBS[job_id].update(
+                status="done",
+                result={
+                    "success": True,
+                    "engine": engine,
+                    "quote_ready": True,
+                    "instant_pricing": True,
+                    "print_time_hours": hours,
+                    "print_time_formatted": slice_data.get("print_time_formatted"),
+                    "filament_weight_g": weight,
+                    "filament_length_m": slice_data.get("filament_length_m"),
+                    "filament_volume_cm3": slice_data.get("filament_volume_cm3"),
+                    "price_breakdown": price,
+                    "unit_price": price["unit_price_pln"],
+                    "total_price": price["total_price_pln"],
+                },
+            )
+    except Exception as exc:
+        print(f"[SLICE-JOB] job={job_id} failed: {exc}")
+        with SLICE_JOBS_LOCK:
+            SLICE_JOBS[job_id].update(status="failed", error=str(exc))
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 def _attach_embedded_preview_image(result: dict, unique_id: str, background_tasks: BackgroundTasks) -> None:
@@ -1520,6 +1582,52 @@ def quote(req: QuoteRequest):
         nozzle_size=req.nozzle_size,
     )
     return result
+
+
+@app.post("/api/slice-jobs")
+async def create_slice_job(
+    file: UploadFile = File(...),
+    layer_height: float = Form(0.20),
+    nozzle_size: float = Form(0.4),
+    infill: int = Form(20),
+    filament_type: str = Form("PLA"),
+    color_count: int = Form(1),
+    support_needed: bool = Form(True),
+    painted_ratio: float = Form(0.0),
+):
+    """Queues a 3MF slice so a large Orca job outlives the HTTP request."""
+    if not str(file.filename or "").lower().endswith(".3mf"):
+        raise HTTPException(status_code=400, detail="Kolejka slicowania obsługuje tylko pliki 3MF.")
+    payload = await file.read()
+    if not payload or len(payload) > MAX_FILE_SIZE_MB * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Plik jest pusty albo przekracza limit rozmiaru.")
+    job_id = uuid.uuid4().hex
+    safe_name = "".join(c for c in str(file.filename) if c.isalnum() or c in "._- ")
+    path = os.path.join(MODELS_CACHE_DIR, f"{job_id}_{safe_name}")
+    with open(path, "wb") as output:
+        output.write(payload)
+    params = {
+        "layer_height": layer_height,
+        "nozzle_size": nozzle_size,
+        "infill": infill,
+        "filament_type": filament_type,
+        "color_count": color_count,
+        "support_needed": support_needed,
+        "painted_ratio": painted_ratio,
+    }
+    with SLICE_JOBS_LOCK:
+        SLICE_JOBS[job_id] = {"status": "queued", "filename": file.filename}
+    SLICE_JOB_EXECUTOR.submit(_run_slice_job, job_id, path, params)
+    return {"job_id": job_id, "status": "queued", "filename": file.filename}
+
+
+@app.get("/api/slice-jobs/{job_id}")
+def get_slice_job(job_id: str):
+    with SLICE_JOBS_LOCK:
+        job = SLICE_JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Zadanie slicowania nie istnieje.")
+        return {"job_id": job_id, **job}
 
 
 @app.post("/api/reslice-model")
