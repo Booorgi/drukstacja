@@ -211,6 +211,11 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
                         text,
                         flags=re.IGNORECASE,
                     )
+                    text = re.sub(
+                        rf'(?ims)(["\']?{re.escape(key)}["\']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\]|[^,}}\r\n]*)\s*,?',
+                        "",
+                        text,
+                    )
                 payload = text.encode("utf-8")
             target.writestr(info, payload)
     return normalized
