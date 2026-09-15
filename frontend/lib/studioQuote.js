@@ -33,9 +33,9 @@ const RELIABLE_3MF_QUOTE_ENGINES = new Set([
   "orca-slicer-cli",
 ]);
 
-function isThreeMfAnalysis(analysisData) {
-  return /\.3mf$/i.test(
-    String(analysisData?.original_filename || analysisData?.file_name || "")
+function hasReliableSlicerEngine(analysisData) {
+  return RELIABLE_3MF_QUOTE_ENGINES.has(
+    analysisData?.slicer_engine || analysisData?.quote_source
   );
 }
 
@@ -51,13 +51,17 @@ export function isQuotedModel(analysisData) {
   if (analysisData.instant_pricing === false) return false;
   if (analysisData.skipped_geometry || analysisData.quote_ready === false) return false;
   if (isBambuSliceQuote(analysisData)) return true;
-  if (isThreeMfAnalysis(analysisData)) {
+  if (hasReliableSlicerEngine(analysisData)) {
     return (
-      analysisData.quote_ready === true &&
-      RELIABLE_3MF_QUOTE_ENGINES.has(
-        analysisData.slicer_engine || analysisData.quote_source
-      )
+      analysisData.quote_ready !== false &&
+      Number(analysisData.filament_weight_g) > 0 &&
+      (Number(analysisData.print_time_hours) > 0 ||
+        Number(analysisData.print_time_seconds) > 0 ||
+        Boolean(analysisData.print_time_formatted))
     );
+  }
+  if (analysisData.file_profile || /\.3mf$/i.test(String(analysisData.original_filename || ""))) {
+    return false;
   }
   return isReliableVolumeCm3(analysisData.source_volume_cm3 ?? analysisData.volume_cm3);
 }

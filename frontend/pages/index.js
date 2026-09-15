@@ -991,6 +991,12 @@ endsolid fixture
 
   // Weryfikacja wgranego modelu – ukrycie ceny i blokada koszyka przed analizą
   const hasModel = isQuotedModel(analysisData) && unitPrice != null;
+  const isRfq = Boolean(
+    analysisData &&
+    !isAnalyzing &&
+    !hasModel &&
+    (analysisData.instant_pricing === false || analysisData.quote_ready === false)
+  );
   const fromSliceInfo = isBambuSliceQuote(analysisData);
   const previewUnavailable = isPreviewSkipped(analysisData, modelPreviewUrl);
   const embeddedPreviewUrl = studioPreviewImageUrl(analysisData, previewImageUrl);
@@ -1537,7 +1543,7 @@ endsolid fixture
 
             <aside className="relative z-20 w-full px-4 pb-3 lg:absolute lg:right-4 lg:top-4 lg:w-[300px] lg:px-0 lg:pb-0 lg:bottom-auto">
               <StudioPrintSettings
-                isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
+                isRfq={isRfq}
                 compact={isEmptyStage}
                 matConfig={matConfig}
                 recommendedApps={recommendedApps}
@@ -1563,7 +1569,7 @@ endsolid fixture
           </div>
 
           <StudioQuoteBar
-            isRfq={Boolean(analysisData && analysisData.instant_pricing === false)}
+            isRfq={isRfq}
             hasModel={hasModel}
             isAnalyzing={isAnalyzing}
             isReslicing={isReslicing}
