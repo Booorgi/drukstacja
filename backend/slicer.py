@@ -116,11 +116,17 @@ def convert_step_to_stl(step_path: str, output_stl_path: str) -> str:
 
 
 def get_slicer_binary() -> str | None:
-    """Wyszukuje binarkę prusa-slicer w systemie."""
+    """Wyszukuje OrcaSlicer, a następnie PrusaSlicer jako fallback."""
+    for binary_name in ("orca-slicer", "OrcaSlicer"):
+        binary = shutil.which(binary_name)
+        if binary:
+            return binary
     binary = shutil.which("prusa-slicer")
     if binary:
         return binary
     for fallback in [
+        "/usr/local/bin/orca-slicer",
+        "/opt/orca-slicer/usr/bin/orca-slicer",
         "/usr/bin/prusa-slicer",
         "/usr/local/bin/prusa-slicer",
         "C:\\Program Files\\Prusa3D\\PrusaSlicer\\prusa-slicer-console.exe",
@@ -710,6 +716,12 @@ def run_slicer(
         env = os.environ.copy()
         env["DISPLAY"] = ""
 
+        executable = os.path.basename(slicer_bin).lower()
+        if "orca" in executable:
+            cmd.insert(1, "--slice")
+            cmd.insert(2, "0")
+            cmd = ["xvfb-run", "-a"] + cmd
+
         process = subprocess.run(
             cmd,
             stdout=subprocess.PIPE,
@@ -793,9 +805,10 @@ def run_slicer(
             density = get_filament_density(filament_type)
             filament_g = round(filament_cm3 * density, 1)
 
+        engine_name = "orca-slicer-cli" if "orca" in executable else "prusa-slicer-cli"
         return {
             "success": True,
-            "engine": "prusa-slicer-cli",
+            "engine": engine_name,
             "print_time_hours": hours_float,
             "print_time_formatted": time_formatted,
             "filament_weight_g": filament_g,

@@ -859,7 +859,9 @@ endsolid fixture
   // Dynamiczne ponowne cięcie modelu (reslicing) przy zmianie infill, layerHeight lub materiału
   useEffect(() => {
     if (!analysisData || analysisData.instant_pricing === false) return;
-    const modelKey = analysisData.preview_stl_key || analysisData.file_key;
+    const modelKey = analysisData.file_profile?.filament_types?.length
+      ? analysisData.file_key
+      : analysisData.preview_stl_key || analysisData.file_key;
     if (!modelKey) return;
 
     const timer = setTimeout(async () => {

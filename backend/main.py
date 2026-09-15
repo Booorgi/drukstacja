@@ -1376,8 +1376,13 @@ async def analyze_model_endpoint(
                             try:
                                 vol = reliable_volume_cm3(result.get("volume_cm3"))
                                 if vol or not skip_preview_export:
+                                    slicer_input_path = (
+                                        tmp_path
+                                        if ext == ".3mf" and os.path.isfile(tmp_path)
+                                        else oriented_stl_path
+                                    )
                                     slice_data = run_slicer(
-                                        oriented_stl_path,
+                                        slicer_input_path,
                                         infill=int(infill),
                                         layer_height=float(layer_height),
                                         nozzle_size=float(nozzle_size),
@@ -1511,7 +1516,11 @@ def reslice_model_endpoint(req: ResliceRequest):
     Ponowne slice'owanie modelu w czasie rzeczywistym z nowymi parametrami
     (layer_height, nozzle_size, infill, filament_type) bez konieczności re-uploadu pliku z przeglądarki.
     """
-    key = req.preview_stl_key or req.file_key
+    key = (
+        req.file_key
+        if req.file_key and str(req.file_key).lower().endswith(".3mf")
+        else req.preview_stl_key or req.file_key
+    )
     if not key:
         raise HTTPException(status_code=400, detail="Brak parametru preview_stl_key lub file_key.")
 
