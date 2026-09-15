@@ -194,6 +194,9 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
                 key.encode("utf-8") in payload.lower()
                 for key in incompatible_gcode_keys_normalized
             )
+            if contains_custom_gcode:
+                print(f"[INFO] Pomijam profil 3MF zawierający custom G-code: {info.filename}")
+                continue
             if lower_name.endswith(".config") or contains_custom_gcode:
                 try:
                     config = json.loads(payload.decode("utf-8"))
