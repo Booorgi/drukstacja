@@ -1575,13 +1575,20 @@ def reslice_model_endpoint(req: ResliceRequest):
         except OSError:
             pass
 
-    price_info = calculate_price_from_slicer(
-        print_time_hours=slice_data.get("print_time_hours") or 1.0,
-        filament_weight_g=slice_data.get("filament_weight_g") or 20.0,
-        material=req.filament_type,
-        quantity=req.quantity,
-        layer_height=float(req.layer_height),
-        nozzle_size=float(req.nozzle_size),
+    sliced_weight = float(slice_data.get("filament_weight_g") or 0)
+    sliced_hours = float(slice_data.get("print_time_hours") or 0)
+    quote_ready = sliced_weight > 0 and sliced_hours > 0
+    price_info = (
+        calculate_price_from_slicer(
+            print_time_hours=sliced_hours,
+            filament_weight_g=sliced_weight,
+            material=req.filament_type,
+            quantity=req.quantity,
+            layer_height=float(req.layer_height),
+            nozzle_size=float(req.nozzle_size),
+        )
+        if quote_ready
+        else None
     )
 
     return {
@@ -1602,8 +1609,9 @@ def reslice_model_endpoint(req: ResliceRequest):
         "flush_cm3": slice_data.get("flush_cm3") or 0,
         "support_cm3": slice_data.get("support_cm3") or 0,
         "price_breakdown": price_info,
-        "unit_price": price_info["unit_price_pln"],
-        "total_price": price_info["total_price_pln"],
+        "unit_price": price_info["unit_price_pln"] if price_info else None,
+        "total_price": price_info["total_price_pln"] if price_info else None,
+        "quote_ready": quote_ready,
         "scale": scale,
         "volume_cm3": volume_cm3,
         "surface_area_cm2": surface_area_cm2,

@@ -911,7 +911,11 @@ endsolid fixture
             support_lines: resliceData.support_lines?.length > 0 ? resliceData.support_lines : prev.support_lines,
             slicer_engine: resliceData.engine,
             price_breakdown: resliceData.price_breakdown,
+            quote_ready: resliceData.quote_ready !== false,
+            instant_pricing: resliceData.quote_ready !== false,
           }));
+        } else {
+          console.warn("Reslice nie zwrócił poprawnej wyceny:", res.status);
         }
       } catch (err) {
         console.warn("Błąd reslicowania:", err);

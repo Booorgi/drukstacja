@@ -71,7 +71,7 @@ export default function StudioQuoteBar({
                         data-quote-total
                         className="text-[22px] sm:text-2xl font-bold tracking-tight text-zinc-50 tabular-nums leading-none"
                       >
-                        {totalPrice}
+                        {isReslicing ? "—" : totalPrice}
                       </span>
                       <span className="text-xs font-medium text-zinc-400">PLN</span>
                       {isReslicing ? (
