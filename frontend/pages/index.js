@@ -950,6 +950,13 @@ endsolid fixture
   
   // Obliczenie wagi i ceny bazowej (dla 1 sztuki bez rabatu)
   const baseUnitPrice = useMemo(() => {
+    const quoteHasMeasurements =
+      analysisData?.quote_ready !== false &&
+      Number(analysisData?.filament_weight_g) > 0 &&
+      (Number(analysisData?.print_time_hours) > 0 ||
+        Number(analysisData?.print_time_seconds) > 0 ||
+        Boolean(analysisData?.print_time_formatted));
+    if (!quoteHasMeasurements) return null;
     const ratePerG = matConfig?.ratePerG || (matConfig?.pricePerKg || 45) / 1000;
     return quoteUnitPriceFromWeight({
       weightG: analysisData?.filament_weight_g,
@@ -979,19 +986,21 @@ endsolid fixture
   ]);
 
   // Czysta liniowa cena bez rabatów ilościowych
-  const unitPrice = (Math.round(baseUnitPrice * 100) / 100).toFixed(2);
-  const totalPrice = (parseFloat(unitPrice) * quantity).toFixed(2);
+  const unitPrice = baseUnitPrice == null ? null : (Math.round(baseUnitPrice * 100) / 100).toFixed(2);
+  const totalPrice = unitPrice == null ? null : (parseFloat(unitPrice) * quantity).toFixed(2);
 
   // Weryfikacja wgranego modelu – ukrycie ceny i blokada koszyka przed analizą
-  const hasModel = isQuotedModel(analysisData);
+  const hasModel = isQuotedModel(analysisData) && unitPrice != null;
   const fromSliceInfo = isBambuSliceQuote(analysisData);
   const previewUnavailable = isPreviewSkipped(analysisData, modelPreviewUrl);
   const embeddedPreviewUrl = studioPreviewImageUrl(analysisData, previewImageUrl);
   const isEmptyStage = !selectedFile && !analysisData && !isAnalyzing;
   const MIN_ORDER_VALUE = MINIMUM_ORDER_VALUE_PLN;
   const isBelowMoq = hasModel && parseFloat(totalPrice) < MIN_ORDER_VALUE;
-  const diffToMoq = (MIN_ORDER_VALUE - parseFloat(totalPrice)).toFixed(2);
-  const suggestedQtyForMoq = Math.max(1, Math.ceil(MIN_ORDER_VALUE / Math.max(0.1, parseFloat(unitPrice))));
+  const diffToMoq = hasModel ? (MIN_ORDER_VALUE - parseFloat(totalPrice)).toFixed(2) : null;
+  const suggestedQtyForMoq = hasModel
+    ? Math.max(1, Math.ceil(MIN_ORDER_VALUE / Math.max(0.1, parseFloat(unitPrice))))
+    : 1;
 
   // Rekomendowane zastosowania dla karty specyfikacji technicznej
   const recommendedApps = useMemo(() => {

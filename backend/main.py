@@ -1421,6 +1421,18 @@ async def analyze_model_endpoint(
                                 preview_skipped=preview_skipped,
                                 from_slice_info=slice_data.get("engine") == "bambu-slice-info",
                             )
+                            if ext == ".3mf" and slice_data.get("engine") not in {
+                                "bambu-slice-info",
+                                "orca-slicer-cli",
+                            }:
+                                result["instant_pricing"] = False
+                                result["quote_ready"] = False
+                                result["price_breakdown"] = None
+                                result["unit_price"] = None
+                                result["message"] = (
+                                    "Nie udało się wykonać cięcia profilem Bambu/Orca. "
+                                    "Plik wymaga wyceny inżynierskiej."
+                                )
                         elif last_slice_err:
                             result["print_time_hours"] = None
                             result["print_time_formatted"] = None
