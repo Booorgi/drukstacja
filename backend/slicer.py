@@ -638,9 +638,16 @@ def run_slicer(
     Uruchamia natywny proces slicera (PrusaSlicer CLI) na pliku STL,
     parsuje wygenerowany G-Code i zwraca dokładne metadane czasu i zużycia filamentu.
     Jeśli PrusaSlicer nie jest dostępny, przełącza się automatycznie na fallback.
-    Gęste siatki 3MF idą od razu na szacunek z geometrii — CLI i tak nie wraca przed timeoutem.
+    Gęste siatki omijają fallback tylko wtedy, gdy dostępny jest OrcaSlicer dla projektu 3MF.
     """
-    if is_dense_slice_job(stl_path, triangle_count):
+    slicer_bin = get_slicer_binary()
+    use_orca_project = bool(
+        slicer_bin
+        and "orca" in os.path.basename(slicer_bin).lower()
+        and str(stl_path).lower().endswith(".3mf")
+    )
+
+    if is_dense_slice_job(stl_path, triangle_count) and not use_orca_project:
         if volume_cm3 is not None:
             return slice_result_from_geometry(
                 volume_cm3=float(volume_cm3),
@@ -665,8 +672,6 @@ def run_slicer(
             support_needed=support_needed,
             painted_ratio=painted_ratio,
         )
-
-    slicer_bin = get_slicer_binary()
 
     if not slicer_bin:
         print("[INFO] PrusaSlicer CLI niedostępny w systemie hosta – używam symulacji inżynieryjnej.")
