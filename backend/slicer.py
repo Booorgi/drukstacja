@@ -633,6 +633,8 @@ def run_slicer(
     volume_cm3=None,
     surface_area_cm2=None,
     dimensions_mm=None,
+    timeout_seconds: int | None = None,
+    allow_fallback: bool = True,
 ) -> dict:
     """
     Uruchamia natywny proces slicera (PrusaSlicer CLI) na pliku STL,
@@ -735,7 +737,11 @@ def run_slicer(
             stderr=subprocess.PIPE,
             text=True,
             env=env,
-            timeout=35 if "orca" in executable else 90,
+            timeout=(
+                int(timeout_seconds)
+                if timeout_seconds is not None
+                else (35 if "orca" in executable else 90)
+            ),
         )
 
         if "orca" in executable:
@@ -752,6 +758,11 @@ def run_slicer(
                 f"[WARN] Slicer exit code {process.returncode}: "
                 f"cmd={' '.join(cmd)} stderr={process.stderr[:1000]}"
             )
+            if "orca" in executable and not allow_fallback:
+                raise RuntimeError(
+                    f"OrcaSlicer nie wygenerował G-code (exit={process.returncode}): "
+                    f"{process.stderr[:1000]}"
+                )
             return simulate_slicing_fallback(
                 stl_path,
                 infill=infill,
@@ -854,6 +865,8 @@ def run_slicer(
         }
 
     except Exception as e:
+        if "orca" in locals().get("executable", "") and not allow_fallback:
+            raise
         print(f"[WARN] Błąd wykonania slicera CLI: {e} – przejście na fallback.")
         return simulate_slicing_fallback(
             stl_path,

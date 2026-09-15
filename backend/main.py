@@ -143,6 +143,8 @@ def _run_slice_job(job_id: str, path: str, params: dict) -> None:
             color_count=int(params.get("color_count") or 1),
             support_needed=bool(params.get("support_needed", True)),
             painted_ratio=float(params.get("painted_ratio") or 0),
+            timeout_seconds=300,
+            allow_fallback=False,
         )
         engine = slice_data.get("engine")
         weight = float(slice_data.get("filament_weight_g") or 0)
