@@ -34,6 +34,7 @@ from analysis import (
     COLORED_PREVIEW_FACE_LIMIT,
     skipped_preview_status_message,
     reliable_volume_cm3,
+    load_3mf_mesh,
     analyze_outcome_reason,
     ALL_SUPPORTED_EXTENSIONS,
     INSTANT_3D_EXTENSIONS,
@@ -131,21 +132,32 @@ def _cached_preview_media_type(name: str) -> str:
 
 
 def _run_slice_job(job_id: str, path: str, params: dict) -> None:
+    fallback_path = None
     try:
         with SLICE_JOBS_LOCK:
             SLICE_JOBS[job_id]["status"] = "slicing"
-        slice_data = run_slicer(
-            stl_path=path,
-            infill=int(params["infill"]),
-            layer_height=float(params["layer_height"]),
-            nozzle_size=float(params["nozzle_size"]),
-            filament_type=params["filament_type"],
-            color_count=int(params.get("color_count") or 1),
-            support_needed=bool(params.get("support_needed", True)),
-            painted_ratio=float(params.get("painted_ratio") or 0),
-            timeout_seconds=300,
-            allow_fallback=False,
-        )
+        slicer_params = {
+            "infill": int(params["infill"]),
+            "layer_height": float(params["layer_height"]),
+            "nozzle_size": float(params["nozzle_size"]),
+            "filament_type": params["filament_type"],
+            "color_count": int(params.get("color_count") or 1),
+            "support_needed": bool(params.get("support_needed", True)),
+            "painted_ratio": float(params.get("painted_ratio") or 0),
+            "timeout_seconds": 300,
+            "allow_fallback": False,
+        }
+        try:
+            slice_data = run_slicer(stl_path=path, **slicer_params)
+        except RuntimeError as exc:
+            if not str(path).lower().endswith(".3mf") or "exit=139" not in str(exc):
+                raise
+            # A malformed Bambu project can crash Orca while a clean STL remains sliceable.
+            mesh = load_3mf_mesh(path)
+            fallback_path = os.path.join(MODELS_CACHE_DIR, f"{job_id}_orca_fallback.stl")
+            mesh.export(fallback_path)
+            print(f"[SLICE-JOB] job={job_id} retrying Orca with extracted STL")
+            slice_data = run_slicer(stl_path=fallback_path, **slicer_params)
         engine = slice_data.get("engine")
         weight = float(slice_data.get("filament_weight_g") or 0)
         hours = float(slice_data.get("print_time_hours") or 0)
@@ -186,6 +198,11 @@ def _run_slice_job(job_id: str, path: str, params: dict) -> None:
             os.remove(path)
         except OSError:
             pass
+        if fallback_path:
+            try:
+                os.remove(fallback_path)
+            except OSError:
+                pass
 
 
 def _attach_embedded_preview_image(result: dict, unique_id: str, background_tasks: BackgroundTasks) -> None:
