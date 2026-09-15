@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-cursor0 \
     libxkbcommon-x11-0 \
     xvfb \
+    xauth \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
