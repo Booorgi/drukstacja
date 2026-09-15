@@ -686,21 +686,25 @@ def run_slicer(
             painted_ratio=painted_ratio,
         )
 
-    with tempfile.NamedTemporaryFile(suffix=".gcode", delete=False) as tmp_gcode:
-        gcode_path = tmp_gcode.name
+    gcode_dir = tempfile.mkdtemp(prefix="slicer-")
+    gcode_path = None
 
     bed_center = (125.0, 105.0)  # Standardowy środek stołu (250x210 mm)
 
     try:
-        cmd = [
-            slicer_bin,
-            "--export-gcode",
-            f"--fill-density={int(infill)}%",
-            f"--layer-height={layer_height}",
-            f"--nozzle-diameter={nozzle_size}",
-            "--output", gcode_path,
-            stl_path
-        ]
+        cmd = [slicer_bin]
+        if "orca" in os.path.basename(slicer_bin).lower():
+            cmd.extend(["--slice", "0", "--outputdir", gcode_dir, stl_path])
+        else:
+            gcode_path = os.path.join(gcode_dir, "output.gcode")
+            cmd.extend([
+                "--export-gcode",
+                f"--fill-density={int(infill)}%",
+                f"--layer-height={layer_height}",
+                f"--nozzle-diameter={nozzle_size}",
+                "--output", gcode_path,
+                stl_path,
+            ])
 
         profile = get_material_profile(filament_type)
         cmd.extend([
@@ -723,8 +727,6 @@ def run_slicer(
 
         executable = os.path.basename(slicer_bin).lower()
         if "orca" in executable:
-            cmd.insert(1, "--slice")
-            cmd.insert(2, "0")
             cmd = ["xvfb-run", "-a"] + cmd
 
         process = subprocess.run(
@@ -736,8 +738,20 @@ def run_slicer(
             timeout=35 if "orca" in executable else 90,
         )
 
-        if process.returncode != 0 or not os.path.exists(gcode_path) or os.path.getsize(gcode_path) == 0:
-            print(f"[WARN] Slicer exit code {process.returncode}: {process.stderr[:300]}")
+        if "orca" in executable:
+            generated = sorted(Path(gcode_dir).glob("*.gcode"), key=lambda p: p.stat().st_mtime)
+            gcode_path = str(generated[-1]) if generated else None
+
+        if (
+            process.returncode != 0
+            or not gcode_path
+            or not os.path.exists(gcode_path)
+            or os.path.getsize(gcode_path) == 0
+        ):
+            print(
+                f"[WARN] Slicer exit code {process.returncode}: "
+                f"cmd={' '.join(cmd)} stderr={process.stderr[:1000]}"
+            )
             return simulate_slicing_fallback(
                 stl_path,
                 infill=infill,
