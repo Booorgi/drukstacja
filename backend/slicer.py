@@ -139,37 +139,75 @@ def get_slicer_binary() -> str | None:
     return None
 
 
+ORCA_LAYER_RESET_GCODE = "G92 E0\n"
+
+
 def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
     """Usuń z kopii projektu Bambu wartości -1 odrzucane przez Orca."""
-    print("[ORCA] project-normalizer=v5")
+    print("[ORCA] project-normalizer=v6")
     normalized = os.path.join(output_dir, "orca-input.3mf")
     invalid_default_keys = {"raft_first_layer_expansion", "tree_support_wall_count"}
-    incompatible_gcode_keys = {
+    # Bambu start/end/toolchange psują Orca CLI — wyrzucamy. Reset warstwy zostawiamy.
+    strip_gcode_keys = {
         "machine_start_gcode",
         "machine_end_gcode",
-        "before_layer_change_gcode",
-        "layer_change_gcode",
         "timelapse_gcode",
         "timelapse_custom_gcode",
         "machine_pause_gcode",
-        "machine_before_layer_change_gcode",
-        "machine_after_layer_change_gcode",
         "change filament gcode",
         "change_filament_gcode",
         "toolchange_gcode",
     }
-    incompatible_gcode_keys_normalized = {
-        key.replace(" ", "_").lower() for key in incompatible_gcode_keys
+    layer_reset_gcode_keys = {
+        "before_layer_change_gcode",
+        "layer_change_gcode",
+        "machine_before_layer_change_gcode",
+        "machine_after_layer_change_gcode",
     }
+    strip_gcode_keys_normalized = {
+        key.replace(" ", "_").lower() for key in strip_gcode_keys
+    }
+    layer_reset_gcode_keys_normalized = {
+        key.replace(" ", "_").lower() for key in layer_reset_gcode_keys
+    }
+    incompatible_gcode_keys_normalized = (
+        strip_gcode_keys_normalized | layer_reset_gcode_keys_normalized
+    )
+
+    def _config_needs_layer_reset(config: dict) -> bool:
+        if config.get("use_relative_e_distances") is False:
+            return False
+        if config.get("use_relative_e_distances") is True:
+            return True
+        if str(config.get("type") or "").lower() == "machine":
+            return True
+        return any(
+            str(key).strip().replace(" ", "_").lower() in layer_reset_gcode_keys_normalized
+            for key in config
+        )
+
+    def _config_has_layer_reset(config: dict) -> bool:
+        for key, value in config.items():
+            normalized_key = str(key).strip().replace(" ", "_").lower()
+            if normalized_key not in layer_reset_gcode_keys_normalized:
+                continue
+            if isinstance(value, str) and re.search(r"G92\s*E0", value, re.IGNORECASE):
+                return True
+        return False
 
     def sanitize(value):
         if isinstance(value, dict):
             result = {}
             for key, item in value.items():
                 normalized_key = str(key).strip().replace(" ", "_").lower()
-                if normalized_key in incompatible_gcode_keys_normalized:
+                if normalized_key in strip_gcode_keys_normalized:
+                    continue
+                if normalized_key in layer_reset_gcode_keys_normalized:
+                    result[key] = ORCA_LAYER_RESET_GCODE
                     continue
                 result[key] = 0 if key in invalid_default_keys and _is_negative_default(item) else sanitize(item)
+            if _config_needs_layer_reset(result) and not _config_has_layer_reset(result):
+                result["before_layer_change_gcode"] = ORCA_LAYER_RESET_GCODE
             return result
         if isinstance(value, list):
             return [sanitize(item) for item in value]
@@ -190,49 +228,55 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
         for info in source.infolist():
             payload = source.read(info.filename)
             lower_name = info.filename.lower()
-            contains_custom_gcode = any(
+            contains_strip_gcode = any(
                 key.encode("utf-8") in payload.lower()
-                for key in incompatible_gcode_keys_normalized
+                for key in strip_gcode_keys_normalized
             )
-            if contains_custom_gcode:
+            if contains_strip_gcode:
                 print(f"[INFO] Pomijam profil 3MF zawierający custom G-code: {info.filename}")
                 continue
-            if lower_name.endswith(".config") or contains_custom_gcode:
+            if lower_name.endswith(".config"):
                 try:
                     config = json.loads(payload.decode("utf-8"))
                     payload = json.dumps(sanitize(config), ensure_ascii=False).encode("utf-8")
                 except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
                     text = payload.decode("utf-8", "ignore")
-                else:
-                    text = payload.decode("utf-8", "ignore")
-                for key in invalid_default_keys:
-                    text = re.sub(
-                        rf'("{re.escape(key)}"\s*:\s*)(?:-1|"-1"|\[\s*(?:-1|"-1")\s*\])',
-                        r"\g<1>0",
-                        text,
-                        flags=re.IGNORECASE,
-                    )
-                for key in incompatible_gcode_keys_normalized:
-                    text = re.sub(
-                        rf'"{re.escape(key)}"\s*:\s*(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\])\s*,?',
-                        "",
-                        text,
-                        flags=re.IGNORECASE,
-                    )
-                    text = re.sub(
-                        rf'(?ims)(["\']?{re.escape(key)}["\']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\]|[^,}}\r\n]*)\s*,?',
-                        "",
-                        text,
-                    )
-                    text = re.sub(
-                        rf'(?i){re.escape(key)}',
-                        "disabled_custom_gcode",
-                        text,
-                    )
-                payload = text.encode("utf-8")
+                    for key in invalid_default_keys:
+                        text = re.sub(
+                            rf'("{re.escape(key)}"\s*:\s*)(?:-1|"-1"|\[\s*(?:-1|"-1")\s*\])',
+                            r"\g<1>0",
+                            text,
+                            flags=re.IGNORECASE,
+                        )
+                    for key in strip_gcode_keys_normalized:
+                        text = re.sub(
+                            rf'"{re.escape(key)}"\s*:\s*(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\])\s*,?',
+                            "",
+                            text,
+                            flags=re.IGNORECASE,
+                        )
+                        text = re.sub(
+                            rf'(?ims)(["\']?{re.escape(key)}["\']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\]|[^,}}\r\n]*)\s*,?',
+                            "",
+                            text,
+                        )
+                        text = re.sub(
+                            rf'(?i){re.escape(key)}',
+                            "disabled_custom_gcode",
+                            text,
+                        )
+                    for key in layer_reset_gcode_keys_normalized:
+                        reset_value = json.dumps(ORCA_LAYER_RESET_GCODE)
+                        text = re.sub(
+                            rf'"{re.escape(key)}"\s*:\s*(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\])',
+                            f'"{key}": {reset_value}',
+                            text,
+                            flags=re.IGNORECASE,
+                        )
+                    payload = text.encode("utf-8")
             if any(
                 key.encode("utf-8") in payload.lower()
-                for key in incompatible_gcode_keys_normalized
+                for key in strip_gcode_keys_normalized
             ):
                 print(f"[INFO] Pomijam wpis 3MF z niekompatybilnym G-code: {info.filename}")
                 continue
@@ -804,11 +848,12 @@ def run_slicer(
         if "orca" in os.path.basename(slicer_bin).lower():
             if str(stl_path).lower().endswith(".3mf"):
                 slicer_input_path = normalize_orca_3mf_project(stl_path, gcode_dir)
-            # Bez --layer-gcode: Orca CLI (2.4.x) jej nie zna → exit 254.
+            # Orca 2.4.x: brak --layer-gcode (Prusa); relative E wymaga G92 E0 w profilu.
             cmd.extend([
                 "--slice", "0",
                 "--allow-newer-file",
                 "--debug", "3",
+                "--before-layer-change-gcode", "G92 E0",
                 "--outputdir", gcode_dir,
                 slicer_input_path,
             ])
