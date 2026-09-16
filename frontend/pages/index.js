@@ -30,6 +30,13 @@ import {
   quoteUnitPriceFromWeight,
   studioFamiliesForWheel,
 } from "../lib/filamentCatalog";
+import {
+  formatAmsMaterialLabel,
+  normalizeAmsColours,
+  scaleLengthForDensity,
+  scaleWeightForDensity,
+  updateAmsSlot,
+} from "../lib/amsColours";
 import commercialPricing from "../lib/commercialPricing";
 import {
   peek3mfSidecar,
@@ -102,6 +109,8 @@ export default function Home() {
   const [selectedMaterialGroup, setSelectedMaterialGroup] = useState("all");
   const [selectedMaterial, setSelectedMaterial] = useState(STL_MATERIALS[0].id);
   const [selectedColor, setSelectedColor] = useState(STL_MATERIALS[0].colors[0].hex);
+  const [amsColours, setAmsColours] = useState([]);
+  const [amsSlotIndex, setAmsSlotIndex] = useState(0);
 
   const filteredMaterials = useMemo(() => {
     if (selectedMaterialGroup === "all") return STL_MATERIALS;
@@ -116,7 +125,13 @@ export default function Home() {
     return idx >= 0 ? idx : 0;
   }, [filteredMaterials, selectedMaterial]);
 
-  function handleSelectMaterial(matId) {
+  function applyAmsColours(colours) {
+    const next = normalizeAmsColours(colours);
+    setAmsColours(next);
+    if (next[0]) setSelectedColor(next[0]);
+  }
+
+  function handleSelectMaterial(matId, { preserveColors = false } = {}) {
     const targetMat = materialById(matId);
     if (!targetMat) return;
 
@@ -132,7 +147,7 @@ export default function Home() {
       }
     }
 
-    if (targetMat.colors && targetMat.colors.length > 0) {
+    if (!preserveColors && targetMat.colors && targetMat.colors.length > 0) {
       setSelectedColor(targetMat.colors[0].hex);
     }
 
@@ -199,9 +214,37 @@ export default function Home() {
     setColorPickerOpen(false);
   }
 
+  function handleSelectAmsSlotColor(item) {
+    if (!item?.hex) return;
+    setAmsColours((prev) => {
+      const next = updateAmsSlot(prev, amsSlotIndex, item.hex);
+      if (amsSlotIndex === 0 || next.length === 1) {
+        setSelectedColor(item.hex);
+      }
+      return next;
+    });
+    setColorPickerOpen(false);
+  }
+
   function handleSelectMaterialFromPicker(subtype) {
     if (subtype?.id) handleSelectMaterial(subtype.id);
     setMaterialPickerOpen(false);
+  }
+
+  function handleSelectMaterialFor3mf(subtype) {
+    if (subtype?.id) handleSelectMaterial(subtype.id, { preserveColors: true });
+    setMaterialPickerOpen(false);
+  }
+
+  function openAmsSlotPicker(index) {
+    setAmsSlotIndex(index);
+    closeOtherStudioPickers("color");
+    setColorPickerOpen(true);
+  }
+
+  function openAmsMaterialPicker() {
+    closeOtherStudioPickers("material");
+    setMaterialPickerOpen(true);
   }
 
   function closeOtherStudioPickers(keep) {
@@ -469,6 +512,7 @@ endsolid fixture
       setLayerHeight(0.2);
       setNozzleSize(0.4);
       setSelectedMaterial("PLA_STANDARD");
+      applyAmsColours(["#080504", "#854A22", "#C4864F", "#DFDFDE"]);
       setAnalysisData({
         instant_pricing: true,
         skipped_geometry: false,
@@ -504,6 +548,7 @@ endsolid fixture
       setLayerHeight(0.2);
       setNozzleSize(0.4);
       setSelectedMaterial("PLA_STANDARD");
+      applyAmsColours(["#080504", "#854A22", "#C4864F", "#DFDFDE"]);
       setAnalysisData({
         instant_pricing: true,
         skipped_geometry: false,
@@ -541,6 +586,7 @@ endsolid fixture
       setLayerHeight(0.2);
       setNozzleSize(0.4);
       setSelectedMaterial("PLA_STANDARD");
+      applyAmsColours(["#E05028"]);
       setAnalysisData({
         instant_pricing: true,
         skipped_geometry: false,
@@ -627,6 +673,10 @@ endsolid fixture
     setSelectedFile(file);
     setIsAnalyzing(true);
     setAnalysisData(null);
+    setAmsColours([]);
+    setAmsSlotIndex(0);
+    setMaterialPickerOpen(false);
+    setColorPickerOpen(false);
     setRfqSubmitted(false);
     setScalePercent(100);
     setScaleOpen(false);
@@ -666,13 +716,15 @@ endsolid fixture
         const peeked = await peek3mfSidecar(file);
         peekedProfile = peeked.profile;
         if (peekedProfile?.filament_types?.length) {
-          handleSelectMaterial(materialIdFromFilamentType(peekedProfile.filament_types[0]));
+          handleSelectMaterial(materialIdFromFilamentType(peekedProfile.filament_types[0]), {
+            preserveColors: true,
+          });
         }
         if (peekedProfile?.layer_height) setLayerHeight(peekedProfile.layer_height);
         if (peekedProfile?.nozzle_size) setNozzleSize(peekedProfile.nozzle_size);
         if (peekedProfile?.infill != null) setInfill(peekedProfile.infill);
         if (peekedProfile?.filament_colours?.length) {
-          setSelectedColor(peekedProfile.filament_colours[0]);
+          applyAmsColours(peekedProfile.filament_colours);
         }
         if (peeked.preview?.url) setPreviewImageUrl(peeked.preview.url);
         if (canQuoteFromPeekedSliceInfo(peeked.sliceStats, peeked.maxModelUncompressed)) {
@@ -792,14 +844,18 @@ endsolid fixture
       if (data.file_profile) {
         const p = data.file_profile;
         if (p.filament_types?.length) {
-          handleSelectMaterial(materialIdFromFilamentType(p.filament_types[0]));
+          handleSelectMaterial(materialIdFromFilamentType(p.filament_types[0]), {
+            preserveColors: true,
+          });
         }
         if (p.layer_height) setLayerHeight(p.layer_height);
         if (p.nozzle_size) setNozzleSize(p.nozzle_size);
         if (p.infill != null) setInfill(p.infill);
         if (p.filament_colours?.length) {
-          setSelectedColor(p.filament_colours[0]);
+          applyAmsColours(p.filament_colours);
         }
+      } else if (data.filament_colours?.length) {
+        applyAmsColours(data.filament_colours);
       }
 
       const keepNativeGltf =
@@ -916,20 +972,29 @@ endsolid fixture
     setAnalysisData(null);
     setModelPreviewUrl(null);
     setPreviewImageUrl(null);
+    setAmsColours([]);
+    setAmsSlotIndex(0);
     setRfqSubmitted(false);
     setQuantity(1);
     setScalePercent(100);
     setScaleOpen(false);
     setEngineerReview(false);
+    setMaterialPickerOpen(false);
+    setColorPickerOpen(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   // Dynamiczne ponowne cięcie modelu (reslicing) przy zmianie infill, layerHeight lub materiału
   useEffect(() => {
     if (!analysisData || analysisData.instant_pricing === false) return;
-    const modelKey = analysisData.file_profile?.filament_types?.length
-      ? analysisData.file_key
-      : analysisData.preview_stl_key || analysisData.file_key;
+    // 3MF: waga/czas ze slicera — materiał tylko przelicza cenę na froncie
+    if (
+      analysisData.file_profile ||
+      /\.3mf$/i.test(String(analysisData.original_filename || selectedFile?.name || ""))
+    ) {
+      return;
+    }
+    const modelKey = analysisData.preview_stl_key || analysisData.file_key;
     if (!modelKey) return;
 
     const timer = setTimeout(async () => {
@@ -1010,6 +1075,54 @@ endsolid fixture
   const activeColorObj =
     matConfig?.colors?.find((c) => String(c.hex).toLowerCase() === String(selectedColor).toLowerCase()) ||
     matConfig?.colors?.[0];
+  const displayAmsColours = useMemo(() => {
+    if (amsColours.length) return amsColours;
+    return normalizeAmsColours(
+      analysisData?.file_profile?.filament_colours || analysisData?.filament_colours || []
+    );
+  }, [amsColours, analysisData?.filament_colours, analysisData?.file_profile?.filament_colours]);
+  const analysisForViewer = useMemo(() => {
+    if (!analysisData) return analysisData;
+    if (!displayAmsColours.length) return analysisData;
+    return {
+      ...analysisData,
+      filament_colours: displayAmsColours,
+      file_profile: {
+        ...(analysisData.file_profile || {}),
+        filament_colours: displayAmsColours,
+      },
+    };
+  }, [analysisData, displayAmsColours]);
+  const quoteWeightG = useMemo(() => {
+    const raw = Number(analysisData?.filament_weight_g) || 0;
+    if (raw <= 0) return 0;
+    const is3mfQuote =
+      Boolean(analysisData?.file_profile) ||
+      /\.3mf$/i.test(String(analysisData?.original_filename || selectedFile?.name || ""));
+    if (!is3mfQuote) return raw;
+    return scaleWeightForDensity(raw, matConfig?.density);
+  }, [
+    analysisData?.filament_weight_g,
+    analysisData?.file_profile,
+    analysisData?.original_filename,
+    selectedFile?.name,
+    matConfig?.density,
+  ]);
+  const quoteLengthM = useMemo(() => {
+    const raw = Number(analysisData?.filament_length_m) || 0;
+    if (raw <= 0) return 0;
+    const is3mfQuote =
+      Boolean(analysisData?.file_profile) ||
+      /\.3mf$/i.test(String(analysisData?.original_filename || selectedFile?.name || ""));
+    if (!is3mfQuote) return raw;
+    return scaleLengthForDensity(raw, matConfig?.density);
+  }, [
+    analysisData?.filament_length_m,
+    analysisData?.file_profile,
+    analysisData?.original_filename,
+    selectedFile?.name,
+    matConfig?.density,
+  ]);
   const isNozzle02 = Math.abs(nozzleSize - 0.2) < 0.05;
   const layerMultiplier = isNozzle02
     ? (Math.abs(layerHeight - 0.08) < 0.02 ? 1.30 : Math.abs(layerHeight - 0.12) < 0.02 ? 1.15 : 1.0)
@@ -1020,14 +1133,14 @@ endsolid fixture
   const baseUnitPrice = useMemo(() => {
     const quoteHasMeasurements =
       analysisData?.quote_ready !== false &&
-      Number(analysisData?.filament_weight_g) > 0 &&
+      quoteWeightG > 0 &&
       (Number(analysisData?.print_time_hours) > 0 ||
         Number(analysisData?.print_time_seconds) > 0 ||
         Boolean(analysisData?.print_time_formatted));
     if (!quoteHasMeasurements) return null;
     const ratePerG = matConfig?.ratePerG || (matConfig?.pricePerKg || 45) / 1000;
     return quoteUnitPriceFromWeight({
-      weightG: analysisData?.filament_weight_g,
+      weightG: quoteWeightG,
       volumeCm3: volume,
       infill,
       density: matConfig?.density || 1.24,
@@ -1041,11 +1154,12 @@ endsolid fixture
         analysisData?.file_profile?.slice_stats?.print_time_seconds,
     });
   }, [
-    analysisData?.filament_weight_g,
+    quoteWeightG,
     analysisData?.print_time_hours,
     analysisData?.print_time_formatted,
     analysisData?.print_time_seconds,
     analysisData?.file_profile?.slice_stats?.print_time_seconds,
+    analysisData?.quote_ready,
     volume,
     matConfig,
     infill,
@@ -1124,6 +1238,11 @@ endsolid fixture
     return "Standardowa (Odporność domowa)";
   }, [matConfig]);
 
+  const isLocked3mf = Boolean(
+    analysisData?.file_profile ||
+      String(selectedFile?.name || analysisData?.original_filename || "").toLowerCase().endsWith(".3mf")
+  );
+
   async function handleAddToCart() {
     if (!user) {
       setIsAuthOpen(true);
@@ -1141,7 +1260,9 @@ endsolid fixture
     try {
       const newOrder = await createOrder({
         file_name: selectedFile?.name || "Model 3D STL",
-        material: `${matConfig.name} (${activeColorObj?.name || selectedColor})`,
+        material: isLocked3mf
+          ? formatAmsMaterialLabel(matConfig.name || "PLA", displayAmsColours)
+          : `${matConfig.name} (${activeColorObj?.name || selectedColor})`,
         technology: `${
           matConfig.group === "composite"
             ? "FDM Hardened Steel 0.4mm (Carbon)"
@@ -1149,7 +1270,11 @@ endsolid fixture
             ? "FDM Direct Drive 0.4mm (Flex TPU)"
             : `FDM Precision ${nozzleSize}mm`
         }${analysisData?.print_time_formatted ? ` | Czas: ${analysisData.print_time_formatted}` : ""}${
-          analysisData?.filament_weight_g ? ` | Waga: ${analysisData.filament_weight_g}g` : ""
+          quoteWeightG ? ` | Waga: ${quoteWeightG}g` : ""
+        }${
+          displayAmsColours.length > 1
+            ? ` | AMS: ${displayAmsColours.join(", ")}`
+            : ""
         }${scalePercent !== 100 ? ` | Skala: ${scalePercent}%` : ""}${
           engineerReview ? " | Weryfikacja inżyniera przed drukiem" : ""
         }`,
@@ -1158,7 +1283,7 @@ endsolid fixture
         clean_supports: true,
         brass_inserts: false,
         quantity: quantity,
-        filament_weight_g: Number(analysisData?.filament_weight_g) || null,
+        filament_weight_g: quoteWeightG || null,
         print_time_hours: canonicalPrintTimeHours({
           formatted: analysisData?.print_time_formatted,
           hours: analysisData?.print_time_hours,
@@ -1194,7 +1319,8 @@ endsolid fixture
               model_key: modelKey,
               file_name: selectedFile?.name || "model.stl",
               material: matConfig.name || "PLA",
-              color_hex: activeColorObj?.hex || "#EF4444",
+              color_hex: displayAmsColours[0] || activeColorObj?.hex || "#EF4444",
+              filament_colours: displayAmsColours,
               layer_height: parseFloat(String(layerHeight || "0.2").replace(/[^\d.]/g, "")) || 0.2,
               infill: parseInt(String(infill || "20").replace(/[^\d.]/g, "")) || 20,
               nozzle_size: parseFloat(String(nozzleSize || "0.4").replace(/[^\d.]/g, "")) || 0.4,
@@ -1225,10 +1351,6 @@ endsolid fixture
     { id: "layer", hex: "#E11D2A", name: `${Number(layerHeight).toFixed(2)} mm` },
     { id: "infill", hex: "#D4D4D4", name: `${infill}%` },
   ];
-  const isLocked3mf = Boolean(
-    analysisData?.file_profile ||
-      String(selectedFile?.name || analysisData?.original_filename || "").toLowerCase().endsWith(".3mf")
-  );
   const fileProfile = analysisData?.file_profile || {};
 
   return (
@@ -1306,14 +1428,72 @@ endsolid fixture
             pickerOpen={materialPickerOpen || colorPickerOpen || printParamsOpen || scaleOpen}
           >
             {isLocked3mf ? (
-              <StudioFileProfile
-                colours={fileProfile.filament_colours || analysisData?.filament_colours || []}
-                filamentTypes={fileProfile.filament_types || []}
-                layerHeight={fileProfile.layer_height || layerHeight}
-                nozzleSize={fileProfile.nozzle_size || nozzleSize}
-                infill={fileProfile.infill ?? infill}
-                fromSliceInfo={fromSliceInfo}
-              />
+              <div className="relative z-[80] overflow-visible pointer-events-auto" ref={materialPickerRef}>
+                <div ref={colorPickerRef}>
+                  <StudioFileProfile
+                    colours={displayAmsColours}
+                    filamentTypes={fileProfile.filament_types || []}
+                    layerHeight={fileProfile.layer_height || layerHeight}
+                    nozzleSize={fileProfile.nozzle_size || nozzleSize}
+                    infill={fileProfile.infill ?? infill}
+                    fromSliceInfo={fromSliceInfo}
+                    editable
+                    materialLabel={materialCaption}
+                    onSelectSlot={openAmsSlotPicker}
+                    onOpenMaterial={openAmsMaterialPicker}
+                  />
+                </div>
+                {materialPickerOpen && isMdUp ? (
+                  <div className="absolute top-0 left-full z-[90] ml-3">
+                    <StudioMaterialPicker
+                      families={STUDIO_FAMILIES}
+                      selectedFamilyId={selectedFamily?.id}
+                      selectedSubtypeId={selectedMaterial}
+                      surface="popover"
+                      onSelectSubtype={handleSelectMaterialFor3mf}
+                    />
+                  </div>
+                ) : null}
+                <StudioMobileSheet
+                  open={materialPickerOpen && !isMdUp}
+                  onClose={() => setMaterialPickerOpen(false)}
+                  closeLabel="Zamknij wybór materiału"
+                  panelRef={materialSheetRef}
+                >
+                  <StudioMaterialPicker
+                    families={STUDIO_FAMILIES}
+                    selectedFamilyId={selectedFamily?.id}
+                    selectedSubtypeId={selectedMaterial}
+                    surface="sheet"
+                    onSelectSubtype={handleSelectMaterialFor3mf}
+                  />
+                </StudioMobileSheet>
+                {colorPickerOpen && isMdUp ? (
+                  <div className="absolute bottom-0 left-full z-[90] ml-3">
+                    <StudioColorPicker
+                      colors={colorWheelItems}
+                      value={displayAmsColours[amsSlotIndex] || selectedColor}
+                      materialName={`${colorMaterialLabel} · AMS ${amsSlotIndex + 1}`}
+                      surface="popover"
+                      onSelect={handleSelectAmsSlotColor}
+                    />
+                  </div>
+                ) : null}
+                <StudioMobileSheet
+                  open={colorPickerOpen && !isMdUp}
+                  onClose={() => setColorPickerOpen(false)}
+                  closeLabel="Zamknij wybór koloru AMS"
+                  panelRef={colorSheetRef}
+                >
+                  <StudioColorPicker
+                    colors={colorWheelItems}
+                    value={displayAmsColours[amsSlotIndex] || selectedColor}
+                    materialName={`${colorMaterialLabel} · AMS ${amsSlotIndex + 1}`}
+                    surface="sheet"
+                    onSelect={handleSelectAmsSlotColor}
+                  />
+                </StudioMobileSheet>
+              </div>
             ) : (
               <>
                 <div className="relative z-[80] overflow-visible" ref={materialPickerRef}>
@@ -1510,7 +1690,7 @@ endsolid fixture
                   studio
                   modelUrl={modelPreviewUrl}
                   fileName={selectedFile?.name || "model.stl"}
-                  analysisData={analysisData}
+                  analysisData={analysisForViewer}
                   selectedColor={selectedColor}
                   onColorChange={(newHex) => setSelectedColor(newHex)}
                   materialConfig={matConfig}
@@ -1661,11 +1841,11 @@ endsolid fixture
               (analysisData?.print_time_hours ? `${analysisData.print_time_hours}h` : null)
             }
             filamentWeight={
-              analysisData?.filament_weight_g && hasModel
-                ? `${analysisData.filament_weight_g} g`
+              quoteWeightG && hasModel
+                ? `${quoteWeightG} g`
                 : null
             }
-            filamentLength={analysisData?.filament_length_m ? `${analysisData.filament_length_m} m` : null}
+            filamentLength={quoteLengthM ? `${quoteLengthM} m` : null}
             engineerReview={engineerReview}
             onEngineerReviewChange={setEngineerReview}
           />
@@ -1674,7 +1854,11 @@ endsolid fixture
 
       <main className="max-w-7xl mx-auto px-4 py-10 space-y-8 w-full">
         <div id="materialy" className="w-full">
-          <MaterialCatalog onSelectMaterial={handleSelectMaterial} />
+          <MaterialCatalog
+            onSelectMaterial={(id) =>
+              handleSelectMaterial(id, { preserveColors: isLocked3mf })
+            }
+          />
         </div>
 
       </main>

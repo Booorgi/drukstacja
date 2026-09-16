@@ -313,6 +313,7 @@ class Generate3MFRequest(BaseModel):
     infill: Any = 20
     material: str = "PLA"
     color_hex: str = "#EF4444"
+    filament_colours: list[str] | None = None
     scale: float = 1.0
 
 
@@ -1907,6 +1908,13 @@ def generate_3mf_endpoint(req: Generate3MFRequest):
             scaled_model = local_model
 
     # Generowanie .3MF
+    ams_colours = [
+        str(c)
+        for c in (req.filament_colours or [])
+        if isinstance(c, str) and c.startswith("#")
+    ]
+    if ams_colours:
+        print(f"[INFO] generate-3mf AMS remap: {ams_colours}")
     generate_production_3mf(
         model_path=scaled_model,
         order_metadata={"order_id": order_id, "file_name": file_name},
@@ -1915,7 +1923,8 @@ def generate_3mf_endpoint(req: Generate3MFRequest):
             "nozzle_size": clean_nozzle_size,
             "infill": clean_infill,
             "material": req.material,
-            "color_hex": req.color_hex,
+            "color_hex": (ams_colours[0] if ams_colours else req.color_hex),
+            "filament_colours": ams_colours,
         },
         parts=cached_parts,
         output_path=local_3mf_path,
