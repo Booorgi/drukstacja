@@ -705,6 +705,13 @@ endsolid fixture
         );
         jobBody.append("color_count", String(Math.max(peekedProfile?.filament_colours?.length || 1, 1)));
         jobBody.append("support_needed", String(peekedProfile?.support_enabled !== false));
+        jobBody.append(
+          "painted_ratio",
+          String(
+            Number(peekedProfile?.painted_ratio) ||
+              (Math.max(peekedProfile?.filament_colours?.length || 1, 1) >= 2 ? 0.66 : 0)
+          )
+        );
         const jobResponse = await fetch(`${API_URL || ""}/api/slice-jobs`, {
           method: "POST",
           body: jobBody,

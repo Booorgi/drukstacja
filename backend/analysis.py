@@ -872,13 +872,12 @@ def _extract_3mf_slice_info(zf: zipfile.ZipFile) -> dict:
         if used_g > 0 or (weight_g and weight_g > 0) or prediction_s:
             break
 
-    if used_g <= 0 and weight_g:
-        used_g = weight_g
-    if used_g <= 0 and not prediction_s:
+    total_g = max(float(used_g or 0.0), float(weight_g or 0.0))
+    if total_g <= 0 and not prediction_s:
         return {}
 
     return {
-        "filament_weight_g": round(float(used_g), 2),
+        "filament_weight_g": round(total_g, 2),
         "filament_length_m": round(float(used_m), 2),
         "print_time_seconds": int(prediction_s or 0),
         "color_count": max(used_slots, 1),

@@ -25,7 +25,10 @@ function parse3mfSliceInfoXml(text) {
   }
   const weightFromFilament = usedG;
   const weightFromMeta = parseFloat(weightMatch && weightMatch[1]);
-  const weight = weightFromFilament > 0 ? weightFromFilament : (Number.isFinite(weightFromMeta) ? weightFromMeta : 0);
+  const weight = Math.max(
+    weightFromFilament > 0 ? weightFromFilament : 0,
+    Number.isFinite(weightFromMeta) ? weightFromMeta : 0,
+  );
   const secondsRaw = parseFloat(predMatch && predMatch[1]);
   const seconds = Number.isFinite(secondsRaw) ? Math.round(secondsRaw) : 0;
   const hasWeight = Number.isFinite(weight) && weight > MIN_BAMBU_SLICE_WEIGHT_G;

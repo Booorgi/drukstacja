@@ -47,6 +47,7 @@ from pricing import calculate_price, calculate_price_from_slicer, MATERIALS
 from storage import upload_file_to_r2, get_file_url, download_file_from_r2, save_production_3mf_file
 from slicer import (
     convert_step_to_stl,
+    reconcile_multicolor_orca_stats,
     run_slicer,
     slice_result_from_bambu_stats,
     validated_bambu_slice_stats,
@@ -162,6 +163,17 @@ def _run_slice_job(job_id: str, path: str, params: dict) -> None:
                 force_cli=True,
                 **slicer_params,
             )
+        slice_data = reconcile_multicolor_orca_stats(
+            path,
+            slice_data,
+            infill=slicer_params["infill"],
+            layer_height=slicer_params["layer_height"],
+            nozzle_size=slicer_params["nozzle_size"],
+            filament_type=slicer_params["filament_type"],
+            color_count=slicer_params["color_count"],
+            support_needed=slicer_params["support_needed"],
+            painted_ratio=slicer_params["painted_ratio"],
+        )
         engine = slice_data.get("engine")
         weight = float(slice_data.get("filament_weight_g") or 0)
         hours = float(slice_data.get("print_time_hours") or 0)

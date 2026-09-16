@@ -402,25 +402,24 @@ def parse_gcode_slice_stats(content: str, filament_type: str) -> dict:
         if header_match:
             print_time_str = header_match.group(1).strip()
 
-    filament_g = 0.0
+    per_spool_g = [
+        float(value)
+        for value in re.findall(
+            r";\s*filament used \[g\]\s*=\s*([\d\.]+)",
+            content,
+            re.IGNORECASE,
+        )
+    ]
+    total_line_g = 0.0
     weight_match = re.search(
         r";\s*total filament used \[g\]\s*=\s*([\d\.]+)",
         content,
         re.IGNORECASE,
     )
     if weight_match:
-        filament_g = round(float(weight_match.group(1)), 2)
-    else:
-        per_spool = [
-            float(value)
-            for value in re.findall(
-                r";\s*filament used \[g\]\s*=\s*([\d\.]+)",
-                content,
-                re.IGNORECASE,
-            )
-        ]
-        if per_spool:
-            filament_g = round(sum(per_spool), 2)
+        total_line_g = float(weight_match.group(1))
+    # AMS: suma zużycia per szpula (z płukaniem) bywa wyższa niż jedna linia „total”.
+    filament_g = round(max(total_line_g, sum(per_spool_g) if per_spool_g else 0.0), 2)
 
     filament_m = 0.0
     length_match = re.search(
@@ -477,6 +476,40 @@ def parse_gcode_slice_stats(content: str, filament_type: str) -> dict:
     }
 
 
+def _merge_orca_stat_candidates(*candidates: dict | None) -> dict | None:
+    """Weź najwyższą wiarogodną wagę/czas spośród slice_info i stopki G-code."""
+    merged: dict = {}
+    for candidate in candidates:
+        if not candidate:
+            continue
+        weight = float(candidate.get("filament_weight_g") or 0)
+        hours = float(candidate.get("print_time_hours") or 0)
+        if hours <= 0 and candidate.get("print_time_seconds"):
+            hours = round(int(candidate["print_time_seconds"]) / 3600.0, 2)
+        if weight <= MIN_BAMBU_SLICE_WEIGHT_G and hours <= 0:
+            continue
+        if weight > float(merged.get("filament_weight_g") or 0):
+            merged["filament_weight_g"] = round(weight, 2)
+            merged["filament_length_m"] = round(float(candidate.get("filament_length_m") or 0), 2)
+            merged["filament_volume_cm3"] = round(float(candidate.get("filament_volume_cm3") or 0), 2)
+        if hours > float(merged.get("print_time_hours") or 0):
+            merged["print_time_hours"] = hours
+            merged["print_time_formatted"] = candidate.get("print_time_formatted")
+            merged["print_time_seconds"] = int(candidate.get("print_time_seconds") or round(hours * 3600))
+        merged["has_supports"] = merged.get("has_supports") or candidate.get("has_supports")
+        merged["color_count"] = max(
+            int(merged.get("color_count") or 0),
+            int(candidate.get("color_count") or 0),
+        )
+    if not merged:
+        return None
+    if not merged.get("print_time_formatted"):
+        _, merged["print_time_formatted"] = parse_time_to_hours(
+            str(int(merged.get("print_time_seconds") or 0))
+        )
+    return merged
+
+
 def collect_orca_slice_stats(
     gcode_dir: str,
     *,
@@ -487,18 +520,19 @@ def collect_orca_slice_stats(
 ) -> dict | None:
     """Czyta wynik Orca: slice_info z .gcode.3mf, potem stopkę luźnego G-code."""
     archives, plain = _iter_orca_output_files(gcode_dir)
+    candidates: list[dict | None] = []
     for archive in reversed(archives):
         raw = _read_slice_info_stats_from_3mf(str(archive))
         if raw:
-            result = slice_result_from_bambu_stats(
-                raw,
-                infill=infill,
-                layer_height=layer_height,
-                filament_type=filament_type,
-                nozzle_size=nozzle_size,
+            candidates.append(
+                slice_result_from_bambu_stats(
+                    raw,
+                    infill=infill,
+                    layer_height=layer_height,
+                    filament_type=filament_type,
+                    nozzle_size=nozzle_size,
+                )
             )
-            result["engine"] = "orca-slicer-cli"
-            return result
 
     content = None
     for path in reversed(plain):
@@ -514,22 +548,97 @@ def collect_orca_slice_stats(
             content = _read_gcode_text_from_3mf(str(archive))
             if content and content.strip():
                 break
-    if not content:
-        return None
+    if content:
+        parsed = parse_gcode_slice_stats(content, filament_type)
+        if parsed["filament_weight_g"] > 0 or parsed["print_time_hours"] > 0:
+            candidates.append(parsed)
 
-    parsed = parse_gcode_slice_stats(content, filament_type)
-    if parsed["filament_weight_g"] <= 0 or parsed["print_time_hours"] <= 0:
+    merged = _merge_orca_stat_candidates(*candidates)
+    if not merged:
+        return None
+    if merged.get("filament_weight_g", 0) <= 0 or merged.get("print_time_hours", 0) <= 0:
         return None
     return {
         "success": True,
         "engine": "orca-slicer-cli",
-        **parsed,
+        **merged,
         "layer_height": layer_height,
         "nozzle_size": nozzle_size,
         "infill": infill,
         "filament_type": filament_type,
         "support_lines": [],
     }
+
+
+def reconcile_multicolor_orca_stats(
+    stl_path: str,
+    slice_data: dict,
+    *,
+    infill: int,
+    layer_height: float,
+    nozzle_size: float,
+    filament_type: str,
+    color_count: int,
+    support_needed: bool,
+    painted_ratio: float,
+) -> dict:
+    """Gdy Orca CLI zaniża AMS (tylko model), podbij do estymatu z geometrii."""
+    color_count = max(1, int(color_count or 1))
+    if color_count < 2:
+        return slice_data
+    weight = float(slice_data.get("filament_weight_g") or 0)
+    hours = float(slice_data.get("print_time_hours") or 0)
+    if painted_ratio < 0.05:
+        painted_ratio = min(0.85, 0.35 + 0.12 * (color_count - 1))
+    try:
+        mesh = None
+        if str(stl_path).lower().endswith(".3mf"):
+            from analysis import load_3mf_mesh
+
+            mesh = load_3mf_mesh(stl_path)
+        else:
+            loaded = trimesh.load(stl_path, force="mesh")
+            if isinstance(loaded, trimesh.Scene):
+                meshes = [g for g in loaded.geometry.values() if isinstance(g, trimesh.Trimesh)]
+                mesh = trimesh.util.concatenate(meshes) if meshes else None
+            elif isinstance(loaded, trimesh.Trimesh):
+                mesh = loaded
+        if mesh is None:
+            return slice_data
+        volume_cm3 = abs(float(mesh.volume)) / 1000.0
+        est = estimate_filament_from_geometry(
+            volume_cm3=volume_cm3,
+            surface_area_cm2=float(mesh.area) / 100.0,
+            dimensions_mm=[float(v) for v in mesh.extents],
+            infill=infill,
+            layer_height=layer_height,
+            nozzle_size=nozzle_size,
+            filament_type=filament_type,
+            color_count=color_count,
+            support_needed=support_needed,
+            painted_ratio=painted_ratio,
+        )
+        est_weight = float(est["filament_weight_g"])
+        est_hours = float(est["print_time_hours"])
+        if est_weight <= weight * 1.25:
+            return slice_data
+        print(
+            f"[ORCA] Korekta AMS: Orca {weight:.1f} g / {hours:.1f} h "
+            f"-> estymata {est_weight:.1f} g / {est_hours:.1f} h "
+            f"(kolory={color_count}, malowanie={painted_ratio:.2f})"
+        )
+        corrected = dict(slice_data)
+        corrected["filament_weight_g"] = est_weight
+        corrected["filament_length_m"] = est["filament_length_m"]
+        corrected["print_time_hours"] = max(hours, est_hours)
+        corrected["print_time_formatted"] = est["print_time_formatted"]
+        corrected["print_time_seconds"] = int(round(corrected["print_time_hours"] * 3600))
+        corrected["flush_cm3"] = est.get("flush_cm3")
+        corrected["engine"] = "orca-slicer-cli"
+        return corrected
+    except Exception as err:
+        print(f"[WARN] Korekta AMS po Orca nie powiodła się: {err}")
+        return slice_data
 
 
 def resolve_orca_gcode_path(gcode_dir: str) -> str | None:

@@ -20,6 +20,20 @@ ORCA_FOOTER = """
 """
 
 
+def test_parse_multicolor_gcode_sums_per_spool_usage():
+    content = """
+; filament used [g] = 76.52
+; filament used [g] = 70.02
+; filament used [g] = 58.44
+; filament used [g] = 43.83
+; total filament used [g] = 49.90
+; estimated printing time (normal mode) = 18h 7m
+"""
+    stats = parse_gcode_slice_stats(content, "PLA")
+    assert stats["filament_weight_g"] == 248.81
+    assert stats["print_time_hours"] >= 18.0
+
+
 def test_parse_orca_footer_after_executable_block():
     stats = parse_gcode_slice_stats(ORCA_FOOTER, "PLA")
     assert stats["filament_weight_g"] == 4.50
