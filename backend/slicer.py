@@ -804,11 +804,11 @@ def run_slicer(
         if "orca" in os.path.basename(slicer_bin).lower():
             if str(stl_path).lower().endswith(".3mf"):
                 slicer_input_path = normalize_orca_3mf_project(stl_path, gcode_dir)
+            # Bez --layer-gcode: Orca CLI (2.4.x) jej nie zna → exit 254.
             cmd.extend([
                 "--slice", "0",
                 "--allow-newer-file",
                 "--debug", "3",
-                "--layer-gcode=G92 E0",
                 "--outputdir", gcode_dir,
                 slicer_input_path,
             ])
