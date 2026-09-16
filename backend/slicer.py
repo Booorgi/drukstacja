@@ -144,7 +144,7 @@ ORCA_LAYER_RESET_GCODE = "G92 E0\n"
 
 def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
     """Usuń z kopii projektu Bambu wartości -1 odrzucane przez Orca."""
-    print("[ORCA] project-normalizer=v6")
+    print("[ORCA] project-normalizer=v7")
     normalized = os.path.join(output_dir, "orca-input.3mf")
     invalid_default_keys = {"raft_first_layer_expansion", "tree_support_wall_count"}
     # Bambu start/end/toolchange psują Orca CLI — wyrzucamy. Reset warstwy zostawiamy.
@@ -228,13 +228,6 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
         for info in source.infolist():
             payload = source.read(info.filename)
             lower_name = info.filename.lower()
-            contains_strip_gcode = any(
-                key.encode("utf-8") in payload.lower()
-                for key in strip_gcode_keys_normalized
-            )
-            if contains_strip_gcode:
-                print(f"[INFO] Pomijam profil 3MF zawierający custom G-code: {info.filename}")
-                continue
             if lower_name.endswith(".config"):
                 try:
                     config = json.loads(payload.decode("utf-8"))
@@ -274,7 +267,7 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
                             flags=re.IGNORECASE,
                         )
                     payload = text.encode("utf-8")
-            if any(
+            elif any(
                 key.encode("utf-8") in payload.lower()
                 for key in strip_gcode_keys_normalized
             ):
@@ -568,6 +561,56 @@ def collect_orca_slice_stats(
         "filament_type": filament_type,
         "support_lines": [],
     }
+
+
+def _orca_failure_needs_retry(exc: Exception) -> bool:
+    message = str(exc or "")
+    return any(
+        token in message
+        for token in ("exit=139", "exit=206", "return -50", "print volume")
+    )
+
+
+def slice_job_geometry_fallback(
+    path: str,
+    *,
+    infill: int,
+    layer_height: float,
+    nozzle_size: float,
+    filament_type: str,
+    color_count: int,
+    support_needed: bool,
+    painted_ratio: float,
+) -> dict:
+    """Gdy Orca CLI odmawia (np. return -50), wycena z geometrii + AMS."""
+    mesh = None
+    if str(path).lower().endswith(".3mf"):
+        from analysis import load_3mf_mesh
+
+        mesh = load_3mf_mesh(path)
+    else:
+        loaded = trimesh.load(path, force="mesh")
+        if isinstance(loaded, trimesh.Scene):
+            meshes = [g for g in loaded.geometry.values() if isinstance(g, trimesh.Trimesh)]
+            mesh = trimesh.util.concatenate(meshes) if meshes else None
+        elif isinstance(loaded, trimesh.Trimesh):
+            mesh = loaded
+    if mesh is None:
+        raise RuntimeError("Nie udało się wczytać geometrii do estymaty wyceny.")
+    result = slice_result_from_geometry(
+        volume_cm3=abs(float(mesh.volume)) / 1000.0,
+        surface_area_cm2=float(mesh.area) / 100.0,
+        dimensions_mm=[float(v) for v in mesh.extents],
+        infill=infill,
+        layer_height=layer_height,
+        nozzle_size=nozzle_size,
+        filament_type=filament_type,
+        color_count=color_count,
+        support_needed=support_needed,
+        painted_ratio=painted_ratio,
+    )
+    result["engine"] = "geometry-estimate"
+    return result
 
 
 def reconcile_multicolor_orca_stats(
@@ -1179,6 +1222,7 @@ def run_slicer(
             cmd.extend([
                 "--slice", "0",
                 "--allow-newer-file",
+                "--ensure-on-bed",
                 "--debug", "3",
                 "--before-layer-change-gcode", "G92 E0",
                 "--outputdir", gcode_dir,

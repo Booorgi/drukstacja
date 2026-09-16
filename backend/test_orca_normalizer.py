@@ -54,7 +54,7 @@ def test_normalize_adds_layer_reset_when_missing():
         assert config["before_layer_change_gcode"] == ORCA_LAYER_RESET_GCODE
 
 
-def test_normalize_skips_machine_start_gcode_profiles():
+def test_normalize_sanitizes_machine_start_gcode_profiles():
     with tempfile.TemporaryDirectory() as tmp:
         source = os.path.join(tmp, "source.3mf")
         machine = {
@@ -62,6 +62,7 @@ def test_normalize_skips_machine_start_gcode_profiles():
             "use_relative_e_distances": True,
             "machine_start_gcode": "G28\n",
             "before_layer_change_gcode": "G92 E0\n",
+            "printable_area": [0, 0, 256, 256],
         }
         _write_3mf(
             source,
@@ -70,8 +71,10 @@ def test_normalize_skips_machine_start_gcode_profiles():
             },
         )
         normalized = normalize_orca_3mf_project(source, tmp)
-        with zipfile.ZipFile(normalized, "r") as zf:
-            assert "Metadata/printer.config" not in zf.namelist()
+        config = _read_config_from_3mf(normalized, "Metadata/printer.config")
+        assert "machine_start_gcode" not in config
+        assert config["before_layer_change_gcode"] == ORCA_LAYER_RESET_GCODE
+        assert config["printable_area"] == [0, 0, 256, 256]
 
 
 if __name__ == "__main__":

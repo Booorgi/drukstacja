@@ -49,8 +49,10 @@ from slicer import (
     convert_step_to_stl,
     reconcile_multicolor_orca_stats,
     run_slicer,
+    slice_job_geometry_fallback,
     slice_result_from_bambu_stats,
     validated_bambu_slice_stats,
+    _orca_failure_needs_retry,
 )
 from orientation import auto_orient_mesh
 from packager_3mf import generate_production_3mf, sanitize_filename
@@ -151,18 +153,26 @@ def _run_slice_job(job_id: str, path: str, params: dict) -> None:
         try:
             slice_data = run_slicer(stl_path=path, **slicer_params)
         except RuntimeError as exc:
-            if not str(path).lower().endswith(".3mf") or "exit=139" not in str(exc):
+            if not str(path).lower().endswith(".3mf") or not _orca_failure_needs_retry(exc):
                 raise
-            # A malformed Bambu project can crash Orca while a clean STL remains sliceable.
-            mesh = load_3mf_mesh(path)
-            fallback_path = os.path.join(MODELS_CACHE_DIR, f"{job_id}_orca_fallback.stl")
-            mesh.export(fallback_path)
-            print(f"[SLICE-JOB] job={job_id} retrying Orca with extracted STL")
-            slice_data = run_slicer(
-                stl_path=fallback_path,
-                force_cli=True,
-                **slicer_params,
-            )
+            if "exit=139" in str(exc):
+                # A malformed Bambu project can crash Orca while a clean STL remains sliceable.
+                mesh = load_3mf_mesh(path)
+                fallback_path = os.path.join(MODELS_CACHE_DIR, f"{job_id}_orca_fallback.stl")
+                mesh.export(fallback_path)
+                print(f"[SLICE-JOB] job={job_id} retrying Orca with extracted STL")
+                try:
+                    slice_data = run_slicer(
+                        stl_path=fallback_path,
+                        force_cli=True,
+                        **slicer_params,
+                    )
+                except RuntimeError as stl_exc:
+                    print(f"[SLICE-JOB] job={job_id} STL retry failed: {stl_exc}")
+                    slice_data = slice_job_geometry_fallback(path, **slicer_params)
+            else:
+                print(f"[SLICE-JOB] job={job_id} Orca failed ({exc}) — estymata geometryczna")
+                slice_data = slice_job_geometry_fallback(path, **slicer_params)
         slice_data = reconcile_multicolor_orca_stats(
             path,
             slice_data,
@@ -177,7 +187,7 @@ def _run_slice_job(job_id: str, path: str, params: dict) -> None:
         engine = slice_data.get("engine")
         weight = float(slice_data.get("filament_weight_g") or 0)
         hours = float(slice_data.get("print_time_hours") or 0)
-        if engine not in {"orca-slicer-cli", "bambu-slice-info"} or weight <= 0 or hours <= 0:
+        if engine not in {"orca-slicer-cli", "bambu-slice-info", "geometry-estimate"} or weight <= 0 or hours <= 0:
             raise RuntimeError("Slicer nie zwrócił wiarygodnego czasu i zużycia filamentu.")
         price = calculate_price_from_slicer(
             print_time_hours=hours,
