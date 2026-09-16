@@ -331,6 +331,224 @@ def parse_time_to_hours(time_str: str) -> tuple[float, str]:
     return hours_float, formatted
 
 
+def _iter_orca_output_files(gcode_dir: str) -> tuple[list[Path], list[Path]]:
+    """Pliki wyjściowe Orca w katalogu slice: archiwa 3MF i luźne .gcode."""
+    root = Path(gcode_dir)
+    archives: list[Path] = []
+    plain: list[Path] = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        lower = path.name.lower()
+        if lower == "orca-input.3mf":
+            continue
+        if lower.endswith(".gcode.3mf") or lower.endswith(".3mf"):
+            archives.append(path)
+        elif lower.endswith(".gcode"):
+            plain.append(path)
+    archives.sort(key=lambda p: p.stat().st_mtime)
+    plain.sort(key=lambda p: p.stat().st_mtime)
+    return archives, plain
+
+
+def _read_slice_info_stats_from_3mf(path: str) -> dict | None:
+    try:
+        from analysis import _extract_3mf_slice_info
+
+        with zipfile.ZipFile(path, "r") as zf:
+            stats = _extract_3mf_slice_info(zf)
+    except Exception as err:
+        print(f"[WARN] Nie udało się odczytać slice_info z {path}: {err}")
+        return None
+    return validated_bambu_slice_stats(stats)
+
+
+def _read_gcode_text_from_3mf(path: str) -> str | None:
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            candidates = [
+                name
+                for name in zf.namelist()
+                if name.replace("\\", "/").lower().endswith(".gcode")
+            ]
+            if not candidates:
+                return None
+            member = max(candidates, key=lambda name: zf.getinfo(name).file_size)
+            return zf.read(member).decode("utf-8", errors="ignore")
+    except Exception as err:
+        print(f"[WARN] Nie udało się odczytać G-code z {path}: {err}")
+        return None
+
+
+def parse_gcode_slice_stats(content: str, filament_type: str) -> dict:
+    """Wyciąga czas i zużycie filamentu z komentarzy G-code (Prusa/Orca/Bambu)."""
+    print_time_str = None
+    time_patterns = [
+        r";\s*estimated printing time\s*\([^)]+\)\s*=\s*([^\r\n]+)",
+        r";\s*(?:total\s+)?estimated(?:\s+printing)?\s+time(?:\s*\([^)]+\))?\s*=\s*([^\r\n]+)",
+        r";\s*total estimated time:\s*([^\r\n]+)",
+    ]
+    for pattern in time_patterns:
+        time_match = re.search(pattern, content, re.IGNORECASE)
+        if time_match:
+            print_time_str = time_match.group(1).strip()
+            break
+    if not print_time_str:
+        header_match = re.search(
+            r";\s*model printing time:[^;\r\n]*;\s*total estimated time:\s*([^\r\n]+)",
+            content,
+            re.IGNORECASE,
+        )
+        if header_match:
+            print_time_str = header_match.group(1).strip()
+
+    filament_g = 0.0
+    weight_match = re.search(
+        r";\s*total filament used \[g\]\s*=\s*([\d\.]+)",
+        content,
+        re.IGNORECASE,
+    )
+    if weight_match:
+        filament_g = round(float(weight_match.group(1)), 2)
+    else:
+        per_spool = [
+            float(value)
+            for value in re.findall(
+                r";\s*filament used \[g\]\s*=\s*([\d\.]+)",
+                content,
+                re.IGNORECASE,
+            )
+        ]
+        if per_spool:
+            filament_g = round(sum(per_spool), 2)
+
+    filament_m = 0.0
+    length_match = re.search(
+        r";\s*(?:total\s+)?filament used \[mm\]\s*=\s*([\d\.]+)",
+        content,
+        re.IGNORECASE,
+    )
+    if length_match:
+        filament_m = round(float(length_match.group(1)) / 1000.0, 2)
+    else:
+        per_spool_mm = [
+            float(value)
+            for value in re.findall(
+                r";\s*filament used \[mm\]\s*=\s*([\d\.]+)",
+                content,
+                re.IGNORECASE,
+            )
+        ]
+        if per_spool_mm:
+            filament_m = round(sum(per_spool_mm) / 1000.0, 2)
+        else:
+            m_match = re.search(r";\s*Filament used:\s*([\d\.]+)\s*m", content, re.IGNORECASE)
+            if m_match:
+                filament_m = round(float(m_match.group(1)), 2)
+
+    filament_cm3 = 0.0
+    vol_match = re.search(r";\s*(?:total\s+)?filament used \[cm3\]\s*=\s*([\d\.]+)", content, re.IGNORECASE)
+    if vol_match:
+        filament_cm3 = round(float(vol_match.group(1)), 2)
+    else:
+        per_spool_cm3 = [
+            float(value)
+            for value in re.findall(
+                r";\s*filament used \[cm3\]\s*=\s*([\d\.]+)",
+                content,
+                re.IGNORECASE,
+            )
+        ]
+        if per_spool_cm3:
+            filament_cm3 = round(sum(per_spool_cm3), 2)
+
+    if filament_g <= 0.0 and filament_cm3 > 0.0:
+        density = get_filament_density(filament_type)
+        filament_g = round(filament_cm3 * density, 1)
+
+    hours_float, time_formatted = parse_time_to_hours(print_time_str or "")
+    return {
+        "print_time_hours": hours_float,
+        "print_time_formatted": time_formatted,
+        "filament_weight_g": filament_g,
+        "filament_length_m": filament_m,
+        "filament_volume_cm3": filament_cm3,
+        "has_supports": "TYPE:Support material" in content,
+    }
+
+
+def collect_orca_slice_stats(
+    gcode_dir: str,
+    *,
+    infill: int,
+    layer_height: float,
+    nozzle_size: float,
+    filament_type: str,
+) -> dict | None:
+    """Czyta wynik Orca: slice_info z .gcode.3mf, potem stopkę luźnego G-code."""
+    archives, plain = _iter_orca_output_files(gcode_dir)
+    for archive in reversed(archives):
+        raw = _read_slice_info_stats_from_3mf(str(archive))
+        if raw:
+            result = slice_result_from_bambu_stats(
+                raw,
+                infill=infill,
+                layer_height=layer_height,
+                filament_type=filament_type,
+                nozzle_size=nozzle_size,
+            )
+            result["engine"] = "orca-slicer-cli"
+            return result
+
+    content = None
+    for path in reversed(plain):
+        try:
+            candidate = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if candidate.strip():
+            content = candidate
+            break
+    if not content:
+        for archive in reversed(archives):
+            content = _read_gcode_text_from_3mf(str(archive))
+            if content and content.strip():
+                break
+    if not content:
+        return None
+
+    parsed = parse_gcode_slice_stats(content, filament_type)
+    if parsed["filament_weight_g"] <= 0 or parsed["print_time_hours"] <= 0:
+        return None
+    return {
+        "success": True,
+        "engine": "orca-slicer-cli",
+        **parsed,
+        "layer_height": layer_height,
+        "nozzle_size": nozzle_size,
+        "infill": infill,
+        "filament_type": filament_type,
+        "support_lines": [],
+    }
+
+
+def resolve_orca_gcode_path(gcode_dir: str) -> str | None:
+    """Zwraca ścieżkę do luźnego G-code albo wypakowuje plate z .gcode.3mf."""
+    _, plain = _iter_orca_output_files(gcode_dir)
+    if plain:
+        return str(plain[-1])
+    archives, _ = _iter_orca_output_files(gcode_dir)
+    for archive in reversed(archives):
+        content = _read_gcode_text_from_3mf(str(archive))
+        if not content or not content.strip():
+            continue
+        extracted = os.path.join(gcode_dir, "_orca_plate.gcode")
+        with open(extracted, "w", encoding="utf-8") as f:
+            f.write(content)
+        return extracted
+    return None
+
+
 def extract_support_segments(gcode_path: str, bed_center: tuple[float, float]) -> list[float]:
     """
     Parsuje G-Code i wyciąga współrzędne podpór organicznych,
@@ -906,14 +1124,52 @@ def run_slicer(
         )
 
         if "orca" in executable:
-            generated = sorted(Path(gcode_dir).rglob("*.gcode"), key=lambda p: p.stat().st_mtime)
-            gcode_path = str(generated[-1]) if generated else None
+            if process.returncode == 0:
+                orca_stats = collect_orca_slice_stats(
+                    gcode_dir,
+                    infill=infill,
+                    layer_height=layer_height,
+                    nozzle_size=nozzle_size,
+                    filament_type=filament_type,
+                )
+                if orca_stats:
+                    gcode_path = resolve_orca_gcode_path(gcode_dir)
+                    support_lines = []
+                    if (
+                        gcode_path
+                        and orca_stats.get("has_supports")
+                        and support_material
+                    ):
+                        support_lines = extract_support_segments(gcode_path, bed_center)
+                    orca_stats["support_lines"] = support_lines
+                    return orca_stats
+            gcode_path = resolve_orca_gcode_path(gcode_dir)
+            archives, _ = _iter_orca_output_files(gcode_dir)
+            orca_has_output = bool(gcode_path) or bool(archives)
+        else:
+            orca_has_output = True
 
         if (
             process.returncode != 0
-            or not gcode_path
-            or not os.path.exists(gcode_path)
-            or os.path.getsize(gcode_path) == 0
+            or (
+                "orca" in executable
+                and not orca_has_output
+            )
+            or (
+                gcode_path
+                and (
+                    not os.path.exists(gcode_path)
+                    or os.path.getsize(gcode_path) == 0
+                )
+            )
+            or (
+                "orca" not in executable
+                and (
+                    not gcode_path
+                    or not os.path.exists(gcode_path)
+                    or os.path.getsize(gcode_path) == 0
+                )
+            )
         ):
             diagnostics = "\n".join(
                 part.strip()
@@ -941,92 +1197,41 @@ def run_slicer(
             )
 
         # PARSOWANIE G-CODE
-        print_time_str = None
-        filament_g = 0.0
-        filament_m = 0.0
-        filament_cm3 = 0.0
-        has_supports = False
-        support_lines = []
-
         with open(gcode_path, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
 
-            # 1. Czas druku
-            time_match = re.search(
-                r";\s*(?:total\s+)?estimated(?:\s+printing)?\s+time\s*=\s*([^\r\n]+)",
-                content,
-                re.IGNORECASE,
-            )
-            if time_match:
-                print_time_str = time_match.group(1).strip()
-            else:
-                # Sprawdzenie formatu Cura
-                cura_time = re.search(r";TIME:\s*(\d+)", content)
-                if cura_time:
-                    print_time_str = cura_time.group(1)
+        parsed = parse_gcode_slice_stats(content, filament_type)
+        if parsed["print_time_hours"] <= 0:
+            cura_time = re.search(r";TIME:\s*(\d+)", content)
+            if cura_time:
+                hours_float, time_formatted = parse_time_to_hours(cura_time.group(1))
+                parsed["print_time_hours"] = hours_float
+                parsed["print_time_formatted"] = time_formatted
 
-            # 2. Waga filamentu [g]
-            weight_match = re.search(
-                r";\s*(?:total\s+)?filament used \[g\]\s*=\s*([\d\.]+)",
-                content,
-                re.IGNORECASE,
-            )
-            if weight_match:
-                filament_g = round(float(weight_match.group(1)), 2)
+        bed_match = re.search(r"; bed_shape\s*=\s*([^\r\n]+)", content)
+        if bed_match:
+            nums = [float(c) for c in re.findall(r"([\d\.]+)", bed_match.group(1))]
+            if len(nums) >= 4:
+                bed_center = (max(nums) / 2.0, max(nums[1::2]) / 2.0)
 
-            # 3. Długość filamentu [mm] -> zamiana na metry
-            length_match = re.search(
-                r";\s*(?:total\s+)?filament used \[mm\]\s*=\s*([\d\.]+)",
-                content,
-                re.IGNORECASE,
-            )
-            if length_match:
-                filament_m = round(float(length_match.group(1)) / 1000.0, 2)
-            else:
-                # Alternatywny zapis metrowy
-                m_match = re.search(r";\s*Filament used:\s*([\d\.]+)\s*m", content)
-                if m_match:
-                    filament_m = round(float(m_match.group(1)), 2)
-
-            # 4. Objętość filamentu [cm3]
-            vol_match = re.search(r"; filament used \[cm3\]\s*=\s*([\d\.]+)", content)
-            if vol_match:
-                filament_cm3 = round(float(vol_match.group(1)), 2)
-
-            # 5. Geometria stołu
-            bed_match = re.search(r"; bed_shape\s*=\s*([^\r\n]+)", content)
-            if bed_match:
-                nums = [float(c) for c in re.findall(r"([\d\.]+)", bed_match.group(1))]
-                if len(nums) >= 4:
-                    bed_center = (max(nums) / 2.0, max(nums[1::2]) / 2.0)
-
-            if "TYPE:Support material" in content:
-                has_supports = True
-
-        if has_supports and support_material:
+        support_lines = []
+        if parsed["has_supports"] and support_material:
             support_lines = extract_support_segments(gcode_path, bed_center)
-
-        hours_float, time_formatted = parse_time_to_hours(print_time_str or "")
-
-        # Jeśli slicer nie wygenerował wagi, policz z objętości lub długości
-        if filament_g <= 0.0 and filament_cm3 > 0.0:
-            density = get_filament_density(filament_type)
-            filament_g = round(filament_cm3 * density, 1)
 
         engine_name = "orca-slicer-cli" if "orca" in executable else "prusa-slicer-cli"
         return {
             "success": True,
             "engine": engine_name,
-            "print_time_hours": hours_float,
-            "print_time_formatted": time_formatted,
-            "filament_weight_g": filament_g,
-            "filament_length_m": filament_m,
-            "filament_volume_cm3": filament_cm3,
+            "print_time_hours": parsed["print_time_hours"],
+            "print_time_formatted": parsed["print_time_formatted"],
+            "filament_weight_g": parsed["filament_weight_g"],
+            "filament_length_m": parsed["filament_length_m"],
+            "filament_volume_cm3": parsed["filament_volume_cm3"],
             "layer_height": layer_height,
             "nozzle_size": nozzle_size,
             "infill": infill,
             "filament_type": filament_type,
-            "has_supports": has_supports,
+            "has_supports": parsed["has_supports"],
             "support_lines": support_lines,
         }
 
