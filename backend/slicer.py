@@ -140,11 +140,55 @@ def get_slicer_binary() -> str | None:
 
 
 ORCA_LAYER_RESET_GCODE = "G92 E0\n"
+BAMBU_GCODE_TEMPLATE_RE = re.compile(r"\{\s*if\s+", re.IGNORECASE)
+
+
+def _normalize_setting_key(key: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(key).strip().lower())
+
+
+def _fuzzy_key_set(keys) -> set[str]:
+    return {_normalize_setting_key(key) for key in keys}
+
+
+def _should_sanitize_3mf_member(filename: str, payload: bytes) -> bool:
+    lower = filename.lower().replace("\\", "/")
+    if lower.endswith((".config", ".json", ".cfg")):
+        return True
+    if lower.startswith("metadata/") or "/metadata/" in lower:
+        stripped = payload.lstrip()
+        return stripped.startswith(b"{") or stripped.startswith(b"[")
+    return False
+
+
+def _gcode_field_name_pattern(canonical_key: str) -> str:
+    tokens = [token for token in re.split(r"[\s_]+", canonical_key.strip()) if token]
+    if not tokens:
+        return re.escape(canonical_key)
+    return r"[\s_\-]*".join(re.escape(token) for token in tokens)
+
+
+def _strip_gcode_fields_from_text(text: str, strip_keys) -> str:
+    for canonical_key in strip_keys:
+        label = _gcode_field_name_pattern(canonical_key)
+        text = re.sub(
+            rf'"{label}"\s*:\s*"(?:[^"\\]|\\.)*"\s*,?',
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            rf'"{label}"\s*:\s*\[(?:[^\]]|\[[^\]]*\])*\]\s*,?',
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+    return text
 
 
 def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
     """Usuń z kopii projektu Bambu wartości -1 odrzucane przez Orca."""
-    print("[ORCA] project-normalizer=v7")
+    print("[ORCA] project-normalizer=v8")
     normalized = os.path.join(output_dir, "orca-input.3mf")
     invalid_default_keys = {"raft_first_layer_expansion", "tree_support_wall_count"}
     # Bambu start/end/toolchange psują Orca CLI — wyrzucamy. Reset warstwy zostawiamy.
@@ -157,6 +201,8 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
         "change filament gcode",
         "change_filament_gcode",
         "toolchange_gcode",
+        "printing_by_object_gcode",
+        "wrapping_detection_gcode",
     }
     layer_reset_gcode_keys = {
         "before_layer_change_gcode",
@@ -164,15 +210,8 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
         "machine_before_layer_change_gcode",
         "machine_after_layer_change_gcode",
     }
-    strip_gcode_keys_normalized = {
-        key.replace(" ", "_").lower() for key in strip_gcode_keys
-    }
-    layer_reset_gcode_keys_normalized = {
-        key.replace(" ", "_").lower() for key in layer_reset_gcode_keys
-    }
-    incompatible_gcode_keys_normalized = (
-        strip_gcode_keys_normalized | layer_reset_gcode_keys_normalized
-    )
+    strip_gcode_keys_fuzzy = _fuzzy_key_set(strip_gcode_keys)
+    layer_reset_gcode_keys_fuzzy = _fuzzy_key_set(layer_reset_gcode_keys)
 
     def _config_needs_layer_reset(config: dict) -> bool:
         if config.get("use_relative_e_distances") is False:
@@ -182,27 +221,37 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
         if str(config.get("type") or "").lower() == "machine":
             return True
         return any(
-            str(key).strip().replace(" ", "_").lower() in layer_reset_gcode_keys_normalized
+            _normalize_setting_key(key) in layer_reset_gcode_keys_fuzzy
             for key in config
         )
 
     def _config_has_layer_reset(config: dict) -> bool:
         for key, value in config.items():
-            normalized_key = str(key).strip().replace(" ", "_").lower()
-            if normalized_key not in layer_reset_gcode_keys_normalized:
+            normalized_key = _normalize_setting_key(key)
+            if normalized_key not in layer_reset_gcode_keys_fuzzy:
                 continue
             if isinstance(value, str) and re.search(r"G92\s*E0", value, re.IGNORECASE):
                 return True
         return False
 
+    def _looks_like_bambu_gcode_field(key: str, value) -> bool:
+        normalized_key = _normalize_setting_key(key)
+        if normalized_key in strip_gcode_keys_fuzzy:
+            return True
+        if not isinstance(value, str):
+            return False
+        if "gcode" not in normalized_key and "timelapse" not in normalized_key:
+            return False
+        return bool(BAMBU_GCODE_TEMPLATE_RE.search(value))
+
     def sanitize(value):
         if isinstance(value, dict):
             result = {}
             for key, item in value.items():
-                normalized_key = str(key).strip().replace(" ", "_").lower()
-                if normalized_key in strip_gcode_keys_normalized:
+                normalized_key = _normalize_setting_key(key)
+                if normalized_key in strip_gcode_keys_fuzzy or _looks_like_bambu_gcode_field(key, item):
                     continue
-                if normalized_key in layer_reset_gcode_keys_normalized:
+                if normalized_key in layer_reset_gcode_keys_fuzzy:
                     result[key] = ORCA_LAYER_RESET_GCODE
                     continue
                 result[key] = 0 if key in invalid_default_keys and _is_negative_default(item) else sanitize(item)
@@ -227,8 +276,7 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
     ) as target:
         for info in source.infolist():
             payload = source.read(info.filename)
-            lower_name = info.filename.lower()
-            if lower_name.endswith(".config"):
+            if _should_sanitize_3mf_member(info.filename, payload):
                 try:
                     config = json.loads(payload.decode("utf-8"))
                     payload = json.dumps(sanitize(config), ensure_ascii=False).encode("utf-8")
@@ -241,36 +289,18 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
                             text,
                             flags=re.IGNORECASE,
                         )
-                    for key in strip_gcode_keys_normalized:
-                        text = re.sub(
-                            rf'"{re.escape(key)}"\s*:\s*(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\])\s*,?',
-                            "",
-                            text,
-                            flags=re.IGNORECASE,
-                        )
-                        text = re.sub(
-                            rf'(?ims)(["\']?{re.escape(key)}["\']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\]|[^,}}\r\n]*)\s*,?',
-                            "",
-                            text,
-                        )
-                        text = re.sub(
-                            rf'(?i){re.escape(key)}',
-                            "disabled_custom_gcode",
-                            text,
-                        )
-                    for key in layer_reset_gcode_keys_normalized:
+                    text = _strip_gcode_fields_from_text(text, strip_gcode_keys)
+                    for canonical_key in layer_reset_gcode_keys:
                         reset_value = json.dumps(ORCA_LAYER_RESET_GCODE)
+                        label = _gcode_field_name_pattern(canonical_key)
                         text = re.sub(
-                            rf'"{re.escape(key)}"\s*:\s*(?:"(?:\\.|[^"\\])*"|\[(?:\\.|[^\]])*\])',
-                            f'"{key}": {reset_value}',
+                            rf'"{label}"\s*:\s*"(?:[^"\\]|\\.)*"',
+                            f'"{canonical_key}": {reset_value}',
                             text,
                             flags=re.IGNORECASE,
                         )
                     payload = text.encode("utf-8")
-            elif any(
-                key.encode("utf-8") in payload.lower()
-                for key in strip_gcode_keys_normalized
-            ):
+            elif BAMBU_GCODE_TEMPLATE_RE.search(payload.decode("utf-8", "ignore")):
                 print(f"[INFO] Pomijam wpis 3MF z niekompatybilnym G-code: {info.filename}")
                 continue
             target.writestr(info, payload)
@@ -567,7 +597,16 @@ def _orca_failure_needs_retry(exc: Exception) -> bool:
     message = str(exc or "")
     return any(
         token in message
-        for token in ("exit=139", "exit=206", "return -50", "print volume")
+        for token in (
+            "exit=139",
+            "exit=156",
+            "exit=206",
+            "return -50",
+            "return -100",
+            "print volume",
+            "invalid custom g-code",
+            "timelapse_gcode",
+        )
     )
 
 

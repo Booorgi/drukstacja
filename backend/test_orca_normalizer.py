@@ -54,6 +54,28 @@ def test_normalize_adds_layer_reset_when_missing():
         assert config["before_layer_change_gcode"] == ORCA_LAYER_RESET_GCODE
 
 
+def test_normalize_strips_timelapse_gcode_with_bambu_template_syntax():
+    with tempfile.TemporaryDirectory() as tmp:
+        source = os.path.join(tmp, "source.3mf")
+        machine = {
+            "type": "machine",
+            "use_relative_e_distances": True,
+            "Timelapse G-code": "M117 start\n{if timelapse_inline_photo}\nM1002\n{endif}\n",
+            "printable_area": [0, 0, 256, 256],
+        }
+        _write_3mf(
+            source,
+            {
+                "Metadata/machine.json": json.dumps(machine),
+            },
+        )
+        normalized = normalize_orca_3mf_project(source, tmp)
+        config = _read_config_from_3mf(normalized, "Metadata/machine.json")
+        assert "Timelapse G-code" not in config
+        assert "timelapse_gcode" not in config
+        assert config["printable_area"] == [0, 0, 256, 256]
+
+
 def test_normalize_sanitizes_machine_start_gcode_profiles():
     with tempfile.TemporaryDirectory() as tmp:
         source = os.path.join(tmp, "source.3mf")
