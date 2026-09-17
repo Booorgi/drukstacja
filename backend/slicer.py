@@ -684,6 +684,7 @@ def slice_job_geometry_fallback(
     color_count: int,
     support_needed: bool,
     painted_ratio: float,
+    **_ignored,
 ) -> dict:
     """Gdy Orca CLI odmawia (np. return -50), wycena z geometrii + AMS."""
     mesh = None
