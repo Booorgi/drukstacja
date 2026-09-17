@@ -160,8 +160,13 @@ def _run_slice_job(job_id: str, path: str, params: dict) -> None:
                 filament_type=slicer_params["filament_type"],
                 nozzle_size=slicer_params["nozzle_size"],
             )
-            if embedded and int(embedded.get("plate_count") or 1) > 1:
-                # Wielopłytowy projekt: Orca CLI tnie zwykle tylko plate 0.
+            if embedded:
+                # Preferuj sumę z Metadata/slice_info (wszystkie płyty) — Orca CLI
+                # często pada na Bambu config (speed=0) i i tak tnie tylko plate 0.
+                print(
+                    f"[SLICE-JOB] job={job_id} using embedded slice_info "
+                    f"({embedded.get('plate_count') or 1} plate(s))"
+                )
                 slice_data = embedded
             else:
                 try:

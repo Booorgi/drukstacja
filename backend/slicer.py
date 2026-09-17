@@ -186,9 +186,28 @@ def _strip_gcode_fields_from_text(text: str, strip_keys) -> str:
     return text
 
 
+# Orca odrzuca speed=0 (min 1). Typowe Bambu „wyłączone” wartości → sensowne defaulty.
+ORCA_MIN_SPEED_DEFAULTS = {
+    "sparse_infill_speed": 80,
+    "internal_solid_infill_speed": 80,
+    "solid_infill_speed": 80,
+    "outer_wall_speed": 60,
+    "inner_wall_speed": 80,
+    "wall_speed": 60,
+    "top_surface_speed": 80,
+    "bridge_speed": 30,
+    "gap_fill_speed": 40,
+    "support_speed": 80,
+    "support_interface_speed": 40,
+    "travel_speed": 150,
+    "initial_layer_speed": 30,
+    "first_layer_speed": 30,
+}
+
+
 def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
-    """Usuń z kopii projektu Bambu wartości -1 odrzucane przez Orca."""
-    print("[ORCA] project-normalizer=v8")
+    """Usuń z kopii projektu Bambu wartości -1 / speed=0 odrzucane przez Orca."""
+    print("[ORCA] project-normalizer=v9")
     normalized = os.path.join(output_dir, "orca-input.3mf")
     invalid_default_keys = {"raft_first_layer_expansion", "tree_support_wall_count"}
     # Bambu start/end/toolchange psują Orca CLI — wyrzucamy. Reset warstwy zostawiamy.
@@ -212,6 +231,9 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
     }
     strip_gcode_keys_fuzzy = _fuzzy_key_set(strip_gcode_keys)
     layer_reset_gcode_keys_fuzzy = _fuzzy_key_set(layer_reset_gcode_keys)
+    speed_defaults_fuzzy = {
+        _normalize_setting_key(k): v for k, v in ORCA_MIN_SPEED_DEFAULTS.items()
+    }
 
     def _config_needs_layer_reset(config: dict) -> bool:
         if config.get("use_relative_e_distances") is False:
@@ -244,6 +266,31 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
             return False
         return bool(BAMBU_GCODE_TEMPLATE_RE.search(value))
 
+    def _is_zero_or_submin_speed(value) -> bool:
+        if isinstance(value, bool):
+            return False
+        if isinstance(value, (int, float)):
+            return float(value) < 1.0
+        if isinstance(value, str):
+            try:
+                return float(value.strip()) < 1.0
+            except ValueError:
+                return False
+        if isinstance(value, list) and len(value) == 1:
+            return _is_zero_or_submin_speed(value[0])
+        return False
+
+    def _fix_speed_value(key: str, value):
+        normalized_key = _normalize_setting_key(key)
+        if "speed" not in normalized_key:
+            return value
+        if not _is_zero_or_submin_speed(value):
+            return value
+        default = speed_defaults_fuzzy.get(normalized_key, 80)
+        if isinstance(value, list) and len(value) == 1:
+            return [default]
+        return default
+
     def sanitize(value):
         if isinstance(value, dict):
             result = {}
@@ -254,7 +301,11 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
                 if normalized_key in layer_reset_gcode_keys_fuzzy:
                     result[key] = ORCA_LAYER_RESET_GCODE
                     continue
-                result[key] = 0 if key in invalid_default_keys and _is_negative_default(item) else sanitize(item)
+                fixed = _fix_speed_value(key, item)
+                if key in invalid_default_keys and _is_negative_default(fixed):
+                    result[key] = 0
+                else:
+                    result[key] = sanitize(fixed)
             if _config_needs_layer_reset(result) and not _config_has_layer_reset(result):
                 result["before_layer_change_gcode"] = ORCA_LAYER_RESET_GCODE
             return result
@@ -286,6 +337,14 @@ def normalize_orca_3mf_project(path: str, output_dir: str) -> str:
                         text = re.sub(
                             rf'("{re.escape(key)}"\s*:\s*)(?:-1|"-1"|\[\s*(?:-1|"-1")\s*\])',
                             r"\g<1>0",
+                            text,
+                            flags=re.IGNORECASE,
+                        )
+                    for speed_key, default in ORCA_MIN_SPEED_DEFAULTS.items():
+                        label = _gcode_field_name_pattern(speed_key)
+                        text = re.sub(
+                            rf'("{label}"\s*:\s*)(?:0|"0"|\[\s*(?:0|"0")\s*\])',
+                            rf"\g<1>{default}",
                             text,
                             flags=re.IGNORECASE,
                         )
@@ -601,11 +660,16 @@ def _orca_failure_needs_retry(exc: Exception) -> bool:
             "exit=139",
             "exit=156",
             "exit=206",
+            "exit=238",
             "return -50",
             "return -100",
+            "return -18",
             "print volume",
             "invalid custom g-code",
             "timelapse_gcode",
+            "not in range",
+            "Param values in 3mf",
+            "sparse_infill_speed",
         )
     )
 

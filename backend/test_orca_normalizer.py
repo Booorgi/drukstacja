@@ -76,6 +76,28 @@ def test_normalize_strips_timelapse_gcode_with_bambu_template_syntax():
         assert config["printable_area"] == [0, 0, 256, 256]
 
 
+def test_normalize_clamps_zero_sparse_infill_speed():
+    with tempfile.TemporaryDirectory() as tmp:
+        source = os.path.join(tmp, "source.3mf")
+        process = {
+            "type": "process",
+            "sparse_infill_speed": 0,
+            "outer_wall_speed": "0",
+            "travel_speed": 150,
+        }
+        _write_3mf(
+            source,
+            {
+                "Metadata/process.config": json.dumps(process),
+            },
+        )
+        normalized = normalize_orca_3mf_project(source, tmp)
+        config = _read_config_from_3mf(normalized, "Metadata/process.config")
+        assert config["sparse_infill_speed"] == 80
+        assert config["outer_wall_speed"] == 60
+        assert config["travel_speed"] == 150
+
+
 def test_normalize_sanitizes_machine_start_gcode_profiles():
     with tempfile.TemporaryDirectory() as tmp:
         source = os.path.join(tmp, "source.3mf")
