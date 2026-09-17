@@ -26,6 +26,38 @@ PHOTOSET_SLICE_INFO = """<?xml version="1.0"?>
 </config>
 """
 
+MULTI_PLATE_SLICE_INFO = """<?xml version="1.0"?>
+<config>
+  <plate>
+    <metadata key="index" value="1"/>
+    <metadata key="prediction" value="3600"/>
+    <metadata key="weight" value="40.0"/>
+    <filament id="1" type="PLA" color="#FF0000" used_m="13.4" used_g="40.0"/>
+  </plate>
+  <plate>
+    <metadata key="index" value="2"/>
+    <metadata key="prediction" value="7200"/>
+    <metadata key="weight" value="80.0"/>
+    <filament id="1" type="PLA" color="#00FF00" used_m="26.8" used_g="50.0"/>
+    <filament id="2" type="PLA" color="#0000FF" used_m="10.0" used_g="30.0"/>
+  </plate>
+</config>
+"""
+
+
+def test_multi_plate_slice_info_sums_all_plates():
+    from analysis import _extract_3mf_slice_info
+
+    path = os.path.join(tempfile.mkdtemp(), "multi.3mf")
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("Metadata/slice_info.config", MULTI_PLATE_SLICE_INFO)
+    with zipfile.ZipFile(path, "r") as zf:
+        stats = _extract_3mf_slice_info(zf)
+    assert stats["plate_count"] == 2
+    assert abs(stats["filament_weight_g"] - 120.0) < 0.05  # max(40+80, 40+50+30)
+    assert stats["print_time_seconds"] == 3600 + 7200
+    assert abs(stats["filament_length_m"] - 50.2) < 0.05
+
 
 def _box_3mf(extents, slice_info=None, infill="15%") -> str:
     box = trimesh.creation.box(extents=extents)

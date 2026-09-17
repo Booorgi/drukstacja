@@ -47,10 +47,12 @@ from pricing import calculate_price, calculate_price_from_slicer, MATERIALS
 from storage import upload_file_to_r2, get_file_url, download_file_from_r2, save_production_3mf_file
 from slicer import (
     convert_step_to_stl,
+    prefer_multiplate_slice_info_over_orca,
     reconcile_multicolor_orca_stats,
     run_slicer,
     slice_job_geometry_fallback,
     slice_result_from_bambu_stats,
+    try_quote_from_embedded_3mf_slice_info,
     validated_bambu_slice_stats,
     _orca_failure_needs_retry,
 )
@@ -151,28 +153,51 @@ def _run_slice_job(job_id: str, path: str, params: dict) -> None:
             "allow_fallback": False,
         }
         try:
-            slice_data = run_slicer(stl_path=path, **slicer_params)
-        except RuntimeError as exc:
-            if not str(path).lower().endswith(".3mf") or not _orca_failure_needs_retry(exc):
-                raise
-            if "exit=139" in str(exc):
-                # A malformed Bambu project can crash Orca while a clean STL remains sliceable.
-                mesh = load_3mf_mesh(path)
-                fallback_path = os.path.join(MODELS_CACHE_DIR, f"{job_id}_orca_fallback.stl")
-                mesh.export(fallback_path)
-                print(f"[SLICE-JOB] job={job_id} retrying Orca with extracted STL")
-                try:
-                    slice_data = run_slicer(
-                        stl_path=fallback_path,
-                        force_cli=True,
-                        **slicer_params,
-                    )
-                except RuntimeError as stl_exc:
-                    print(f"[SLICE-JOB] job={job_id} STL retry failed: {stl_exc}")
-                    slice_data = slice_job_geometry_fallback(path, **slicer_params)
+            embedded = try_quote_from_embedded_3mf_slice_info(
+                path,
+                infill=slicer_params["infill"],
+                layer_height=slicer_params["layer_height"],
+                filament_type=slicer_params["filament_type"],
+                nozzle_size=slicer_params["nozzle_size"],
+            )
+            if embedded and int(embedded.get("plate_count") or 1) > 1:
+                # Wielopłytowy projekt: Orca CLI tnie zwykle tylko plate 0.
+                slice_data = embedded
             else:
-                print(f"[SLICE-JOB] job={job_id} Orca failed ({exc}) — estymata geometryczna")
-                slice_data = slice_job_geometry_fallback(path, **slicer_params)
+                try:
+                    slice_data = run_slicer(stl_path=path, **slicer_params)
+                except RuntimeError as exc:
+                    if not str(path).lower().endswith(".3mf") or not _orca_failure_needs_retry(exc):
+                        raise
+                    if "exit=139" in str(exc):
+                        # A malformed Bambu project can crash Orca while a clean STL remains sliceable.
+                        mesh = load_3mf_mesh(path)
+                        fallback_path = os.path.join(MODELS_CACHE_DIR, f"{job_id}_orca_fallback.stl")
+                        mesh.export(fallback_path)
+                        print(f"[SLICE-JOB] job={job_id} retrying Orca with extracted STL")
+                        try:
+                            slice_data = run_slicer(
+                                stl_path=fallback_path,
+                                force_cli=True,
+                                **slicer_params,
+                            )
+                        except RuntimeError as stl_exc:
+                            print(f"[SLICE-JOB] job={job_id} STL retry failed: {stl_exc}")
+                            slice_data = embedded or slice_job_geometry_fallback(path, **slicer_params)
+                    else:
+                        print(f"[SLICE-JOB] job={job_id} Orca failed ({exc}) — estymata / slice_info")
+                        slice_data = embedded or slice_job_geometry_fallback(path, **slicer_params)
+                if str(path).lower().endswith(".3mf"):
+                    slice_data = prefer_multiplate_slice_info_over_orca(
+                        path,
+                        slice_data,
+                        infill=slicer_params["infill"],
+                        layer_height=slicer_params["layer_height"],
+                        filament_type=slicer_params["filament_type"],
+                        nozzle_size=slicer_params["nozzle_size"],
+                    )
+        except RuntimeError:
+            raise
         slice_data = reconcile_multicolor_orca_stats(
             path,
             slice_data,

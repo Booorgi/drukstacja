@@ -35,7 +35,7 @@ import {
   normalizeAmsColours,
   scaleLengthForDensity,
   scaleWeightForDensity,
-  updateAmsSlot,
+  replaceAmsSlot,
 } from "../lib/amsColours";
 import commercialPricing from "../lib/commercialPricing";
 import {
@@ -216,9 +216,12 @@ export default function Home() {
 
   function handleSelectAmsSlotColor(item) {
     if (!item?.hex) return;
+    const slot = amsSlotIndex;
+    const fallback =
+      analysisData?.file_profile?.filament_colours || analysisData?.filament_colours || [];
     setAmsColours((prev) => {
-      const next = updateAmsSlot(prev, amsSlotIndex, item.hex);
-      if (amsSlotIndex === 0 || next.length === 1) {
+      const next = replaceAmsSlot(prev, fallback, slot, item.hex);
+      if (slot === 0 || next.length === 1) {
         setSelectedColor(item.hex);
       }
       return next;
@@ -253,6 +256,19 @@ export default function Home() {
     if (keep !== "params") setPrintParamsOpen(false);
     if (keep !== "scale") setScaleOpen(false);
   }
+
+  // Gdy 3MF ma kolory w profilu, a lokalny stan AMS jest pusty — zsynchronizuj (żeby remap działał).
+  useEffect(() => {
+    if (amsColours.length) return;
+    const fromFile = normalizeAmsColours(
+      analysisData?.file_profile?.filament_colours || analysisData?.filament_colours || []
+    );
+    if (fromFile.length) applyAmsColours(fromFile);
+  }, [
+    amsColours.length,
+    analysisData?.file_profile?.filament_colours,
+    analysisData?.filament_colours,
+  ]);
 
   // Weryfikacja tworzywa PLA dla dyszy 0.2 mm
   const isPlaMaterial = useMemo(() => {

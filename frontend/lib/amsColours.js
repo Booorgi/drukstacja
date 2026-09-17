@@ -8,11 +8,22 @@ export function normalizeAmsColours(colours) {
 
 export function updateAmsSlot(colours, index, hex) {
   const next = normalizeAmsColours(colours);
-  if (index < 0 || index >= next.length || typeof hex !== "string" || !hex.startsWith("#")) {
+  if (typeof hex !== "string" || !hex.startsWith("#")) {
     return next;
+  }
+  if (index < 0) return next;
+  while (next.length <= index) {
+    next.push(hex);
   }
   next[index] = hex;
   return next;
+}
+
+/** Zamień slot, startując od bieżących kolorów UI (nie pustej tablicy stanu). */
+export function replaceAmsSlot(currentColours, fallbackColours, index, hex) {
+  const base = normalizeAmsColours(currentColours);
+  const seed = base.length ? base : normalizeAmsColours(fallbackColours);
+  return updateAmsSlot(seed, index, hex);
 }
 
 export function scaleWeightForDensity(weightG, density, base = BASE_FILAMENT_DENSITY) {

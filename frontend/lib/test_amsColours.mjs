@@ -1,6 +1,7 @@
 import {
   formatAmsMaterialLabel,
   normalizeAmsColours,
+  replaceAmsSlot,
   scaleLengthForDensity,
   scaleWeightForDensity,
   updateAmsSlot,
@@ -13,7 +14,13 @@ function assert(cond, msg) {
 function test_normalize_and_update() {
   assert(normalizeAmsColours(["#fff", "red", "#00FF00"]).length === 2, "filter hex");
   assert(updateAmsSlot(["#111111", "#222222"], 1, "#ABCDEF")[1] === "#ABCDEF", "update slot");
-  assert(updateAmsSlot(["#111111"], 5, "#ABCDEF")[0] === "#111111", "ignore OOB");
+  assert(updateAmsSlot([], 0, "#ABCDEF")[0] === "#ABCDEF", "grow empty");
+}
+
+function test_replace_seeds_from_fallback() {
+  const next = replaceAmsSlot([], ["#111111", "#222222"], 1, "#ABCDEF");
+  assert(next[0] === "#111111", "keep slot 0");
+  assert(next[1] === "#ABCDEF", "replace slot 1");
 }
 
 function test_density_scale() {
@@ -31,6 +38,7 @@ function test_label() {
 }
 
 test_normalize_and_update();
+test_replace_seeds_from_fallback();
 test_density_scale();
 test_label();
 console.log("amsColours tests: ok");

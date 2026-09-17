@@ -47,11 +47,11 @@ export default function StudioFileProfile({
                 </span>
               );
               if (!editable) {
-                return <span key={`${hex}-${idx}`}>{swatch}</span>;
+                return <span key={`ams-slot-${idx}`}>{swatch}</span>;
               }
               return (
                 <button
-                  key={`${hex}-${idx}`}
+                  key={`ams-slot-${idx}`}
                   type="button"
                   data-ams-slot={idx}
                   aria-label={`Kolor AMS ${idx + 1}: ${hex}`}

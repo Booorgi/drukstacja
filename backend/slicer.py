@@ -1071,6 +1071,7 @@ def validated_bambu_slice_stats(stats) -> dict | None:
         "filament_length_m": round(length, 2),
         "print_time_seconds": seconds,
         "color_count": max(1, int(stats.get("color_count") or 1)),
+        "plate_count": max(1, int(stats.get("plate_count") or 1)),
         "flush_cm3": float(stats.get("flush_cm3") or 0),
         "support_cm3": float(stats.get("support_cm3") or 0),
     }
@@ -1117,7 +1118,82 @@ def slice_result_from_bambu_stats(
         "flush_cm3": float(stats.get("flush_cm3") or 0),
         "support_cm3": float(stats.get("support_cm3") or 0),
         "color_count": int(stats.get("color_count") or 1),
+        "plate_count": int(stats.get("plate_count") or 1),
     }
+
+
+def try_quote_from_embedded_3mf_slice_info(
+    path: str,
+    *,
+    infill: int = 20,
+    layer_height: float = 0.20,
+    filament_type: str = "PLA",
+    nozzle_size: float = 0.4,
+) -> dict | None:
+    """Gdy 3MF ma wiarygodne slice_info (w tym wiele płyt), użyj sumy Bambu."""
+    if not str(path).lower().endswith(".3mf"):
+        return None
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            from analysis import _extract_3mf_slice_info
+
+            raw = _extract_3mf_slice_info(zf)
+    except Exception as err:
+        print(f"[WARN] embedded slice_info: {err}")
+        return None
+    stats = validated_bambu_slice_stats(raw)
+    if not stats:
+        return None
+    if isinstance(raw, dict) and raw.get("plate_count"):
+        stats = {**stats, "plate_count": raw.get("plate_count")}
+    result = slice_result_from_bambu_stats(
+        stats,
+        infill=infill,
+        layer_height=layer_height,
+        filament_type=filament_type,
+        nozzle_size=nozzle_size,
+    )
+    plates = int(result.get("plate_count") or 1)
+    print(
+        f"[INFO] Wycena ze slice_info 3MF "
+        f"({plates} płyt): {result.get('filament_weight_g')} g / {result.get('print_time_formatted')}"
+    )
+    return result
+
+
+def prefer_multiplate_slice_info_over_orca(
+    path: str,
+    orca_data: dict,
+    *,
+    infill: int,
+    layer_height: float,
+    filament_type: str,
+    nozzle_size: float,
+) -> dict:
+    """Orca CLI tnie zwykle tylko plate 0 — przy wielu płytach bierz sumę z Bambu."""
+    embedded = try_quote_from_embedded_3mf_slice_info(
+        path,
+        infill=infill,
+        layer_height=layer_height,
+        filament_type=filament_type,
+        nozzle_size=nozzle_size,
+    )
+    if not embedded:
+        return orca_data
+    plates = int(embedded.get("plate_count") or 1)
+    orca_w = float(orca_data.get("filament_weight_g") or 0)
+    bambu_w = float(embedded.get("filament_weight_g") or 0)
+    orca_h = float(orca_data.get("print_time_hours") or 0)
+    bambu_h = float(embedded.get("print_time_hours") or 0)
+    if plates <= 1 and bambu_w <= orca_w * 1.25 and bambu_h <= orca_h * 1.25:
+        return orca_data
+    if bambu_w >= orca_w * 1.1 or bambu_h >= orca_h * 1.1 or plates > 1:
+        print(
+            f"[ORCA] Multi-plate / większe slice_info → Bambu "
+            f"{bambu_w} g / {bambu_h:.2f} h zamiast Orca {orca_w} g / {orca_h:.2f} h"
+        )
+        return embedded
+    return orca_data
 
 
 def is_dense_slice_job(stl_path: str, triangle_count=None) -> bool:

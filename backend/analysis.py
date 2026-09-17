@@ -830,7 +830,11 @@ def _extract_3mf_print_profile(ps: dict) -> dict:
 
 
 def _extract_3mf_slice_info(zf: zipfile.ZipFile) -> dict:
-    """Czas i zużycie filamentu z ostatniego cięcia Bambu/Orca (slice_info.config)."""
+    """Czas i zużycie filamentu z ostatniego cięcia Bambu/Orca (slice_info.config).
+
+    Przy wielu płytach sumuje prediction / weight / used_g ze wszystkich <plate>
+    — tak jak koszt całego projektu w Bambu Studio (Print all).
+    """
     names = zf.namelist()
     si_name = next(
         (n for n in names if n.replace("\\", "/").endswith("Metadata/slice_info.config")),
@@ -844,33 +848,47 @@ def _extract_3mf_slice_info(zf: zipfile.ZipFile) -> dict:
         print(f"[WARN] Nie udało się odczytać slice_info: {err}")
         return {}
 
-    prediction_s = None
-    weight_g = None
+    prediction_s = 0.0
+    weight_g = 0.0
     used_g = 0.0
     used_m = 0.0
     used_slots = 0
+    plate_count = 0
 
     plates = [el for el in root.iter() if _local_tag(el.tag) == "plate"]
     targets = plates or [root]
     for plate in targets:
+        plate_pred = None
+        plate_weight = None
+        plate_used_g = 0.0
+        plate_used_m = 0.0
+        plate_slots = 0
         for child in plate:
             tag = _local_tag(child.tag)
             if tag == "metadata":
                 key = child.attrib.get("key")
                 val = child.attrib.get("value")
                 if key == "prediction":
-                    prediction_s = _as_float(val)
+                    plate_pred = _as_float(val)
                 elif key == "weight":
-                    weight_g = _as_float(val)
+                    plate_weight = _as_float(val)
             elif tag == "filament":
                 g = _as_float(child.attrib.get("used_g"), 0.0) or 0.0
                 m = _as_float(child.attrib.get("used_m"), 0.0) or 0.0
                 if g > 0.05 or m > 0.05:
-                    used_g += g
-                    used_m += m
-                    used_slots += 1
-        if used_g > 0 or (weight_g and weight_g > 0) or prediction_s:
-            break
+                    plate_used_g += g
+                    plate_used_m += m
+                    plate_slots += 1
+        plate_total_g = max(float(plate_used_g or 0.0), float(plate_weight or 0.0))
+        if plate_total_g <= 0 and not plate_pred:
+            continue
+        plate_count += 1
+        if plate_pred:
+            prediction_s += float(plate_pred)
+        weight_g += float(plate_weight or 0.0)
+        used_g += float(plate_used_g or 0.0)
+        used_m += float(plate_used_m or 0.0)
+        used_slots += plate_slots
 
     total_g = max(float(used_g or 0.0), float(weight_g or 0.0))
     if total_g <= 0 and not prediction_s:
@@ -881,6 +899,7 @@ def _extract_3mf_slice_info(zf: zipfile.ZipFile) -> dict:
         "filament_length_m": round(float(used_m), 2),
         "print_time_seconds": int(prediction_s or 0),
         "color_count": max(used_slots, 1),
+        "plate_count": max(plate_count, 1),
     }
 
 
